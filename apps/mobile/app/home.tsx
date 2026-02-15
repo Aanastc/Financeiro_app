@@ -16,6 +16,7 @@ import { financeService } from "../../../packages/services/finance.service";
 import { PieChart } from "react-native-chart-kit";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import tw from "twrnc";
+import { NavBar } from "@/components/app_components/NavBar";
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -123,6 +124,7 @@ export default function Home() {
 
 	return (
 		<SafeAreaView style={tw`flex-1 bg-gray-50`}>
+			<NavBar />
 			<ScrollView contentContainerStyle={tw`p-6`}>
 				{/* Header */}
 				<View style={tw`flex-row justify-between items-center mb-8`}>

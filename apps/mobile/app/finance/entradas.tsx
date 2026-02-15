@@ -12,6 +12,7 @@ import { supabase } from "../../../../packages/services/supabase";
 
 import tw from "twrnc";
 import { FinanceModal } from "@/components/app_components/FinanceModal";
+import { NavBar } from "@/components/app_components/NavBar";
 
 const MESES = [
 	"Jan",
@@ -106,6 +107,7 @@ export default function Entradas() {
 
 	return (
 		<SafeAreaView style={tw`flex-1 bg-gray-50`}>
+			<NavBar />
 			<View
 				style={tw`p-6 bg-white flex-row justify-between items-center shadow-sm`}>
 				<Text style={tw`text-2xl font-bold text-green-800`}>

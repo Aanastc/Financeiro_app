@@ -12,6 +12,7 @@ import { supabase } from "../../../../packages/services/supabase";
 import { FinanceModal } from "@/components/app_components/FinanceModal";
 
 import tw from "twrnc";
+import { NavBar } from "@/components/app_components/NavBar";
 
 const CATEGORIAS = [
 	"Lazer",
@@ -115,6 +116,7 @@ export default function Gastos() {
 
 	return (
 		<SafeAreaView style={tw`flex-1 bg-gray-50`}>
+			<NavBar />
 			<View
 				style={tw`p-6 bg-white flex-row justify-between items-center shadow-sm`}>
 				<Text style={tw`text-2xl font-bold text-red-800`}>Gastos {year}</Text>
