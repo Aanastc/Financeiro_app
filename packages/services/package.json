@@ -1,0 +1,13 @@
+{
+	"name": "@finance/services",
+	"version": "1.0.0",
+	"main": "supabase.ts",
+	"types": "supabase.ts",
+	"private": true,
+	"scripts": {
+		"test": "echo \"No tests\""
+	},
+	"dependencies": {
+		"@supabase/supabase-js": "^2.95.3"
+	}
+}
