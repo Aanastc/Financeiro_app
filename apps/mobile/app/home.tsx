@@ -7,7 +7,6 @@ import {
 	TouchableOpacity,
 	Dimensions,
 	ActivityIndicator,
-	Platform,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "../../../packages/services/supabase";
@@ -17,6 +16,14 @@ import { PieChart } from "react-native-chart-kit";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import tw from "twrnc";
 import { NavBar } from "@/components/app_components/NavBar";
+import {
+	ArrowUpCircle,
+	ArrowDownCircle,
+	History,
+	LogOut,
+	Calendar,
+	ChevronDown,
+} from "lucide-react-native";
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -27,9 +34,10 @@ export default function Home() {
 	const [date, setDate] = useState(new Date());
 	const [showPicker, setShowPicker] = useState(false);
 
-	// Estados Financeiros (Apenas Entradas e Gastos)
+	// Estados Financeiros
 	const [stats, setStats] = useState({ entradas: 0, gastos: 0 });
-	const [averages, setAverages] = useState({ entradas: 0, gastos: 0 });
+	const [yearStats, setYearStats] = useState({ entradas: 0, gastos: 0 });
+	const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
 
 	useEffect(() => {
 		async function getUserName() {
@@ -66,22 +74,35 @@ export default function Home() {
 				59,
 				59,
 			).toISOString();
+			const firstDayYear = new Date(
+				selectedDate.getFullYear(),
+				0,
+				1,
+			).toISOString();
+			const lastDayYear = new Date(
+				selectedDate.getFullYear(),
+				11,
+				31,
+				23,
+				59,
+				59,
+			).toISOString();
 
-			const result = await financeService.getMonthlyStats(
-				user.id,
-				firstDay,
-				lastDay,
-			);
+			const [monthly, yearly, recent] = await Promise.all([
+				financeService.getMonthlyStats(user.id, firstDay, lastDay),
+				financeService.getMonthlyStats(user.id, firstDayYear, lastDayYear),
+				financeService.getRecentTransactions(user.id, 5),
+			]);
 
 			setStats({
-				entradas: result.totalEntradas,
-				gastos: result.totalGastos,
+				entradas: monthly.totalEntradas,
+				gastos: monthly.totalGastos,
 			});
-
-			setAverages({
-				entradas: result.mediaEntradas,
-				gastos: result.mediaGastos,
+			setYearStats({
+				entradas: yearly.totalEntradas,
+				gastos: yearly.totalGastos,
 			});
+			setRecentTransactions(recent || []);
 		} catch (e) {
 			console.error(e);
 		} finally {
@@ -93,20 +114,19 @@ export default function Home() {
 		{
 			name: "Entradas",
 			population: stats.entradas,
-			color: "#16a34a",
-			legendFontColor: "#7f7f7f",
+			color: "#4CAF50",
+			legendFontColor: "#5D4037",
 			legendFontSize: 12,
 		},
 		{
 			name: "Gastos",
 			population: stats.gastos,
-			color: "#dc2626",
-			legendFontColor: "#7f7f7f",
+			color: "#FF80AB",
+			legendFontColor: "#5D4037",
 			legendFontSize: 12,
 		},
 	];
 
-	const hasData = stats.entradas > 0 || stats.gastos > 0;
 	const monthNames = [
 		"Janeiro",
 		"Fevereiro",
@@ -121,25 +141,24 @@ export default function Home() {
 		"Novembro",
 		"Dezembro",
 	];
+	const saldoMensal = stats.entradas - stats.gastos;
 
 	return (
-		<SafeAreaView style={tw`flex-1 bg-gray-50`}>
+		<SafeAreaView style={tw`flex-1 bg-[#FCF8F8]`}>
 			<NavBar />
-			<ScrollView contentContainerStyle={tw`p-6`}>
-				{/* Header */}
-				<View style={tw`flex-row justify-between items-center mb-8`}>
-					<View>
-						<Text style={tw`text-gray-500`}>Olá, {nome} 💖</Text>
-						<TouchableOpacity onPress={() => setShowPicker(true)}>
-							<Text style={tw`text-2xl font-bold text-red-900`}>
-								{monthNames[date.getMonth()]} / {date.getFullYear()} ▾
-							</Text>
-						</TouchableOpacity>
-					</View>
+			<ScrollView contentContainerStyle={tw`p-6 pb-20`}>
+				{/* 1. CUMPRIMENTO DO USUÁRIO */}
+				<View style={tw`mb-6`}>
+					<Text style={tw`text-[#5D4037] text-lg font-medium`}>
+						Olá, {nome} 💖
+					</Text>
 					<TouchableOpacity
-						onPress={() => setDate(new Date())}
-						style={tw`bg-red-50 px-3 py-2 rounded-xl`}>
-						<Text style={tw`text-red-800 text-xs font-bold`}>Hoje</Text>
+						onPress={() => setShowPicker(true)}
+						style={tw`flex-row items-center mt-1`}>
+						<Text style={tw`text-3xl font-black text-[#5D4037]`}>
+							{monthNames[date.getMonth()]}
+						</Text>
+						<ChevronDown size={24} color="#5D4037" style={tw`ml-1`} />
 					</TouchableOpacity>
 				</View>
 
@@ -155,31 +174,42 @@ export default function Home() {
 					/>
 				)}
 
-				{/* Card Principal: Saldo e Gráfico */}
-				<View style={tw`bg-white p-6 rounded-3xl shadow-sm mb-6`}>
-					<View style={tw`flex-row justify-between mb-6`}>
-						<Text style={tw`font-bold text-gray-800 text-lg`}>
-							Resumo Mensal
-						</Text>
-						<Text
-							style={tw`font-bold ${stats.entradas - stats.gastos >= 0 ? "text-green-600" : "text-red-600"}`}>
-							Saldo: R$ {(stats.entradas - stats.gastos).toFixed(2)}
-						</Text>
+				{/* 2. SALDO POSITIVO/NEGATIVO DO MÊS ATUAL (CARD DE RESUMO) */}
+				<View
+					style={tw`bg-white p-6 rounded-[40px] shadow-sm mb-6 border border-gray-100`}>
+					<View style={tw`flex-row justify-between items-center mb-4`}>
+						<View>
+							<Text style={tw`font-black text-[#5D4037] text-lg`}>
+								Resumo Mensal
+							</Text>
+							<Text
+								style={tw`text-sm font-bold ${saldoMensal >= 0 ? "text-[#4CAF50]" : "text-[#FF80AB]"}`}>
+								{saldoMensal >= 0 ? "Saldo Positivo" : "Saldo Negativo"}: R${" "}
+								{saldoMensal.toFixed(2)}
+							</Text>
+						</View>
+						<View
+							style={tw`${saldoMensal >= 0 ? "bg-green-50" : "bg-pink-50"} px-4 py-1.5 rounded-full`}>
+							<Text
+								style={tw`text-[10px] font-black ${saldoMensal >= 0 ? "text-[#4CAF50]" : "text-[#FF80AB]"}`}>
+								{saldoMensal >= 0 ? "NO AZUL" : "NO VERMELHO"}
+							</Text>
+						</View>
 					</View>
 
 					{loading ? (
 						<ActivityIndicator
 							size="small"
-							color="#991b1b"
-							style={tw`h-[180px]`}
+							color="#5D4037"
+							style={tw`h-[150px]`}
 						/>
-					) : hasData ? (
+					) : stats.entradas > 0 || stats.gastos > 0 ? (
 						<PieChart
 							data={chartData}
 							width={screenWidth - 80}
-							height={180}
+							height={150}
 							chartConfig={{
-								color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+								color: (opacity = 1) => `rgba(93, 64, 55, ${opacity})`,
 							}}
 							accessor={"population"}
 							backgroundColor={"transparent"}
@@ -188,69 +218,112 @@ export default function Home() {
 						/>
 					) : (
 						<View
-							style={tw`h-[180px] justify-center items-center bg-gray-50 rounded-2xl`}>
+							style={tw`h-[150px] justify-center items-center bg-[#FCF8F8] rounded-3xl`}>
 							<Text style={tw`text-gray-400 italic`}>
-								Nenhum registro em {monthNames[date.getMonth()]}
+								Nenhuma transação este mês
 							</Text>
 						</View>
 					)}
 				</View>
 
-				{/* Cards de Médias */}
-				<View style={tw`flex-row justify-between mb-8`}>
-					<View
-						style={tw`bg-white p-4 rounded-2xl w-[48%] shadow-sm border-l-4 border-green-600`}>
-						<Text style={tw`text-gray-400 text-xs uppercase font-bold`}>
-							Média Recebida
-						</Text>
-						<Text style={tw`text-lg font-bold text-gray-800`}>
-							R$ {averages.entradas.toFixed(2)}
+				{/* 3. VISUALIZAÇÃO DO ANO */}
+				<View style={tw`bg-[#5D4037] p-6 rounded-[40px] shadow-lg mb-8`}>
+					<View style={tw`flex-row items-center mb-4`}>
+						<Calendar
+							size={16}
+							color="rgba(255,255,255,0.7)"
+							style={tw`mr-2`}
+						/>
+						<Text
+							style={tw`text-white/70 font-bold uppercase text-[10px] tracking-widest`}>
+							Balanço de {date.getFullYear()}
 						</Text>
 					</View>
-
-					<View
-						style={tw`bg-white p-4 rounded-2xl w-[48%] shadow-sm border-l-4 border-red-600`}>
-						<Text style={tw`text-gray-400 text-xs uppercase font-bold`}>
-							Média Gasta
-						</Text>
-						<Text style={tw`text-lg font-bold text-gray-800`}>
-							R$ {averages.gastos.toFixed(2)}
-						</Text>
+					<View style={tw`flex-row justify-between`}>
+						<View>
+							<Text style={tw`text-white/50 text-[10px] mb-1`}>ENTRADAS</Text>
+							<Text style={tw`text-[#4CAF50] text-xl font-black`}>
+								R$ {yearStats.entradas.toFixed(2)}
+							</Text>
+						</View>
+						<View style={tw`items-end`}>
+							<Text style={tw`text-white/50 text-[10px] mb-1`}>GASTOS</Text>
+							<Text style={tw`text-[#FF80AB] text-xl font-black`}>
+								R$ {yearStats.gastos.toFixed(2)}
+							</Text>
+						</View>
 					</View>
 				</View>
 
-				{/* Ações Rápidas */}
-				<View style={tw`flex-row justify-between`}>
+				{/* 4. BOTÕES DE ENTRADA E SAÍDA */}
+				<View style={tw`flex-row justify-between mb-8`}>
 					<MenuButton
 						title="Entradas"
-						icon="💰"
-						color="bg-green-100"
-						textColor="text-green-800"
+						icon={<ArrowUpCircle color="#4CAF50" size={30} />}
+						color="bg-white"
+						textColor="text-[#4CAF50]"
 						onPress={() => router.push("/finance/entradas")}
 					/>
 					<MenuButton
 						title="Gastos"
-						icon="📉"
-						color="bg-red-100"
-						textColor="text-red-800"
+						icon={<ArrowDownCircle color="#FF80AB" size={30} />}
+						color="bg-white"
+						textColor="text-[#FF80AB]"
 						onPress={() => router.push("/finance/gastos")}
 					/>
 				</View>
 
-				{/* <TouchableOpacity
-					onPress={() => router.push("/finance/metas")}
-					style={tw`bg-blue-100 p-5 rounded-3xl mt-2 flex-row justify-center items-center shadow-sm`}>
-					<Text style={tw`text-2xl mr-3`}>🎯</Text>
-					<Text style={tw`text-blue-800 font-bold text-lg`}>Minhas Metas</Text>
-				</TouchableOpacity> */}
+				{/* 5. ÚLTIMOS 5 LANÇAMENTOS */}
+				<View
+					style={tw`bg-white p-6 rounded-[40px] shadow-sm mb-10 border border-gray-100`}>
+					<View style={tw`flex-row items-center mb-5`}>
+						<History size={20} color="#5D4037" style={tw`mr-2`} />
+						<Text style={tw`font-black text-[#5D4037] text-lg`}>
+							Atividade Recente
+						</Text>
+					</View>
 
+					{recentTransactions.map((item, index) => (
+						<View
+							key={index}
+							style={tw`flex-row justify-between items-center py-4 ${index !== recentTransactions.length - 1 ? "border-b border-gray-50" : ""}`}>
+							<View style={tw`flex-1`}>
+								<Text
+									style={tw`text-[#5D4037] font-bold text-sm`}
+									numberOfLines={1}>
+									{item.descricao}
+								</Text>
+								<Text style={tw`text-gray-400 text-[10px]`}>
+									{new Date(item.data).toLocaleDateString("pt-BR")}
+								</Text>
+							</View>
+							<Text
+								style={tw`font-black text-sm ${item.tipo === "entrada" ? "text-[#4CAF50]" : "text-[#FF80AB]"}`}>
+								{item.tipo === "entrada" ? "+" : "-"} R$ {item.valor.toFixed(2)}
+							</Text>
+						</View>
+					))}
+					{recentTransactions.length === 0 && (
+						<View style={tw`py-6 items-center`}>
+							<Text style={tw`text-gray-300 italic text-sm`}>
+								Nada por aqui ainda...
+							</Text>
+						</View>
+					)}
+				</View>
+
+				{/* 6. SAIR */}
 				<TouchableOpacity
 					onPress={async () => {
 						await authService.logout();
 						router.replace("/user/login");
 					}}
-					style={tw`mt-12 mb-10 items-center`}>
-					<Text style={tw`text-gray-300 font-bold`}>Sair da conta</Text>
+					style={tw`flex-row justify-center items-center mb-10 opacity-30`}>
+					<LogOut size={16} color="#5D4037" style={tw`mr-2`} />
+					<Text
+						style={tw`text-[#5D4037] font-bold uppercase tracking-widest text-[10px]`}>
+						Encerrar Sessão
+					</Text>
 				</TouchableOpacity>
 			</ScrollView>
 		</SafeAreaView>
@@ -261,9 +334,12 @@ function MenuButton({ title, icon, color, textColor, onPress }: any) {
 	return (
 		<TouchableOpacity
 			onPress={onPress}
-			style={tw`${color} w-[48%] p-8 rounded-3xl items-center shadow-sm`}>
-			<Text style={tw`text-4xl mb-2`}>{icon}</Text>
-			<Text style={tw`${textColor} font-bold text-lg`}>{title}</Text>
+			style={tw`${color} w-[48%] p-6 rounded-[35px] items-center shadow-sm border border-gray-50`}>
+			<View style={tw`mb-2`}>{icon}</View>
+			<Text
+				style={tw`${textColor} font-black text-xs uppercase tracking-tighter`}>
+				{title}
+			</Text>
 		</TouchableOpacity>
 	);
 }

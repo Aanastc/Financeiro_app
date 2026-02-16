@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { authService } from "../../../packages/services/auth.service";
+import { authService } from "../../../../packages/services/auth.service";
 import { useNavigate, useLocation } from "react-router-dom";
 
 export default function VerifyWeb() {
