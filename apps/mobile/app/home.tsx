@@ -256,7 +256,7 @@ export default function Home() {
 				</View>
 
 				{/* 4. BOTÕES DE ENTRADA E SAÍDA */}
-				<View style={tw`flex-row justify-between mb-8`}>
+				{/* <View style={tw`flex-row justify-between mb-8`}>
 					<MenuButton
 						title="Entradas"
 						icon={<ArrowUpCircle color="#4CAF50" size={30} />}
@@ -271,7 +271,7 @@ export default function Home() {
 						textColor="text-[#FF80AB]"
 						onPress={() => router.push("/finance/gastos")}
 					/>
-				</View>
+				</View> */}
 
 				{/* 5. ÚLTIMOS 5 LANÇAMENTOS */}
 				<View
