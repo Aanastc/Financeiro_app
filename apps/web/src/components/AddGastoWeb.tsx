@@ -1,14 +1,34 @@
 import React, { useState } from "react";
-import { X, Save, ShoppingCart } from "lucide-react";
+import { X, ShoppingBag, ChevronDown } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
 
-export function AddGastoWeb({ isOpen, onClose, onSuccess, categorias }: any) {
+const CATEGORIAS_PADRAO = [
+	"Moradia",
+	"Alimentação",
+	"Transporte",
+	"Saúde",
+	"Lazer",
+	"Educação",
+	"Assinaturas",
+	"Outros",
+];
+const TIPOS_PADRAO = ["Essencial", "Lazer", "Reserva"];
+
+export function AddGastoWeb({
+	isOpen,
+	onClose,
+	onSuccess,
+	sugestoes = [],
+}: any) {
 	const [form, setForm] = useState({
 		descricao: "",
-		nova: "",
 		valor: "",
 		data: new Date().toISOString().split("T")[0],
+		categoria: "Outros",
+		classificacao: "Variável",
+		tipo: "Essencial",
 	});
+	const [showSugestoes, setShowSugestoes] = useState(false);
 
 	if (!isOpen) return null;
 
@@ -16,88 +36,141 @@ export function AddGastoWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 		const {
 			data: { user },
 		} = await supabase.auth.getUser();
-		const descFinal = form.nova || form.descricao;
-		if (!user || !descFinal || !form.valor) return;
+		if (!user || !form.descricao || !form.valor)
+			return alert("Preencha descrição e valor!");
 
-		await supabase.from("gastos").insert([
-			{
-				usuario_id: user.id,
-				descricao: descFinal,
-				valor: parseFloat(form.valor),
-				data: form.data,
-				classificacao: "Geral", // Padrão conforme sua tabela
-			},
-		]);
-
-		setForm({
-			descricao: "",
-			nova: "",
-			valor: "",
-			data: new Date().toISOString().split("T")[0],
-		});
-		onSuccess();
-		onClose();
+		try {
+			const { error } = await supabase.from("gastos").insert([
+				{
+					usuario_id: user.id,
+					descricao: form.descricao,
+					valor: parseFloat(form.valor.replace(",", ".")),
+					data: form.data,
+					categoria: form.categoria,
+					classificacao: form.classificacao,
+					tipo: form.tipo,
+				},
+			]);
+			if (error) throw error;
+			setForm({ ...form, descricao: "", valor: "" });
+			onSuccess();
+			onClose();
+		} catch (e: any) {
+			alert(e.message);
+		}
 	};
 
 	return (
-		<div className="fixed inset-0 bg-[#5D4037]/40 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-			<div className="bg-white w-full max-w-md rounded-[50px] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
-				<div className="p-10 bg-pink-400 text-white relative">
-					<div className="flex items-center gap-3 mb-2">
-						<ShoppingCart size={24} />
-						<h3 className="text-3xl font-black">Novo Gasto</h3>
-					</div>
+		<div className="fixed inset-0 bg-[#5D4037]/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+			<div className="bg-white w-full max-w-xl rounded-[40px] shadow-2xl overflow-hidden">
+				<div className="p-8 bg-pink-400 text-white flex justify-between items-center">
+					<h3 className="text-2xl font-black flex items-center gap-2">
+						<ShoppingBag /> Novo Gasto
+					</h3>
 					<button
 						onClick={onClose}
-						className="absolute top-8 right-8 bg-white/20 p-2 rounded-full hover:bg-white/40">
-						<X size={20} />
+						className="hover:rotate-90 transition-transform">
+						<X />
 					</button>
 				</div>
 
-				<div className="p-10 space-y-6">
-					<div className="space-y-2">
-						<label className="text-[10px] font-black uppercase text-gray-400 ml-2">
-							Categoria de Gasto
+				<div className="p-8 space-y-5">
+					{/* CAMPO DE DESCRIÇÃO COM LISTA REAL */}
+					<div className="relative space-y-1">
+						<label className="text-[10px] font-black text-gray-400 uppercase ml-2">
+							Descrição
 						</label>
-						<select
-							className="w-full p-5 bg-[#FCF8F8] rounded-3xl outline-none font-bold text-[#5D4037] appearance-none"
-							value={form.descricao}
-							onChange={(e) => setForm({ ...form, descricao: e.target.value })}>
-							<option value="">Selecione existente...</option>
-							{categorias.map((c: string) => (
-								<option key={c} value={c}>
-									{c}
-								</option>
-							))}
-						</select>
-						<input
-							placeholder="Ou descreva o gasto..."
-							className="w-full p-5 bg-[#FCF8F8] rounded-3xl border-dashed border-2 border-gray-200 outline-none focus:border-pink-400"
-							value={form.nova}
-							onChange={(e) => setForm({ ...form, nova: e.target.value })}
-						/>
+						<div className="relative">
+							<input
+								placeholder="Digite ou escolha uma existente..."
+								className="w-full p-4 bg-[#FCF8F8] rounded-2xl border-2 border-transparent focus:border-pink-200 outline-none font-bold text-[#5D4037]"
+								value={form.descricao}
+								onFocus={() => setShowSugestoes(true)}
+								onBlur={() => setTimeout(() => setShowSugestoes(false), 200)}
+								onChange={(e) =>
+									setForm({ ...form, descricao: e.target.value })
+								}
+							/>
+							<ChevronDown
+								size={20}
+								className="absolute right-4 top-4 text-gray-400"
+							/>
+						</div>
+
+						{/* LISTA SUSPENSA DE DESCRIÇÕES DO USUÁRIO */}
+						{showSugestoes && sugestoes && sugestoes.length > 0 && (
+							<div className="absolute z-[110] w-full bg-white border-2 border-pink-100 rounded-2xl shadow-xl max-h-48 overflow-y-auto mt-1">
+								{sugestoes.map((item: string, index: number) => (
+									<div
+										key={index}
+										className="w-full text-left p-4 hover:bg-pink-50 cursor-pointer font-bold text-[#5D4037] border-b border-gray-50 last:border-0"
+										onMouseDown={() => {
+											setForm({ ...form, descricao: item });
+											setShowSugestoes(false);
+										}}>
+										{item}
+									</div>
+								))}
+							</div>
+						)}
 					</div>
 
 					<div className="grid grid-cols-2 gap-4">
 						<input
 							type="number"
 							placeholder="Valor"
-							className="w-full p-5 bg-[#FCF8F8] rounded-3xl font-black text-pink-400 text-2xl outline-none"
+							className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-black text-pink-500 text-xl outline-none"
 							value={form.valor}
 							onChange={(e) => setForm({ ...form, valor: e.target.value })}
 						/>
 						<input
 							type="date"
-							className="w-full p-5 bg-[#FCF8F8] rounded-3xl font-bold text-gray-500 outline-none"
+							className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-bold text-[#5D4037] outline-none"
 							value={form.data}
 							onChange={(e) => setForm({ ...form, data: e.target.value })}
 						/>
 					</div>
 
+					{/* Classificação / Categoria / Tipo - Mesma lógica anterior */}
+					<div className="flex gap-2">
+						{["Fixo", "Variável"].map((opt) => (
+							<button
+								key={opt}
+								type="button"
+								onClick={() => setForm({ ...form, classificacao: opt })}
+								className={`flex-1 p-3 rounded-xl font-bold ${form.classificacao === opt ? "bg-[#5D4037] text-white" : "bg-gray-100 text-gray-400"}`}>
+								{opt}
+							</button>
+						))}
+					</div>
+
+					<div className="grid grid-cols-2 gap-4">
+						<select
+							className="p-4 bg-[#FCF8F8] rounded-2xl font-bold text-[#5D4037]"
+							value={form.categoria}
+							onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
+							{CATEGORIAS_PADRAO.map((c) => (
+								<option key={c} value={c}>
+									{c}
+								</option>
+							))}
+						</select>
+						<select
+							className="p-4 bg-[#FCF8F8] rounded-2xl font-bold text-[#5D4037]"
+							value={form.tipo}
+							onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
+							{TIPOS_PADRAO.map((t) => (
+								<option key={t} value={t}>
+									{t}
+								</option>
+							))}
+						</select>
+					</div>
+
 					<button
 						onClick={handleSave}
-						className="w-full bg-[#5D4037] text-white p-6 rounded-[30px] font-black text-xl hover:bg-[#4a332c] transition-all flex items-center justify-center gap-3">
-						<Save size={24} /> REGISTRAR GASTO
+						className="w-full bg-[#5D4037] text-white p-5 rounded-2xl font-black text-lg shadow-xl hover:bg-black transition-all">
+						SALVAR REGISTRO
 					</button>
 				</div>
 			</div>

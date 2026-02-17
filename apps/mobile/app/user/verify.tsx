@@ -31,7 +31,7 @@ export default function VerifyToken() {
 		try {
 			await authService.verifyOtp(email as string, token);
 			Alert.alert("Sucesso! 🎉", "E-mail confirmado. Bem-vindo!", [
-				{ text: "Ir para Home", onPress: () => router.replace("/(tabs)/home") },
+				{ text: "Ir para Home", onPress: () => router.replace("/home") },
 			]);
 		} catch (error: any) {
 			Alert.alert("Erro", "Código inválido ou expirado.");

@@ -2,8 +2,31 @@ import { supabase } from "./supabase";
 
 export const financeService = {
   /**
+   * REALTIME - ASSINAR MUDANÇAS
+   * Ouve qualquer inserção, atualização ou deleção em tempo real.
+   */
+  subscribeToChanges: (table: string, userId: string, callback: () => void) => {
+    const channel = supabase
+      .channel(`db-changes-${table}-${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: table,
+          filter: `usuario_id=eq.${userId}`,
+        },
+        () => {
+          callback(); // Executa a função de recarregar dados na interface
+        }
+      )
+      .subscribe();
+
+    return channel;
+  },
+
+  /**
    * BUSCA ESTATÍSTICAS FINANCEIRAS (Entradas e Gastos)
-   * Útil para o resumo mensal e anual.
    */
   async getMonthlyStats(usuario_id: string, startDate: string, endDate: string) {
     try {
@@ -25,7 +48,6 @@ export const financeService = {
       const totalEntradas = entradas.data?.reduce((sum, item) => sum + Number(item.valor), 0) || 0;
       const totalGastos = gastos.data?.reduce((sum, item) => sum + Number(item.valor), 0) || 0;
 
-      // Médias simples (Baseadas na quantidade de registros no período)
       const mediaEntradas = entradas.data?.length ? totalEntradas / entradas.data.length : 0;
       const mediaGastos = gastos.data?.length ? totalGastos / gastos.data.length : 0;
 
@@ -44,11 +66,9 @@ export const financeService = {
 
   /**
    * BUSCA OS LANÇAMENTOS MAIS RECENTES (Unificado)
-   * Mescla entradas e gastos para mostrar na Home.
    */
   async getRecentTransactions(usuario_id: string, limit: number) {
     try {
-      // Busca os últimos registros de cada tabela
       const [entradas, gastos] = await Promise.all([
         supabase
           .from("entradas")
@@ -64,13 +84,11 @@ export const financeService = {
           .limit(limit),
       ]);
 
-      // Adiciona a marcação de tipo e unifica
       const merged = [
         ...(entradas.data?.map((i) => ({ ...i, tipo: "entrada" })) || []),
         ...(gastos.data?.map((i) => ({ ...i, tipo: "gasto" })) || []),
       ];
 
-      // Ordena por data (mais recente primeiro) e limita ao número solicitado
       return merged
         .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
         .slice(0, limit);
@@ -96,7 +114,7 @@ export const financeService = {
   /**
    * ADICIONAR GASTO
    */
-  async addGasto(usuario_id: string, dados: { descricao: string; valor: number; data: string; classificacao: string }) {
+  async addGasto(usuario_id: string, dados: { descricao: string; valor: number; data: string; classificacao: string; categoria?: string; tipo?: string }) {
     const { data, error } = await supabase
       .from("gastos")
       .insert([{ ...dados, usuario_id }])
@@ -104,6 +122,14 @@ export const financeService = {
 
     if (error) throw error;
     return data;
+  },
+
+  /**
+   * DELETAR REGISTRO (Unificado)
+   */
+  async deleteRecord(table: 'gastos' | 'entradas', id: string) {
+    const { error } = await supabase.from(table).delete().eq("id", id);
+    if (error) throw error;
   },
 
   /**

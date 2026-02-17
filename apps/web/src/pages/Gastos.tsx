@@ -68,10 +68,13 @@ export default function GastosWeb() {
 		loadData();
 	}, [loadData]);
 
-	const categoriasExistentes = useMemo(
-		() => Array.from(new Set(data.map((i) => i.descricao))).sort(),
-		[data],
-	);
+	// AQUI: Extraindo as descrições únicas que já existem no banco
+	const descricoesExistentes = useMemo(() => {
+		const descricoes = data.map((item) => item.descricao);
+		return Array.from(new Set(descricoes))
+			.filter((d) => d && d.trim() !== "")
+			.sort();
+	}, [data]);
 
 	const matrixData = useMemo(() => {
 		const matrix: any = {};
@@ -100,7 +103,7 @@ export default function GastosWeb() {
 
 	return (
 		<div className="p-8 space-y-6 bg-[#FCF8F8] min-h-screen animate-in fade-in duration-700">
-			{/* HEADER - BOTÕES LADO A LADO COMO NA ENTRADA */}
+			{/* HEADER */}
 			<div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
 				<div>
 					<h1 className="text-4xl font-black text-[#5D4037] flex items-center gap-3">
@@ -163,7 +166,7 @@ export default function GastosWeb() {
 						<TrendingDown size={18} className="text-pink-400" /> Sazonalidade de
 						Gastos
 					</h3>
-					<ResponsiveContainer width="100%" height="100%">
+					<ResponsiveContainer width="100%" height="100%" minHeight={0}>
 						<BarChart data={chartData}>
 							<CartesianGrid
 								strokeDasharray="3 3"
@@ -240,7 +243,7 @@ export default function GastosWeb() {
 				</div>
 			</div>
 
-			{/* MATRIZ PLANILHA */}
+			{/* TABELA MATRIZ */}
 			<div className="bg-white rounded-[40px] shadow-sm border border-gray-100 overflow-hidden">
 				<div className="overflow-x-auto">
 					<table className="w-full text-left border-collapse">
@@ -296,18 +299,20 @@ export default function GastosWeb() {
 				</div>
 			</div>
 
+			{/* MODAIS COM A PROP DE SUGESTÕES CORRIGIDA */}
 			<AddGastoWeb
 				isOpen={isAddOpen}
 				onClose={() => setIsAddOpen(false)}
 				onSuccess={loadData}
-				categorias={categoriasExistentes}
+				sugestoes={descricoesExistentes}
 			/>
+
 			<EditGastoWeb
 				isOpen={isEditOpen}
 				onClose={() => setIsEditOpen(false)}
 				onSuccess={loadData}
 				dataSnapshot={data}
-				categorias={categoriasExistentes}
+				sugestoes={descricoesExistentes}
 			/>
 		</div>
 	);

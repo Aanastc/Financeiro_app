@@ -1,14 +1,15 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
 	View,
 	Text,
-	SafeAreaView,
 	ScrollView,
 	TouchableOpacity,
 	ActivityIndicator,
 	Alert,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../../../packages/services/supabase";
+import { financeService } from "../../../../packages/services/finance.service"; // IMPORTANTE: Importar o serviço
 import tw from "twrnc";
 import { NavBar } from "@/components/app_components/NavBar";
 import { FinanceModal } from "@/components/app_components/FinanceModal";
@@ -40,20 +41,22 @@ const MESES_ABREV = [
 export default function Gastos() {
 	const [loading, setLoading] = useState(true);
 	const [year, setYear] = useState(new Date().getFullYear());
-
 	const [gastos, setGastos] = useState<any[]>([]);
 	const [dataMatrix, setDataMatrix] = useState<any[]>([]);
 	const [monthTotal, setMonthTotal] = useState(0);
-	const [descricoesUnicas, setDescricoesUnicas] = useState<string[]>([]);
 
 	const [addModalVisible, setAddModalVisible] = useState(false);
 	const [editModalVisible, setEditModalVisible] = useState(false);
 
-	const [descricao, setDescricao] = useState("");
-	const [valor, setValor] = useState("");
+	const descricoesUnicas = useMemo(() => {
+		const nomes = gastos.map((g) => g.descricao);
+		return Array.from(new Set(nomes))
+			.filter((n) => n)
+			.sort();
+	}, [gastos]);
 
+	// Função de carregar dados
 	const loadData = useCallback(async () => {
-		setLoading(true);
 		try {
 			const {
 				data: { user },
@@ -69,12 +72,10 @@ export default function Gastos() {
 				.order("data", { ascending: false });
 
 			if (error) throw error;
-
 			const rows = data || [];
 			setGastos(rows);
-			setDescricoesUnicas(Array.from(new Set(rows.map((r) => r.descricao))));
 
-			// 1. Lógica da Tabela Matriz
+			// Lógica da Matriz
 			const matrix: any = {};
 			rows.forEach((item) => {
 				const mesIdx = new Date(item.data + "T12:00:00").getUTCMonth();
@@ -90,7 +91,7 @@ export default function Gastos() {
 				})),
 			);
 
-			// 2. Total Mês Atual (Regra 50/30/20)
+			// Total do mês atual
 			const currentMonth = new Date().getMonth();
 			const totalMes = rows
 				.filter(
@@ -100,45 +101,72 @@ export default function Gastos() {
 				.reduce((acc, curr) => acc + Number(curr.valor), 0);
 			setMonthTotal(totalMes);
 		} catch (e: any) {
-			Alert.alert("Erro", e.message);
+			console.error(e.message);
 		} finally {
 			setLoading(false);
 		}
 	}, [year]);
 
+	// ==========================================
+	// BLOCO DE REALTIME (Sincronização)
+	// ==========================================
 	useEffect(() => {
-		loadData();
-	}, [loadData]);
+		loadData(); // Carga inicial
 
-	const handleSaveNew = async () => {
-		if (!descricao || !valor) return Alert.alert("Erro", "Preencha tudo!");
+		let channel: any;
+
+		const setupRealtime = async () => {
+			const {
+				data: { user },
+			} = await supabase.auth.getUser();
+			if (user) {
+				// Chamando a função geral que criamos no packages/services
+				channel = financeService.subscribeToChanges("gastos", user.id, () => {
+					// Quando houver QUALQUER mudança no banco (Web ou App), recarrega
+					loadData();
+				});
+			}
+		};
+
+		setupRealtime();
+
+		// Cleanup: Fecha a conexão ao sair da tela para não gastar dados/bateria
+		return () => {
+			if (channel) supabase.removeChannel(channel);
+		};
+	}, [loadData]);
+	// ==========================================
+
+	const handleSaveNew = async (form: any) => {
 		try {
 			const {
 				data: { user },
 			} = await supabase.auth.getUser();
-			await supabase.from("gastos").insert([
+			const { error } = await supabase.from("gastos").insert([
 				{
 					usuario_id: user?.id,
-					descricao,
-					valor: Number(valor.replace(",", ".")),
-					data: new Date().toISOString().split("T")[0],
-					classificacao: "Geral",
+					descricao: form.descricao,
+					valor: Number(form.valor.toString().replace(",", ".")),
+					data: form.data,
+					categoria: form.categoria,
+					classificacao: form.classificacao,
+					tipo: form.tipo,
 				},
 			]);
+			if (error) throw error;
 			setAddModalVisible(false);
-			setDescricao("");
-			setValor("");
-			loadData();
+			// loadData(); // Opcional, o Realtime já vai detectar a inserção
 		} catch (e: any) {
 			Alert.alert("Erro", e.message);
 		}
 	};
 
 	return (
-		<SafeAreaView style={tw`flex-1 bg-[#FCF8F8]`}>
+		<SafeAreaView
+			style={tw`flex-1 bg-[#FCF8F8]`}
+			edges={["top", "left", "right"]}>
 			<NavBar />
 			<ScrollView contentContainerStyle={tw`pb-24`}>
-				{/* HEADER IDENTICO AO ENTRADA (MUDANDO COR) */}
 				<View style={tw`p-6 flex-row justify-between items-center`}>
 					<View>
 						<Text style={tw`text-[#5D4037] text-2xl font-black`}>Gastos</Text>
@@ -152,7 +180,6 @@ export default function Gastos() {
 							</TouchableOpacity>
 						</View>
 					</View>
-
 					<View style={tw`flex-row gap-x-2`}>
 						<TouchableOpacity
 							onPress={() => setEditModalVisible(true)}
@@ -167,7 +194,7 @@ export default function Gastos() {
 					</View>
 				</View>
 
-				{/* 1. MATRIZ DE GASTOS */}
+				{/* Matriz de Lançamentos */}
 				<View style={tw`mb-8`}>
 					<Text
 						style={tw`px-6 mb-3 text-[#5D4037] font-black text-xs uppercase tracking-widest`}>
@@ -195,7 +222,6 @@ export default function Gastos() {
 									MÉDIA
 								</Text>
 							</View>
-
 							{loading ? (
 								<ActivityIndicator style={tw`m-10`} color="#5D4037" />
 							) : (
@@ -226,33 +252,34 @@ export default function Gastos() {
 					</ScrollView>
 				</View>
 
-				{/* 2. REGRA 50/30/20 */}
+				{/* Barra de Progresso e Últimas Despesas seguem o mesmo padrão... */}
 				<View style={tw`px-6 mb-8`}>
 					<View style={tw`bg-[#5D4037] p-6 rounded-[40px] shadow-lg`}>
 						<View style={tw`flex-row items-center mb-4`}>
 							<PieIcon size={18} color="#FF80AB" style={tw`mr-2`} />
 							<Text
-								style={tw`text-white/70 font-bold uppercase text-[10px] tracking-widest`}>
+								style={[
+									tw`text-white/70 font-bold uppercase text-[10px]`,
+									{ letterSpacing: 2 },
+								]}>
 								Limites do Mês Atual
 							</Text>
 						</View>
-						<View style={tw`gap-y-4`}>
-							<ProgressBar
-								label="Essencial (50%)"
-								value={monthTotal * 0.5}
-								color="#FF80AB"
-							/>
-							<ProgressBar
-								label="Lazer (30%)"
-								value={monthTotal * 0.3}
-								color="#FFFFFF"
-								opacity={0.4}
-							/>
-						</View>
+						<ProgressBar
+							label="Essencial (50%)"
+							value={monthTotal * 0.5}
+							color="#FF80AB"
+						/>
+						<View style={tw`mt-4`} />
+						<ProgressBar
+							label="Lazer (30%)"
+							value={monthTotal * 0.3}
+							color="#FFFFFF"
+							opacity={0.4}
+						/>
 					</View>
 				</View>
 
-				{/* 3. HISTÓRICO */}
 				<View style={tw`px-6`}>
 					<View
 						style={tw`bg-white rounded-[40px] p-6 shadow-sm border border-gray-100`}>
@@ -285,12 +312,6 @@ export default function Gastos() {
 
 			<FinanceModal
 				visible={addModalVisible}
-				title="Novo Gasto"
-				type="gasto"
-				descricao={descricao}
-				setDescricao={setDescricao}
-				valor={valor}
-				setValor={setValor}
 				sugestoes={descricoesUnicas}
 				onClose={() => setAddModalVisible(false)}
 				onSave={handleSaveNew}
@@ -307,18 +328,19 @@ export default function Gastos() {
 						.update({ valor: Number(novoValor) })
 						.eq("id", id);
 					setEditModalVisible(false);
-					loadData();
+					// loadData(); // Realtime cuida disso
 				}}
 				onDelete={async (id) => {
 					await supabase.from("gastos").delete().eq("id", id);
 					setEditModalVisible(false);
-					loadData();
+					// loadData(); // Realtime cuida disso
 				}}
 			/>
 		</SafeAreaView>
 	);
 }
 
+// Componente Interno ProgressBar
 function ProgressBar({ label, value, color, opacity = 1 }: any) {
 	return (
 		<View>

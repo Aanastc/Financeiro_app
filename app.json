@@ -1,3 +1,12 @@
 {
-  "expo": {}
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "c263163b-3b9d-455a-8c37-88b3e4b05d43"
+      }
+    },
+    "android": {
+      "package": "com.analeticia_ac.financeapp"
+    }
+  }
 }
