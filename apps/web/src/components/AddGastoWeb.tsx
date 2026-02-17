@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { X, ShoppingBag, ChevronDown } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
 

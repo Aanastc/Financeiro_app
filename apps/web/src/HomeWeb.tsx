@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { financeService } from "../../../packages/services/finance.service";
 import { supabase } from "../../../packages/services/supabase";
 import {
