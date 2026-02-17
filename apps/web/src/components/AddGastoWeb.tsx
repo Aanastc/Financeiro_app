@@ -10,6 +10,9 @@ const CATEGORIAS_PADRAO = [
 	"Lazer",
 	"Educação",
 	"Assinaturas",
+	"Presente",
+	"Estetica e Comercio",
+	"Emprestimo",
 	"Outros",
 ];
 const TIPOS_PADRAO = ["Essencial", "Lazer", "Reserva"];
@@ -32,19 +35,38 @@ export function AddGastoWeb({
 
 	if (!isOpen) return null;
 
+	const formatCurrency = (value: string) => {
+		const onlyNumbers = value.replace(/\D/g, "");
+		const options = { minimumFractionDigits: 2 };
+		const result = new Intl.NumberFormat("pt-BR", options).format(
+			parseFloat(onlyNumbers) / 100,
+		);
+		return result === "NaN" ? "" : result;
+	};
+
 	const handleSave = async () => {
 		const {
 			data: { user },
 		} = await supabase.auth.getUser();
-		if (!user || !form.descricao || !form.valor)
-			return alert("Preencha descrição e valor!");
+
+		const valorLimpo = form.valor.replace(/\./g, "").replace(",", ".");
+		const valorNumerico = parseFloat(valorLimpo);
+
+		if (
+			!user ||
+			!form.descricao ||
+			isNaN(valorNumerico) ||
+			valorNumerico <= 0
+		) {
+			return alert("Preencha descrição e um valor válido!");
+		}
 
 		try {
 			const { error } = await supabase.from("gastos").insert([
 				{
 					usuario_id: user.id,
 					descricao: form.descricao,
-					valor: parseFloat(form.valor.replace(",", ".")),
+					valor: valorNumerico,
 					data: form.data,
 					categoria: form.categoria,
 					classificacao: form.classificacao,
@@ -96,7 +118,6 @@ export function AddGastoWeb({
 							/>
 						</div>
 
-						{/* LISTA FILTRADA PARA REMOVER O AVISO DO SUPABASE */}
 						{showSugestoes && sugestoes && sugestoes.length > 0 && (
 							<div className="absolute z-[110] w-full bg-white border-2 border-pink-100 rounded-2xl shadow-xl max-h-48 overflow-y-auto mt-1">
 								{sugestoes
@@ -120,19 +141,32 @@ export function AddGastoWeb({
 					</div>
 
 					<div className="grid grid-cols-2 gap-4">
-						<input
-							type="number"
-							placeholder="Valor"
-							className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-black text-pink-500 text-xl outline-none"
-							value={form.valor}
-							onChange={(e) => setForm({ ...form, valor: e.target.value })}
-						/>
-						<input
-							type="date"
-							className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-bold text-[#5D4037] outline-none"
-							value={form.data}
-							onChange={(e) => setForm({ ...form, data: e.target.value })}
-						/>
+						<div className="space-y-1">
+							<label className="text-[10px] font-black text-gray-400 uppercase ml-2">
+								Valor (R$)
+							</label>
+							<input
+								type="text"
+								inputMode="numeric"
+								placeholder="0,00"
+								className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-black text-pink-500 text-xl outline-none"
+								value={form.valor}
+								onChange={(e) =>
+									setForm({ ...form, valor: formatCurrency(e.target.value) })
+								}
+							/>
+						</div>
+						<div className="space-y-1">
+							<label className="text-[10px] font-black text-gray-400 uppercase ml-2">
+								Data
+							</label>
+							<input
+								type="date"
+								className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-bold text-[#5D4037] outline-none"
+								value={form.data}
+								onChange={(e) => setForm({ ...form, data: e.target.value })}
+							/>
+						</div>
 					</div>
 
 					<div className="flex gap-2">
@@ -141,7 +175,7 @@ export function AddGastoWeb({
 								key={opt}
 								type="button"
 								onClick={() => setForm({ ...form, classificacao: opt })}
-								className={`flex-1 p-3 rounded-xl font-bold ${form.classificacao === opt ? "bg-[#5D4037] text-white" : "bg-gray-100 text-gray-400"}`}>
+								className={`flex-1 p-3 rounded-xl font-bold transition-colors ${form.classificacao === opt ? "bg-[#5D4037] text-white" : "bg-gray-100 text-gray-400"}`}>
 								{opt}
 							</button>
 						))}
@@ -149,7 +183,7 @@ export function AddGastoWeb({
 
 					<div className="grid grid-cols-2 gap-4">
 						<select
-							className="p-4 bg-[#FCF8F8] rounded-2xl font-bold text-[#5D4037]"
+							className="p-4 bg-[#FCF8F8] rounded-2xl font-bold text-[#5D4037] outline-none"
 							value={form.categoria}
 							onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
 							{CATEGORIAS_PADRAO.map((c) => (
@@ -159,7 +193,7 @@ export function AddGastoWeb({
 							))}
 						</select>
 						<select
-							className="p-4 bg-[#FCF8F8] rounded-2xl font-bold text-[#5D4037]"
+							className="p-4 bg-[#FCF8F8] rounded-2xl font-bold text-[#5D4037] outline-none"
 							value={form.tipo}
 							onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
 							{TIPOS_PADRAO.map((t) => (

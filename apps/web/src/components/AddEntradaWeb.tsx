@@ -6,24 +6,43 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 	const [form, setForm] = useState({
 		descricao: "",
 		nova: "",
-		valor: "",
+		valor: "", // Ex: "1.700,06"
 		data: new Date().toISOString().split("T")[0],
 	});
 
 	if (!isOpen) return null;
+
+	// FUNÇÃO DE MÁSCARA: Transforma números em formato R$ 1.234,56
+	const formatCurrency = (value: string) => {
+		const onlyNumbers = value.replace(/\D/g, "");
+		const options = { minimumFractionDigits: 2 };
+		const result = new Intl.NumberFormat("pt-BR", options).format(
+			parseFloat(onlyNumbers) / 100,
+		);
+		return result === "NaN" ? "" : result;
+	};
 
 	const handleSave = async () => {
 		const {
 			data: { user },
 		} = await supabase.auth.getUser();
 		const descFinal = form.nova || form.descricao;
-		if (!user || !descFinal || !form.valor) return;
+
+		// CONVERSÃO PARA O BANCO: Remove pontos e troca vírgula por ponto
+		// "1.700,06" -> "1700.06" -> 1700.06
+		const valorLimpo = form.valor.replace(/\./g, "").replace(",", ".");
+		const valorNumerico = parseFloat(valorLimpo);
+
+		if (!user || !descFinal || isNaN(valorNumerico) || valorNumerico <= 0) {
+			alert("Insira um valor válido.");
+			return;
+		}
 
 		await supabase.from("entradas").insert([
 			{
 				usuario_id: user.id,
 				descricao: descFinal,
-				valor: parseFloat(form.valor),
+				valor: valorNumerico,
 				data: form.data,
 			},
 		]);
@@ -49,7 +68,7 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 					<p className="font-bold opacity-80">Registre um novo ganho mensal</p>
 					<button
 						onClick={onClose}
-						className="absolute top-8 right-8 bg-white/20 p-2 rounded-full hover:bg-white/40 transition-all">
+						className="absolute top-8 right-8 bg-white/20 p-2 rounded-full hover:bg-white/40">
 						<X size={20} />
 					</button>
 				</div>
@@ -84,10 +103,14 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 								Valor (R$)
 							</label>
 							<input
-								type="number"
+								type="text"
+								inputMode="numeric"
+								placeholder="0,00"
 								className="w-full p-5 bg-[#FCF8F8] rounded-3xl font-black text-[#4CAF50] text-2xl outline-none"
 								value={form.valor}
-								onChange={(e) => setForm({ ...form, valor: e.target.value })}
+								onChange={(e) =>
+									setForm({ ...form, valor: formatCurrency(e.target.value) })
+								}
 							/>
 						</div>
 						<div className="space-y-2">
@@ -105,7 +128,7 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 
 					<button
 						onClick={handleSave}
-						className="w-full bg-[#5D4037] text-white p-6 rounded-[30px] font-black text-xl hover:bg-[#4a332c] transition-all shadow-xl shadow-brown-100 flex items-center justify-center gap-3">
+						className="w-full bg-[#5D4037] text-white p-6 rounded-[30px] font-black text-xl hover:bg-[#4a332c] transition-all flex items-center justify-center gap-3">
 						<Save size={24} /> SALVAR REGISTRO
 					</button>
 				</div>
