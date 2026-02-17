@@ -7,10 +7,24 @@ import {
 	Target,
 	LogOut,
 } from "lucide-react";
+// Importe o authService
+import { authService } from "../../../../packages/services/auth.service";
 
 export default function DashboardLayout() {
 	const navigate = useNavigate();
 	const location = useLocation();
+
+	// Função para deslogar
+	const handleLogout = async () => {
+		try {
+			await authService.logout();
+			// Após deslogar no Supabase, mandamos para o login
+			navigate("/login");
+		} catch (error) {
+			console.error("Erro ao sair:", error);
+			alert("Erro ao tentar sair. Tente novamente.");
+		}
+	};
 
 	const menuItems = [
 		{
@@ -49,7 +63,10 @@ export default function DashboardLayout() {
 					</div>
 				</div>
 
-				<button className="flex items-center gap-2 text-[#5D4037] font-bold text-sm hover:text-[#E91E63] transition-colors">
+				{/* Adicionado o onClick aqui */}
+				<button
+					onClick={handleLogout}
+					className="flex items-center gap-2 text-[#5D4037] font-bold text-sm hover:text-[#E91E63] transition-colors p-2 rounded-lg hover:bg-red-50">
 					<LogOut size={18} />
 					Sair
 				</button>
@@ -59,13 +76,6 @@ export default function DashboardLayout() {
 			<main className="flex-1 w-full max-w-7xl mx-auto p-6 md:p-10">
 				<Outlet />
 			</main>
-
-			{/* Footer Minimalista */}
-			<footer className="py-6 border-t border-gray-100 bg-white flex justify-center items-center">
-				<p className="text-xs font-bold text-[#5D4037]/40 uppercase tracking-widest">
-					FluxoMe 2026 • Seu controle em Rosa, Verde e Marrom
-				</p>
-			</footer>
 		</div>
 	);
 }
