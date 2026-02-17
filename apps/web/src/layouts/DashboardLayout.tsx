@@ -34,7 +34,6 @@ export default function DashboardLayout() {
 		},
 		{ label: "Entradas", icon: <ArrowUpCircle size={18} />, path: "/entradas" },
 		{ label: "Gastos", icon: <ArrowDownCircle size={18} />, path: "/gastos" },
-		{ label: "Metas", icon: <Target size={18} />, path: "/metas" },
 	];
 
 	return (

@@ -75,7 +75,6 @@ export function AddGastoWeb({
 				</div>
 
 				<div className="p-8 space-y-5">
-					{/* CAMPO DE DESCRIÇÃO COM LISTA REAL */}
 					<div className="relative space-y-1">
 						<label className="text-[10px] font-black text-gray-400 uppercase ml-2">
 							Descrição
@@ -97,20 +96,25 @@ export function AddGastoWeb({
 							/>
 						</div>
 
-						{/* LISTA SUSPENSA DE DESCRIÇÕES DO USUÁRIO */}
+						{/* LISTA FILTRADA PARA REMOVER O AVISO DO SUPABASE */}
 						{showSugestoes && sugestoes && sugestoes.length > 0 && (
 							<div className="absolute z-[110] w-full bg-white border-2 border-pink-100 rounded-2xl shadow-xl max-h-48 overflow-y-auto mt-1">
-								{sugestoes.map((item: string, index: number) => (
-									<div
-										key={index}
-										className="w-full text-left p-4 hover:bg-pink-50 cursor-pointer font-bold text-[#5D4037] border-b border-gray-50 last:border-0"
-										onMouseDown={() => {
-											setForm({ ...form, descricao: item });
-											setShowSugestoes(false);
-										}}>
-										{item}
-									</div>
-								))}
+								{sugestoes
+									.filter(
+										(item: string) =>
+											!item.toLowerCase().includes("ative o rls"),
+									)
+									.map((item: string, index: number) => (
+										<div
+											key={index}
+											className="w-full text-left p-4 hover:bg-pink-50 cursor-pointer font-bold text-[#5D4037] border-b border-gray-50 last:border-0"
+											onMouseDown={() => {
+												setForm({ ...form, descricao: item });
+												setShowSugestoes(false);
+											}}>
+											{item}
+										</div>
+									))}
 							</div>
 						)}
 					</div>
@@ -131,7 +135,6 @@ export function AddGastoWeb({
 						/>
 					</div>
 
-					{/* Classificação / Categoria / Tipo - Mesma lógica anterior */}
 					<div className="flex gap-2">
 						{["Fixo", "Variável"].map((opt) => (
 							<button
