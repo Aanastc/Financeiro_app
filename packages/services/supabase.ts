@@ -11,8 +11,6 @@ const getCustomStorage = () => {
 
   // 2. Se não for Web, tenta carregar o AsyncStorage (Mobile)
   try {
-    // Usamos o require comum, mas envelopado num try/catch. 
-    // Para a Vercel não travar, precisamos que o pacote exista no projeto.
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
     return AsyncStorage;
   } catch (e) {
