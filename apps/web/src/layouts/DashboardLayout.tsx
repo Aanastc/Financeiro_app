@@ -1,78 +1,80 @@
-import React from "react";
-import { Outlet, useNavigate, useLocation } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Outlet, useNavigate, useLocation, Link } from "react-router-dom";
 import {
 	LayoutDashboard,
 	ArrowUpCircle,
 	ArrowDownCircle,
-	Target,
+	CreditCard, // Ícone para Cartões
 	LogOut,
 } from "lucide-react";
-// Importe o authService
-import { authService } from "../../../../packages/services/auth.service";
+import { supabase } from "../../../../packages/services/supabase";
 
 export default function DashboardLayout() {
 	const navigate = useNavigate();
 	const location = useLocation();
+	const [loading, setLoading] = useState(true);
 
-	// Função para deslogar
+	useEffect(() => {
+		const checkUser = async () => {
+			const {
+				data: { session },
+			} = await supabase.auth.getSession();
+			if (!session) {
+				navigate("/login");
+			}
+			setLoading(false);
+		};
+		checkUser();
+	}, [navigate]);
+
 	const handleLogout = async () => {
-		try {
-			await authService.logout();
-			// Após deslogar no Supabase, mandamos para o login
-			navigate("/login");
-		} catch (error) {
-			console.error("Erro ao sair:", error);
-			alert("Erro ao tentar sair. Tente novamente.");
-		}
+		await supabase.auth.signOut();
+		navigate("/login");
 	};
 
+	if (loading) return null; // Ou um loading spinner bonito
+
 	const menuItems = [
-		{
-			label: "Visão Geral",
-			icon: <LayoutDashboard size={18} />,
-			path: "/home",
-		},
-		{ label: "Entradas", icon: <ArrowUpCircle size={18} />, path: "/entradas" },
-		{ label: "Gastos", icon: <ArrowDownCircle size={18} />, path: "/gastos" },
+		{ path: "/home", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
+		{ path: "/entradas", label: "Entradas", icon: <ArrowUpCircle size={20} /> },
+		{ path: "/gastos", label: "Gastos", icon: <ArrowDownCircle size={20} /> },
+		{ path: "/cartoes", label: "Cartões", icon: <CreditCard size={20} /> },
 	];
 
 	return (
-		<div className="min-h-screen w-full bg-[#FCF8F8] flex flex-col font-sans">
-			{/* Navigation Top Bar */}
-			<nav className="h-16 bg-white border-b border-gray-100 px-8 flex items-center justify-between sticky top-0 z-50 shadow-sm">
-				<div className="flex items-center gap-8">
-					<h1 className="text-2xl font-black tracking-tighter text-[#E91E63]">
-						Fluxo<span className="text-[#4CAF50]">Me</span>
-					</h1>
-
-					<div className="hidden md:flex items-center gap-1">
-						{menuItems.map((item) => (
-							<button
-								key={item.path}
-								onClick={() => navigate(item.path)}
-								className={`flex items-center px-4 py-2 rounded-full text-sm font-bold transition-all ${
-									location.pathname === item.path
-										? "bg-[#4CAF50] text-white"
-										: "text-[#5D4037] hover:bg-[#FCE4EC] hover:text-[#E91E63]"
-								}`}>
-								<span className="mr-2">{item.icon}</span>
-								{item.label}
-							</button>
-						))}
-					</div>
+		<div className="flex h-screen bg-[#FCF8F8]">
+			{/* Sidebar */}
+			<aside className="w-64 bg-white border-r border-gray-100 flex flex-col p-6">
+				<div className="mb-10 px-4">
+					<h2 className="text-2xl font-black text-pink-500 italic">FINANCE.</h2>
 				</div>
 
-				{/* Adicionado o onClick aqui */}
+				<nav className="flex-1 space-y-2">
+					{menuItems.map((item) => (
+						<Link
+							key={item.path}
+							to={item.path}
+							className={`flex items-center gap-3 p-4 rounded-2xl font-bold transition-all ${
+								location.pathname === item.path
+									? "bg-pink-500 text-white shadow-lg shadow-pink-100"
+									: "text-gray-400 hover:bg-pink-50 hover:text-pink-500"
+							}`}>
+							{item.icon}
+							{item.label}
+						</Link>
+					))}
+				</nav>
+
 				<button
 					onClick={handleLogout}
-					className="flex items-center gap-2 text-[#5D4037] font-bold text-sm hover:text-[#E91E63] transition-colors p-2 rounded-lg hover:bg-red-50">
-					<LogOut size={18} />
+					className="flex items-center gap-3 p-4 rounded-2xl font-bold text-gray-400 hover:bg-red-50 hover:text-red-500 transition-all">
+					<LogOut size={20} />
 					Sair
 				</button>
-			</nav>
+			</aside>
 
-			{/* Main Content Area */}
-			<main className="flex-1 w-full max-w-7xl mx-auto p-6 md:p-10">
+			{/* Main Content */}
+			<main className="flex-1 overflow-y-auto">
 				<Outlet />
 			</main>
 		</div>

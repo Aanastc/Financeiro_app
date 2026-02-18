@@ -6,6 +6,7 @@ import VerifyWeb from "./pages/VerifyWeb";
 import EntradasWeb from "./pages/Entradas";
 import GastosWeb from "./pages/Gastos";
 import RegisterWeb from "./pages/RegisterWeb";
+import Cartoes from "./pages/Cartoes";
 
 export default function App() {
 	return (
@@ -23,11 +24,10 @@ export default function App() {
 					<Route path="/home" element={<HomeWeb />} />
 					<Route path="/entradas" element={<EntradasWeb />} />
 					<Route path="/gastos" element={<GastosWeb />} />
+					<Route path="/cartoes" element={<Cartoes />} />
 				</Route>
 
-				{/* Se o usuário acessar a raiz "/" ou qualquer rota inexistente, 
-				   ele será mandado para o Cadastro (/register) 
-				*/}
+				{/* Redirecionamento para Cadastro se a rota não for encontrada */}
 				<Route path="/" element={<Navigate to="/register" replace />} />
 				<Route path="*" element={<Navigate to="/register" replace />} />
 			</Routes>

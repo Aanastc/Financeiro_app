@@ -1,6 +1,16 @@
-import { useState } from "react";
-import { X, ShoppingBag, ChevronDown } from "lucide-react";
+import { useState, useEffect } from "react";
+import {
+	X,
+	ShoppingBag,
+	ChevronDown,
+	CreditCard,
+	Wallet,
+	PlusCircle,
+	CalendarDays,
+} from "lucide-react";
+import { financeService } from "../../../../packages/services/finance.service";
 import { supabase } from "../../../../packages/services/supabase";
+import { AddCartaoWeb } from "./AddCartaoWeb"; // Importaremos abaixo
 
 const CATEGORIAS_PADRAO = [
 	"Moradia",
@@ -23,6 +33,8 @@ export function AddGastoWeb({
 	onSuccess,
 	sugestoes = [],
 }: any) {
+	const [cartoes, setCartoes] = useState<any[]>([]);
+	const [isAddCartaoOpen, setIsAddCartaoOpen] = useState(false);
 	const [form, setForm] = useState({
 		descricao: "",
 		valor: "",
@@ -30,57 +42,53 @@ export function AddGastoWeb({
 		categoria: "Outros",
 		classificacao: "Variável",
 		tipo: "Essencial",
+		metodo_pagamento: "Débito",
+		cartao_id: "",
+		parcelas: "1",
 	});
-	const [showSugestoes, setShowSugestoes] = useState(false);
 
-	if (!isOpen) return null;
+	const carregarCartoes = async () => {
+		const {
+			data: { user },
+		} = await supabase.auth.getUser();
+		if (user) {
+			const data = await financeService.getCartoes(user.id);
+			setCartoes(data || []);
+		}
+	};
 
-	const formatCurrency = (value: string) => {
-		const onlyNumbers = value.replace(/\D/g, "");
-		const options = { minimumFractionDigits: 2 };
-		const result = new Intl.NumberFormat("pt-BR", options).format(
-			parseFloat(onlyNumbers) / 100,
+	useEffect(() => {
+		if (isOpen) carregarCartoes();
+	}, [isOpen]);
+
+	const formatCurrency = (v: string) => {
+		const n = v.replace(/\D/g, "");
+		return new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2 }).format(
+			parseFloat(n) / 100,
 		);
-		return result === "NaN" ? "" : result;
 	};
 
 	const handleSave = async () => {
 		const {
 			data: { user },
 		} = await supabase.auth.getUser();
-
-		const valorLimpo = form.valor.replace(/\./g, "").replace(",", ".");
-		const valorNumerico = parseFloat(valorLimpo);
-
-		if (
-			!user ||
-			!form.descricao ||
-			isNaN(valorNumerico) ||
-			valorNumerico <= 0
-		) {
-			return alert("Preencha descrição e um valor válido!");
-		}
-
+		if (!user) return;
 		try {
-			const { error } = await supabase.from("gastos").insert([
-				{
-					usuario_id: user.id,
-					descricao: form.descricao,
-					valor: valorNumerico,
-					data: form.data,
-					categoria: form.categoria,
-					classificacao: form.classificacao,
-					tipo: form.tipo,
-				},
-			]);
-			if (error) throw error;
-			setForm({ ...form, descricao: "", valor: "" });
+			await financeService.addGasto(user.id, form);
+			setForm({
+				...form,
+				descricao: "",
+				valor: "",
+				metodo_pagamento: "Débito",
+			});
 			onSuccess();
 			onClose();
 		} catch (e: any) {
 			alert(e.message);
 		}
 	};
+
+	if (!isOpen) return null;
 
 	return (
 		<div className="fixed inset-0 bg-[#5D4037]/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -89,128 +97,129 @@ export function AddGastoWeb({
 					<h3 className="text-2xl font-black flex items-center gap-2">
 						<ShoppingBag /> Novo Gasto
 					</h3>
-					<button
-						onClick={onClose}
-						className="hover:rotate-90 transition-transform">
+					<button onClick={onClose}>
 						<X />
 					</button>
 				</div>
 
 				<div className="p-8 space-y-5">
-					<div className="relative space-y-1">
-						<label className="text-[10px] font-black text-gray-400 uppercase ml-2">
-							Descrição
-						</label>
-						<div className="relative">
-							<input
-								placeholder="Digite ou escolha uma existente..."
-								className="w-full p-4 bg-[#FCF8F8] rounded-2xl border-2 border-transparent focus:border-pink-200 outline-none font-bold text-[#5D4037]"
-								value={form.descricao}
-								onFocus={() => setShowSugestoes(true)}
-								onBlur={() => setTimeout(() => setShowSugestoes(false), 200)}
-								onChange={(e) =>
-									setForm({ ...form, descricao: e.target.value })
-								}
-							/>
-							<ChevronDown
-								size={20}
-								className="absolute right-4 top-4 text-gray-400"
-							/>
-						</div>
-
-						{showSugestoes && sugestoes && sugestoes.length > 0 && (
-							<div className="absolute z-[110] w-full bg-white border-2 border-pink-100 rounded-2xl shadow-xl max-h-48 overflow-y-auto mt-1">
-								{sugestoes
-									.filter(
-										(item: string) =>
-											!item.toLowerCase().includes("ative o rls"),
-									)
-									.map((item: string, index: number) => (
-										<div
-											key={index}
-											className="w-full text-left p-4 hover:bg-pink-50 cursor-pointer font-bold text-[#5D4037] border-b border-gray-50 last:border-0"
-											onMouseDown={() => {
-												setForm({ ...form, descricao: item });
-												setShowSugestoes(false);
-											}}>
-											{item}
-										</div>
-									))}
-							</div>
-						)}
-					</div>
+					<input
+						placeholder="Descrição..."
+						className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-bold"
+						value={form.descricao}
+						onChange={(e) => setForm({ ...form, descricao: e.target.value })}
+					/>
 
 					<div className="grid grid-cols-2 gap-4">
-						<div className="space-y-1">
-							<label className="text-[10px] font-black text-gray-400 uppercase ml-2">
-								Valor (R$)
-							</label>
-							<input
-								type="text"
-								inputMode="numeric"
-								placeholder="0,00"
-								className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-black text-pink-500 text-xl outline-none"
-								value={form.valor}
-								onChange={(e) =>
-									setForm({ ...form, valor: formatCurrency(e.target.value) })
-								}
-							/>
-						</div>
-						<div className="space-y-1">
-							<label className="text-[10px] font-black text-gray-400 uppercase ml-2">
-								Data
-							</label>
-							<input
-								type="date"
-								className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-bold text-[#5D4037] outline-none"
-								value={form.data}
-								onChange={(e) => setForm({ ...form, data: e.target.value })}
-							/>
-						</div>
+						<input
+							placeholder="R$ 0,00"
+							className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-black text-pink-500 text-xl"
+							value={form.valor}
+							onChange={(e) =>
+								setForm({ ...form, valor: formatCurrency(e.target.value) })
+							}
+						/>
+						<input
+							type="date"
+							className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-bold"
+							value={form.data}
+							onChange={(e) => setForm({ ...form, data: e.target.value })}
+						/>
 					</div>
 
 					<div className="flex gap-2">
-						{["Fixo", "Variável"].map((opt) => (
+						{[
+							{ id: "Débito", icon: <Wallet size={18} /> },
+							{ id: "Crédito", icon: <CreditCard size={18} /> },
+						].map((m) => (
 							<button
-								key={opt}
-								type="button"
-								onClick={() => setForm({ ...form, classificacao: opt })}
-								className={`flex-1 p-3 rounded-xl font-bold transition-colors ${form.classificacao === opt ? "bg-[#5D4037] text-white" : "bg-gray-100 text-gray-400"}`}>
-								{opt}
+								key={m.id}
+								onClick={() => setForm({ ...form, metodo_pagamento: m.id })}
+								className={`flex-1 p-4 rounded-2xl font-bold flex items-center justify-center gap-2 ${form.metodo_pagamento === m.id ? "bg-pink-500 text-white shadow-lg" : "bg-[#FCF8F8] text-gray-400"}`}>
+								{m.icon} {m.id}
 							</button>
 						))}
 					</div>
 
+					{form.metodo_pagamento === "Crédito" && (
+						<div className="p-4 bg-pink-50 rounded-3xl space-y-4">
+							{cartoes.length === 0 ? (
+								<button
+									onClick={() => setIsAddCartaoOpen(true)}
+									className="w-full p-4 border-2 border-dashed border-pink-300 rounded-2xl text-pink-500 font-bold flex items-center justify-center gap-2">
+									<PlusCircle size={20} /> Cadastrar Cartão
+								</button>
+							) : (
+								<div className="grid grid-cols-2 gap-4">
+									<select
+										className="p-3 rounded-xl font-bold bg-white outline-none border-2 border-transparent focus:border-pink-200"
+										value={form.cartao_id}
+										onChange={(e) =>
+											setForm({ ...form, cartao_id: e.target.value })
+										}>
+										<option value="">Qual cartão?</option>
+										{cartoes.map((c) => (
+											<option key={c.id} value={c.id}>
+												{c.nome}
+											</option>
+										))}
+									</select>
+
+									{/* Campo de Parcelas com ícone de quantidade (Hash) */}
+									<div className="flex items-center bg-white rounded-xl px-3 border-2 border-transparent focus-within:border-pink-200">
+										<span className="text-[10px] font-black text-pink-400 mr-1">
+											X
+										</span>
+										<input
+											type="number"
+											min="1"
+											placeholder="Parcelas"
+											className="w-full p-2 font-bold outline-none bg-transparent"
+											value={form.parcelas}
+											onChange={(e) =>
+												setForm({ ...form, parcelas: e.target.value })
+											}
+										/>
+									</div>
+								</div>
+							)}
+						</div>
+					)}
+
 					<div className="grid grid-cols-2 gap-4">
 						<select
-							className="p-4 bg-[#FCF8F8] rounded-2xl font-bold text-[#5D4037] outline-none"
+							className="p-4 bg-[#FCF8F8] rounded-2xl font-bold"
 							value={form.categoria}
 							onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
 							{CATEGORIAS_PADRAO.map((c) => (
-								<option key={c} value={c}>
-									{c}
-								</option>
+								<option key={c}>{c}</option>
 							))}
 						</select>
 						<select
-							className="p-4 bg-[#FCF8F8] rounded-2xl font-bold text-[#5D4037] outline-none"
+							className="p-4 bg-[#FCF8F8] rounded-2xl font-bold"
 							value={form.tipo}
 							onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
 							{TIPOS_PADRAO.map((t) => (
-								<option key={t} value={t}>
-									{t}
-								</option>
+								<option key={t}>{t}</option>
 							))}
 						</select>
 					</div>
 
 					<button
 						onClick={handleSave}
-						className="w-full bg-[#5D4037] text-white p-5 rounded-2xl font-black text-lg shadow-xl hover:bg-black transition-all">
+						className="w-full bg-[#5D4037] text-white p-5 rounded-2xl font-black text-lg shadow-xl">
 						SALVAR REGISTRO
 					</button>
 				</div>
 			</div>
+			<AddCartaoWeb
+				isOpen={isAddCartaoOpen}
+				onClose={() => setIsAddCartaoOpen(false)}
+				onSuccess={() => {
+					setIsAddCartaoOpen(false);
+					carregarCartoes();
+				}}
+			/>
 		</div>
 	);
 }
