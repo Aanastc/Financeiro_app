@@ -100,6 +100,15 @@ export default function EntradasWeb() {
 		return matrixData.reduce((a, b) => a + b.valores[monthFilter as number], 0);
 	}, [matrixData, monthFilter]);
 
+	const ultimosLancamentos = useMemo(() => {
+		return [...data]
+			.sort(
+				(a, b) =>
+					new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
+			)
+			.slice(0, 5);
+	}, [data]);
+
 	return (
 		<div className="p-8 space-y-6 bg-[#FCF8F8] min-h-screen animate-in fade-in duration-700">
 			{/* HEADER */}
@@ -288,6 +297,41 @@ export default function EntradasWeb() {
 						</tbody>
 					</table>
 				</div>
+			</div>
+
+			{/* ÚLTIMOS LANÇAMENTOS */}
+			<div className="space-y-4">
+				{ultimosLancamentos.length === 0 ? (
+					<p className="text-gray-400 font-bold text-sm">
+						Nenhum lançamento recente
+					</p>
+				) : (
+					ultimosLancamentos.map((item) => (
+						<div
+							key={item.id}
+							className="flex items-center justify-between bg-gray-50 px-6 py-4 rounded-2xl">
+							<div>
+								<p className="font-bold text-[#5D4037]">{item.descricao}</p>
+
+								<div className="text-xs text-gray-400 font-bold flex flex-col">
+									<span>
+										💰 Data do lançamento:{" "}
+										{new Date(item.data).toLocaleDateString("pt-BR")}
+									</span>
+
+									<span>
+										📝 Registrado em:{" "}
+										{new Date(item.criado_em).toLocaleString("pt-BR")}
+									</span>
+								</div>
+							</div>
+
+							<p className="font-black text-[#4CAF50]">
+								R$ {Number(item.valor).toLocaleString()}
+							</p>
+						</div>
+					))
+				)}
 			</div>
 
 			<AddEntradaWeb

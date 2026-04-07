@@ -97,44 +97,57 @@ export const financeService = {
     return data;
   },
 
-  async addGasto(usuario_id: string, form: any) {
-    const valorNumerico = typeof form.valor === 'string' 
-        ? parseFloat(form.valor.replace(/\./g, "").replace(",", ".")) 
-        : form.valor;
-    
-    const numParcelas = parseInt(form.parcelas) || 1;
-    const isCredito = form.metodo_pagamento === "Crédito";
+async addGasto(usuario_id: string, form: any) {
+  const limparDescricao = (descricao: string) => {
+    return descricao.replace(/\(\d+\/\d+\)/g, "").trim();
+  };
 
-    if (isCredito && numParcelas > 1) {
-      const idAgrupador = crypto.randomUUID();
-      const listaParcelas = [];
+  const valorNumerico =
+    typeof form.valor === "string"
+      ? parseFloat(form.valor.replace(/\./g, "").replace(",", "."))
+      : form.valor;
 
-      for (let i = 0; i < numParcelas; i++) {
-        const dataParcela = new Date(form.data);
-        dataParcela.setMonth(dataParcela.getMonth() + i);
+  const numParcelas = parseInt(form.parcelas) || 1;
+  const isCredito = form.metodo_pagamento === "Crédito";
 
-        listaParcelas.push({
-          usuario_id,
-          descricao: `${form.descricao} (${i + 1}/${numParcelas})`,
-          valor: valorNumerico / numParcelas,
-          data: dataParcela.toISOString().split("T")[0],
-          categoria: form.categoria,
-          classificacao: form.classificacao,
-          tipo: form.tipo,
-          metodo_pagamento: "Crédito",
-          cartao_id: form.cartao_id,
-          parcela_atual: i + 1,
-          total_parcelas: numParcelas,
-          identificador_parcelamento: idAgrupador,
-          considerar_soma: false // Itens de crédito não abatem saldo imediato
-        });
-      }
-      return await supabase.from("gastos").insert(listaParcelas);
+  const descricaoLimpa = limparDescricao(form.descricao);
+
+  // 💳 PARCELADO
+  if (isCredito && numParcelas > 1) {
+    const idAgrupador = crypto.randomUUID();
+    const listaParcelas = [];
+
+    for (let i = 0; i < numParcelas; i++) {
+      const dataParcela = new Date(form.data);
+      dataParcela.setMonth(dataParcela.getMonth() + i);
+
+      listaParcelas.push({
+        usuario_id,
+        descricao: descricaoLimpa, // ✅ LIMPO
+        valor: valorNumerico / numParcelas,
+        data: dataParcela.toISOString().split("T")[0],
+        categoria: form.categoria,
+        classificacao: form.classificacao,
+        tipo: form.tipo,
+        metodo_pagamento: "Crédito",
+        cartao_id: form.cartao_id,
+        parcela_atual: i + 1,
+        total_parcelas: numParcelas,
+        identificador_parcelamento: idAgrupador,
+        considerar_soma: false,
+      });
     }
 
-    return await supabase.from("gastos").insert([{
+    const { error } = await supabase.from("gastos").insert(listaParcelas);
+    if (error) throw error;
+    return;
+  }
+
+  // 💸 GASTO NORMAL
+  const { error } = await supabase.from("gastos").insert([
+    {
       usuario_id,
-      descricao: form.descricao,
+      descricao: descricaoLimpa, // ✅ LIMPO
       valor: valorNumerico,
       data: form.data,
       categoria: form.categoria,
@@ -142,9 +155,14 @@ export const financeService = {
       tipo: form.tipo,
       metodo_pagamento: form.metodo_pagamento,
       cartao_id: isCredito ? form.cartao_id : null,
-      considerar_soma: !isCredito // Só Débito abate saldo agora
-    }]);
-  },
+      total_parcelas: 1,
+      parcela_atual: 1,
+      considerar_soma: !isCredito,
+    },
+  ]);
+
+  if (error) throw error;
+}, 
 
   async getGastosPorCartao(cartao_id: string) {
     const { data, error } = await supabase.from("gastos").select("*").eq("cartao_id", cartao_id).order("data", { ascending: false });

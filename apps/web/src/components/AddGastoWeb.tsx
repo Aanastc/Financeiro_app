@@ -1,16 +1,8 @@
 import { useState, useEffect } from "react";
-import {
-	X,
-	ShoppingBag,
-	ChevronDown,
-	CreditCard,
-	Wallet,
-	PlusCircle,
-	CalendarDays,
-} from "lucide-react";
+import { X, ShoppingBag, CreditCard, Wallet, PlusCircle } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { supabase } from "../../../../packages/services/supabase";
-import { AddCartaoWeb } from "./AddCartaoWeb"; // Importaremos abaixo
+import { AddCartaoWeb } from "./AddCartaoWeb";
 
 const CATEGORIAS_PADRAO = [
 	"Moradia",
@@ -25,6 +17,7 @@ const CATEGORIAS_PADRAO = [
 	"Emprestimo",
 	"Outros",
 ];
+
 const TIPOS_PADRAO = ["Essencial", "Lazer", "Reserva"];
 
 export function AddGastoWeb({
@@ -35,6 +28,7 @@ export function AddGastoWeb({
 }: any) {
 	const [cartoes, setCartoes] = useState<any[]>([]);
 	const [isAddCartaoOpen, setIsAddCartaoOpen] = useState(false);
+
 	const [form, setForm] = useState({
 		descricao: "",
 		valor: "",
@@ -63,9 +57,9 @@ export function AddGastoWeb({
 
 	const formatCurrency = (v: string) => {
 		const n = v.replace(/\D/g, "");
-		return new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2 }).format(
-			parseFloat(n) / 100,
-		);
+		return new Intl.NumberFormat("pt-BR", {
+			minimumFractionDigits: 2,
+		}).format(parseFloat(n || "0") / 100);
 	};
 
 	const handleSave = async () => {
@@ -73,14 +67,17 @@ export function AddGastoWeb({
 			data: { user },
 		} = await supabase.auth.getUser();
 		if (!user) return;
+
 		try {
 			await financeService.addGasto(user.id, form);
+
 			setForm({
 				...form,
 				descricao: "",
 				valor: "",
 				metodo_pagamento: "Débito",
 			});
+
 			onSuccess();
 			onClose();
 		} catch (e: any) {
@@ -93,6 +90,7 @@ export function AddGastoWeb({
 	return (
 		<div className="fixed inset-0 bg-[#5D4037]/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
 			<div className="bg-white w-full max-w-xl rounded-[40px] shadow-2xl overflow-hidden">
+				{/* HEADER */}
 				<div className="p-8 bg-pink-400 text-white flex justify-between items-center">
 					<h3 className="text-2xl font-black flex items-center gap-2">
 						<ShoppingBag /> Novo Gasto
@@ -103,22 +101,37 @@ export function AddGastoWeb({
 				</div>
 
 				<div className="p-8 space-y-5">
-					<input
-						placeholder="Descrição..."
-						className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-bold"
-						value={form.descricao}
-						onChange={(e) => setForm({ ...form, descricao: e.target.value })}
-					/>
+					{/* DESCRIÇÃO COM SUGESTÕES */}
+					<div>
+						<input
+							list="descricao-sugestoes"
+							placeholder="Descrição..."
+							className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-bold"
+							value={form.descricao}
+							onChange={(e) => setForm({ ...form, descricao: e.target.value })}
+						/>
 
+						<datalist id="descricao-sugestoes">
+							{sugestoes.map((s: string) => (
+								<option key={s} value={s} />
+							))}
+						</datalist>
+					</div>
+
+					{/* VALOR + DATA */}
 					<div className="grid grid-cols-2 gap-4">
 						<input
 							placeholder="R$ 0,00"
 							className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-black text-pink-500 text-xl"
 							value={form.valor}
 							onChange={(e) =>
-								setForm({ ...form, valor: formatCurrency(e.target.value) })
+								setForm({
+									...form,
+									valor: formatCurrency(e.target.value),
+								})
 							}
 						/>
+
 						<input
 							type="date"
 							className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-bold"
@@ -127,6 +140,7 @@ export function AddGastoWeb({
 						/>
 					</div>
 
+					{/* MÉTODO DE PAGAMENTO */}
 					<div className="flex gap-2">
 						{[
 							{ id: "Débito", icon: <Wallet size={18} /> },
@@ -135,12 +149,17 @@ export function AddGastoWeb({
 							<button
 								key={m.id}
 								onClick={() => setForm({ ...form, metodo_pagamento: m.id })}
-								className={`flex-1 p-4 rounded-2xl font-bold flex items-center justify-center gap-2 ${form.metodo_pagamento === m.id ? "bg-pink-500 text-white shadow-lg" : "bg-[#FCF8F8] text-gray-400"}`}>
+								className={`flex-1 p-4 rounded-2xl font-bold flex items-center justify-center gap-2 ${
+									form.metodo_pagamento === m.id
+										? "bg-pink-500 text-white shadow-lg"
+										: "bg-[#FCF8F8] text-gray-400"
+								}`}>
 								{m.icon} {m.id}
 							</button>
 						))}
 					</div>
 
+					{/* CARTÃO */}
 					{form.metodo_pagamento === "Crédito" && (
 						<div className="p-4 bg-pink-50 rounded-3xl space-y-4">
 							{cartoes.length === 0 ? (
@@ -152,10 +171,13 @@ export function AddGastoWeb({
 							) : (
 								<div className="grid grid-cols-2 gap-4">
 									<select
-										className="p-3 rounded-xl font-bold bg-white outline-none border-2 border-transparent focus:border-pink-200"
+										className="p-3 rounded-xl font-bold bg-white outline-none"
 										value={form.cartao_id}
 										onChange={(e) =>
-											setForm({ ...form, cartao_id: e.target.value })
+											setForm({
+												...form,
+												cartao_id: e.target.value,
+											})
 										}>
 										<option value="">Qual cartão?</option>
 										{cartoes.map((c) => (
@@ -165,27 +187,25 @@ export function AddGastoWeb({
 										))}
 									</select>
 
-									{/* Campo de Parcelas com ícone de quantidade (Hash) */}
-									<div className="flex items-center bg-white rounded-xl px-3 border-2 border-transparent focus-within:border-pink-200">
-										<span className="text-[10px] font-black text-pink-400 mr-1">
-											X
-										</span>
-										<input
-											type="number"
-											min="1"
-											placeholder="Parcelas"
-											className="w-full p-2 font-bold outline-none bg-transparent"
-											value={form.parcelas}
-											onChange={(e) =>
-												setForm({ ...form, parcelas: e.target.value })
-											}
-										/>
-									</div>
+									<input
+										type="number"
+										min="1"
+										placeholder="Parcelas"
+										className="p-3 rounded-xl font-bold bg-white"
+										value={form.parcelas}
+										onChange={(e) =>
+											setForm({
+												...form,
+												parcelas: e.target.value,
+											})
+										}
+									/>
 								</div>
 							)}
 						</div>
 					)}
 
+					{/* CATEGORIA + TIPO */}
 					<div className="grid grid-cols-2 gap-4">
 						<select
 							className="p-4 bg-[#FCF8F8] rounded-2xl font-bold"
@@ -195,6 +215,7 @@ export function AddGastoWeb({
 								<option key={c}>{c}</option>
 							))}
 						</select>
+
 						<select
 							className="p-4 bg-[#FCF8F8] rounded-2xl font-bold"
 							value={form.tipo}
@@ -205,6 +226,7 @@ export function AddGastoWeb({
 						</select>
 					</div>
 
+					{/* BOTÃO */}
 					<button
 						onClick={handleSave}
 						className="w-full bg-[#5D4037] text-white p-5 rounded-2xl font-black text-lg shadow-xl">
@@ -212,6 +234,8 @@ export function AddGastoWeb({
 					</button>
 				</div>
 			</div>
+
+			{/* MODAL CARTÃO */}
 			<AddCartaoWeb
 				isOpen={isAddCartaoOpen}
 				onClose={() => setIsAddCartaoOpen(false)}
