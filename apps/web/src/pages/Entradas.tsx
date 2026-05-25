@@ -20,6 +20,9 @@ import {
 	LayoutGrid,
 	DollarSign,
 	Edit3,
+	Calendar,
+	ArrowUpCircle,
+	Target,
 } from "lucide-react";
 import { AddEntradaWeb } from "../components/AddEntradaWeb";
 import { EditEntradaWeb } from "../components/EditEntradaWeb";
@@ -44,7 +47,6 @@ export default function EntradasWeb() {
 	const [loading, setLoading] = useState(true);
 	const [year, setYear] = useState(new Date().getFullYear());
 	const [monthFilter, setMonthFilter] = useState<number | "all">("all");
-
 	const [isAddOpen, setIsAddOpen] = useState(false);
 	const [isEditOpen, setIsEditOpen] = useState(false);
 
@@ -68,6 +70,20 @@ export default function EntradasWeb() {
 
 	useEffect(() => {
 		loadData();
+
+		// REALTIME SUBSCRIPTION
+		let channel: any;
+		async function setupRealtime() {
+			const { data: { user } } = await supabase.auth.getUser();
+			if (user) {
+				channel = financeService.subscribeToChanges("entradas", user.id, loadData);
+			}
+		}
+		setupRealtime();
+
+		return () => {
+			if (channel) supabase.removeChannel(channel);
+		};
 	}, [loadData]);
 
 	const categoriasExistentes = useMemo(
@@ -85,7 +101,13 @@ export default function EntradasWeb() {
 		return Object.keys(matrix).map((desc) => {
 			const valores = matrix[desc];
 			const total = valores.reduce((a: number, b: number) => a + b, 0);
-			return { descricao: desc, valores, total, media: total / 12 };
+			const mesesComValor = valores.filter((v) => v > 0).length;
+			return {
+				descricao: desc,
+				valores,
+				total,
+				media: total / (mesesComValor || 1),
+			};
 		});
 	}, [data]);
 
@@ -106,161 +128,224 @@ export default function EntradasWeb() {
 				(a, b) =>
 					new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
 			)
-			.slice(0, 5);
+			.slice(0, 4);
 	}, [data]);
 
 	return (
-		<div className="p-8 space-y-6 bg-[#FCF8F8] min-h-screen animate-in fade-in duration-700">
-			{/* HEADER */}
-			<div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
-				<div>
-					<h1 className="text-4xl font-black text-[#5D4037] flex items-center gap-3">
-						<LayoutGrid className="text-[#4CAF50]" size={32} /> Entradas
-					</h1>
-					<p className="text-[#5D4037]/50 font-bold uppercase text-[10px] tracking-widest mt-1">
-						Gestão de Fluxo de Caixa {year}
+		<div className="p-8 space-y-8 bg-[#FDFCFB] min-h-screen animate-in fade-in duration-500">
+			{/* SECTION: HEADER & ACTIONS */}
+			<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white p-8 rounded-[40px] shadow-sm border border-gray-100">
+				<div className="space-y-1">
+					<div className="flex items-center gap-3">
+						<div className="bg-green-100 p-2 rounded-xl text-green-600">
+							<TrendingUp size={24} />
+						</div>
+						<h1 className="text-3xl font-black text-[#2D2424]">
+							Fluxo de Entradas
+						</h1>
+					</div>
+					<p className="text-gray-400 font-medium text-sm ml-12">
+						Monitore o crescimento da sua receita em {year}
 					</p>
 				</div>
 
-				<div className="flex items-center gap-4 bg-white p-2 rounded-3xl shadow-sm border border-gray-100">
-					<button
-						onClick={() => setYear(year - 1)}
-						className="p-2 hover:bg-gray-50 rounded-2xl transition-all">
-						<ChevronLeft />
-					</button>
-					<span className="text-xl font-black text-[#5D4037] px-4">{year}</span>
-					<button
-						onClick={() => setYear(year + 1)}
-						className="p-2 hover:bg-gray-50 rounded-2xl transition-all">
-						<ChevronRight />
-					</button>
-
-					<div className="flex gap-2 ml-4">
+				<div className="flex flex-wrap items-center gap-3">
+					<div className="flex items-center bg-gray-50 rounded-2xl p-1 border border-gray-100">
 						<button
-							onClick={() => setIsEditOpen(true)}
-							className="bg-white border-2 border-gray-50 text-[#5D4037] px-6 py-3 rounded-2xl font-black flex items-center gap-2 hover:bg-gray-50 transition-all">
-							<Edit3 size={18} /> EDITAR
+							onClick={() => setYear(year - 1)}
+							className="p-2 hover:bg-white hover:shadow-sm rounded-xl transition-all">
+							<ChevronLeft size={20} />
 						</button>
+						<span className="px-4 font-black text-[#2D2424]">{year}</span>
 						<button
-							onClick={() => setIsAddOpen(true)}
-							className="bg-[#4CAF50] text-white px-6 py-3 rounded-2xl font-black flex items-center gap-2 hover:scale-105 transition-all shadow-lg shadow-green-100">
-							<Plus size={20} /> ADICIONAR
+							onClick={() => setYear(year + 1)}
+							className="p-2 hover:bg-white hover:shadow-sm rounded-xl transition-all">
+							<ChevronRight size={20} />
 						</button>
 					</div>
+
+					<button
+						onClick={() => setIsEditOpen(true)}
+						className="px-6 py-3 bg-white border border-gray-200 text-[#2D2424] rounded-2xl font-bold flex items-center gap-2 hover:bg-gray-50 transition-all text-sm">
+						<Edit3 size={16} /> Gerenciar
+					</button>
+
+					<button
+						onClick={() => setIsAddOpen(true)}
+						className="px-6 py-3 bg-green-500 text-white rounded-2xl font-bold flex items-center gap-2 hover:bg-green-600 transition-all shadow-lg shadow-green-100 text-sm">
+						<Plus size={20} /> Novo Lançamento
+					</button>
 				</div>
 			</div>
 
-			{/* SELETOR DE MÊS */}
-			<div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
-				<button
-					onClick={() => setMonthFilter("all")}
-					className={`px-6 py-3 rounded-2xl font-black text-xs transition-all whitespace-nowrap ${monthFilter === "all" ? "bg-[#5D4037] text-white shadow-lg shadow-brown-200" : "bg-white text-gray-400 hover:bg-gray-100"}`}>
-					ANO COMPLETO
-				</button>
-				{MESES.map((nome, idx) => (
-					<button
-						key={nome}
-						onClick={() => setMonthFilter(idx)}
-						className={`px-6 py-3 rounded-2xl font-black text-xs transition-all whitespace-nowrap ${monthFilter === idx ? "bg-[#4CAF50] text-white shadow-lg shadow-green-200" : "bg-white text-gray-400 hover:bg-gray-100"}`}>
-						{nome.toUpperCase()}
-					</button>
-				))}
-			</div>
-
-			{/* DASHBOARDS */}
-			<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-				<div className="lg:col-span-2 bg-white p-8 rounded-[40px] shadow-sm border border-gray-100 h-80">
-					<h3 className="font-black text-[#5D4037] flex items-center gap-2 mb-6">
-						<TrendingUp size={18} className="text-[#4CAF50]" /> Sazonalidade
-						Anual
+			{/* SECTION: KPI CARDS */}
+			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+				<div className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm">
+					<p className="text-xs font-bold text-gray-400 uppercase mb-2">
+						Total no Período
+					</p>
+					<h3 className="text-2xl font-black text-green-600">
+						R$ {totalPeriodo.toLocaleString()}
 					</h3>
-					<ResponsiveContainer width="100%" height="100%">
-						<BarChart data={chartData}>
-							<CartesianGrid
-								strokeDasharray="3 3"
-								vertical={false}
-								stroke="#f0f0f0"
-							/>
-							<XAxis
-								dataKey="name"
-								axisLine={false}
-								tickLine={false}
-								tick={{ fill: "#BBB", fontSize: 10, fontWeight: "bold" }}
-							/>
-							<Tooltip
-								cursor={{ fill: "#F1F8F1" }}
-								contentStyle={{
-									borderRadius: "20px",
-									border: "none",
-									boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
-								}}
-							/>
-							<Bar
-								dataKey="total"
-								fill="#4CAF50"
-								radius={[10, 10, 0, 0]}
-								barSize={35}>
-								{chartData.map((entry, index) => (
-									<Cell
-										key={`cell-${index}`}
-										fill={
-											monthFilter === index || monthFilter === "all"
-												? "#4CAF50"
-												: "#E0E0E0"
-										}
-									/>
-								))}
-							</Bar>
-						</BarChart>
-					</ResponsiveContainer>
+				</div>
+				<div className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm">
+					<p className="text-xs font-bold text-gray-400 uppercase mb-2">
+						Média por Lançamento
+					</p>
+					<h3 className="text-2xl font-black text-[#2D2424]">
+						R${" "}
+						{(totalPeriodo / (data.length || 1)).toLocaleString(undefined, {
+							maximumFractionDigits: 0,
+						})}
+					</h3>
+				</div>
+				<div className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm">
+					<p className="text-xs font-bold text-gray-400 uppercase mb-2">
+						Maior Receita
+					</p>
+					<h3 className="text-2xl font-black text-[#2D2424]">
+						R${" "}
+						{Math.max(...data.map((d) => Number(d.valor)), 0).toLocaleString()}
+					</h3>
+				</div>
+				<div className="bg-green-600 p-6 rounded-[32px] shadow-lg text-white">
+					<p className="text-xs font-bold text-green-200 uppercase mb-2">
+						Status Anual
+					</p>
+					<div className="flex items-center gap-2">
+						<ArrowUpCircle size={24} />
+						<h3 className="text-2xl font-black">Em Alta</h3>
+					</div>
+				</div>
+			</div>
+
+			{/* SECTION: CHARTS & SELECTORS */}
+			<div className="space-y-4">
+				<div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
+					{["all", ...Array.from({ length: 12 }, (_, i) => i)].map((m) => (
+						<button
+							key={m}
+							onClick={() => setMonthFilter(m as any)}
+							className={`px-6 py-2.5 rounded-full font-bold text-xs transition-all whitespace-nowrap border ${
+								monthFilter === m
+									? "bg-[#2D2424] text-white border-[#2D2424]"
+									: "bg-white text-gray-400 border-gray-200 hover:border-gray-300"
+							}`}>
+							{m === "all" ? "ANO COMPLETO" : MESES[m as number].toUpperCase()}
+						</button>
+					))}
 				</div>
 
-				<div className="bg-[#5D4037] p-8 rounded-[40px] shadow-xl text-white flex flex-col justify-between relative overflow-hidden">
-					<div className="z-10">
-						<p className="text-green-400 font-black uppercase text-[10px] tracking-[0.2em]">
-							Total Acumulado
-						</p>
-						<h2 className="text-5xl font-black mt-2">
-							R$ {totalPeriodo.toLocaleString()}
-						</h2>
-					</div>
-					<div className="h-24 z-10">
-						<ResponsiveContainer width="100%" height="100%">
-							<LineChart data={chartData}>
-								<Line
-									type="monotone"
-									dataKey="total"
-									stroke="#4CAF50"
-									strokeWidth={5}
-									dot={false}
+				<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+					<div className="lg:col-span-2 bg-white p-8 rounded-[40px] shadow-sm border border-gray-100 h-[400px]">
+						<div className="flex justify-between items-center mb-8">
+							<h3 className="font-black text-[#2D2424] flex items-center gap-2">
+								<Calendar size={18} className="text-green-500" /> Sazonalidade
+								Mensal
+							</h3>
+						</div>
+						<ResponsiveContainer width="100%" height="80%">
+							<BarChart data={chartData}>
+								<CartesianGrid
+									strokeDasharray="3 3"
+									vertical={false}
+									stroke="#f0f0f0"
 								/>
-							</LineChart>
+								<XAxis
+									dataKey="name"
+									axisLine={false}
+									tickLine={false}
+									tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 600 }}
+								/>
+								<YAxis
+									axisLine={false}
+									tickLine={false}
+									tick={{ fill: "#94a3b8", fontSize: 11 }}
+								/>
+								<Tooltip
+									cursor={{ fill: "#f8fafc" }}
+									contentStyle={{
+										borderRadius: "16px",
+										border: "none",
+										boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
+									}}
+								/>
+								<Bar dataKey="total" radius={[8, 8, 0, 0]} barSize={40}>
+									{chartData.map((entry, index) => (
+										<Cell
+											key={index}
+											fill={
+												monthFilter === index || monthFilter === "all"
+													? "#22c55e"
+													: "#e2e8f0"
+											}
+										/>
+									))}
+								</Bar>
+							</BarChart>
 						</ResponsiveContainer>
 					</div>
-					<div className="absolute -right-10 -bottom-10 text-white/5 rotate-12">
-						<DollarSign size={200} />
+
+					<div className="bg-white p-8 rounded-[40px] shadow-sm border border-gray-100 flex flex-col">
+						<h3 className="font-black text-[#2D2424] mb-6 flex items-center gap-2">
+							<Target size={18} className="text-green-500" /> Últimos
+							Lançamentos
+						</h3>
+						<div className="space-y-4 flex-1">
+							{ultimosLancamentos.map((item) => (
+								<div
+									key={item.id}
+									className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl hover:bg-green-50 transition-colors group">
+									<div className="min-w-0">
+										<p className="font-bold text-[#2D2424] truncate text-sm">
+											{item.descricao}
+										</p>
+										<p className="text-[10px] text-gray-400 font-bold uppercase">
+											{new Date(item.data).toLocaleDateString("pt-BR")}
+										</p>
+									</div>
+									<p className="font-black text-green-600 text-sm">
+										R$ {Number(item.valor).toLocaleString()}
+									</p>
+								</div>
+							))}
+							{data.length === 0 && (
+								<div className="h-full flex items-center justify-center text-gray-300 text-sm font-medium italic">
+									Nenhum registro encontrado.
+								</div>
+							)}
+						</div>
 					</div>
 				</div>
 			</div>
 
-			{/* MATRIZ PLANILHA */}
+			{/* SECTION: MATRIX TABLE */}
 			<div className="bg-white rounded-[40px] shadow-sm border border-gray-100 overflow-hidden">
+				<div className="p-8 border-b border-gray-50 flex justify-between items-center">
+					<h3 className="font-black text-[#2D2424] flex items-center gap-2">
+						<LayoutGrid size={18} className="text-green-500" /> Matriz de
+						Receitas Recorrentes
+					</h3>
+					<span className="text-[10px] bg-green-100 text-green-700 px-3 py-1 rounded-full font-black">
+						ANUAL {year}
+					</span>
+				</div>
 				<div className="overflow-x-auto">
 					<table className="w-full text-left border-collapse">
 						<thead>
 							<tr className="bg-gray-50/50">
-								<th className="p-6 font-black text-[#5D4037] sticky left-0 bg-[#FCF8F8] z-20 border-r w-64 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+								<th className="p-6 font-black text-[#2D2424] sticky left-0 bg-white z-20 border-r w-64">
 									Descrição
 								</th>
 								{MESES.map((m, i) => (
 									<th
 										key={m}
-										className={`p-4 text-center text-[10px] font-black uppercase transition-all ${monthFilter === i ? "text-[#4CAF50] bg-green-50/50" : "text-gray-400"}`}>
+										className={`p-4 text-center text-[10px] font-black uppercase transition-all ${monthFilter === i ? "text-green-600 bg-green-50/50" : "text-gray-400"}`}>
 										{m}
 									</th>
 								))}
-								<th className="p-6 text-right font-black text-white bg-[#4CAF50] rounded-tr-[40px]">
-									Total Anual
+								<th className="p-6 text-right font-black text-green-700 bg-green-50">
+									Total
 								</th>
 							</tr>
 						</thead>
@@ -277,18 +362,22 @@ export default function EntradasWeb() {
 								matrixData.map((row, i) => (
 									<tr
 										key={i}
-										className="hover:bg-gray-50/50 transition-colors group">
-										<td className="p-6 font-bold text-[#5D4037] sticky left-0 bg-white group-hover:bg-gray-50 z-10 border-r shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+										className="hover:bg-gray-50 transition-colors group">
+										<td className="p-6 font-bold text-gray-700 sticky left-0 bg-white group-hover:bg-gray-50 z-10 border-r">
 											{row.descricao}
 										</td>
 										{row.valores.map((v, idx) => (
 											<td
 												key={idx}
-												className={`p-4 text-center text-sm ${monthFilter === idx ? "bg-green-50/30 font-black text-[#4CAF50]" : v > 0 ? "font-bold text-[#5D4037]" : "text-gray-200"}`}>
-												{v > 0 ? v.toLocaleString() : "—"}
+												className={`p-4 text-center text-sm ${monthFilter === idx ? "bg-green-50/30 font-black text-green-600" : v > 0 ? "font-bold text-gray-600" : "text-gray-200"}`}>
+												{v > 0
+													? v.toLocaleString(undefined, {
+															minimumFractionDigits: 0,
+														})
+													: "—"}
 											</td>
 										))}
-										<td className="p-6 text-right font-black text-[#4CAF50] bg-green-50/20 text-lg">
+										<td className="p-6 text-right font-black text-green-600 bg-green-50/40">
 											R$ {row.total.toLocaleString()}
 										</td>
 									</tr>
@@ -299,41 +388,7 @@ export default function EntradasWeb() {
 				</div>
 			</div>
 
-			{/* ÚLTIMOS LANÇAMENTOS */}
-			<div className="space-y-4">
-				{ultimosLancamentos.length === 0 ? (
-					<p className="text-gray-400 font-bold text-sm">
-						Nenhum lançamento recente
-					</p>
-				) : (
-					ultimosLancamentos.map((item) => (
-						<div
-							key={item.id}
-							className="flex items-center justify-between bg-gray-50 px-6 py-4 rounded-2xl">
-							<div>
-								<p className="font-bold text-[#5D4037]">{item.descricao}</p>
-
-								<div className="text-xs text-gray-400 font-bold flex flex-col">
-									<span>
-										💰 Data do lançamento:{" "}
-										{new Date(item.data).toLocaleDateString("pt-BR")}
-									</span>
-
-									<span>
-										📝 Registrado em:{" "}
-										{new Date(item.criado_em).toLocaleString("pt-BR")}
-									</span>
-								</div>
-							</div>
-
-							<p className="font-black text-[#4CAF50]">
-								R$ {Number(item.valor).toLocaleString()}
-							</p>
-						</div>
-					))
-				)}
-			</div>
-
+			{/* MODALS */}
 			<AddEntradaWeb
 				isOpen={isAddOpen}
 				onClose={() => setIsAddOpen(false)}

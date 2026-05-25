@@ -4,7 +4,11 @@ import {
 	LayoutDashboard,
 	ArrowUpCircle,
 	ArrowDownCircle,
-	CreditCard, // Ícone para Cartões
+	CreditCard,
+	AlertTriangle, // Para Dívidas
+	Target, // Para Metas
+	Briefcase, // Para Investimentos
+	Upload, // Para Importador
 	LogOut,
 } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
@@ -39,6 +43,10 @@ export default function DashboardLayout() {
 		{ path: "/entradas", label: "Entradas", icon: <ArrowUpCircle size={20} /> },
 		{ path: "/gastos", label: "Gastos", icon: <ArrowDownCircle size={20} /> },
 		{ path: "/cartoes", label: "Cartões", icon: <CreditCard size={20} /> },
+		{ path: "/dividas", label: "Dívidas", icon: <AlertTriangle size={20} /> },
+		{ path: "/metas", label: "Metas", icon: <Target size={20} /> },
+		{ path: "/investimentos", label: "Investimentos", icon: <Briefcase size={20} /> },
+		{ path: "/importar", label: "Importar", icon: <Upload size={20} /> },
 	];
 
 	return (

@@ -97,72 +97,138 @@ export const financeService = {
     return data;
   },
 
-async addGasto(usuario_id: string, form: any) {
-  const limparDescricao = (descricao: string) => {
-    return descricao.replace(/\(\d+\/\d+\)/g, "").trim();
-  };
+  async addGasto(usuario_id: string, form: any) {
+    const limparDescricao = (descricao: string) => {
+      return descricao.replace(/\(\d+\/\d+\)/g, "").trim();
+    };
 
-  const valorNumerico =
-    typeof form.valor === "string"
-      ? parseFloat(form.valor.replace(/\./g, "").replace(",", "."))
-      : form.valor;
+    const valorNumerico =
+      typeof form.valor === "string"
+        ? parseFloat(form.valor.replace(/\./g, "").replace(",", "."))
+        : form.valor;
 
-  const numParcelas = parseInt(form.parcelas) || 1;
-  const isCredito = form.metodo_pagamento === "Crédito";
+    const numParcelas = parseInt(form.parcelas) || parseInt(form.total_parcelas) || 1;
+    const isCredito = form.metodo_pagamento === "Crédito";
+    const descricaoLimpa = limparDescricao(form.descricao);
 
-  const descricaoLimpa = limparDescricao(form.descricao);
+    // 💳 PARCELADO (CRIAÇÃO MANUAL OU INÍCIO DE IMPORTAÇÃO)
+    // Se for crédito e tiver mais de 1 parcela, e for a primeira (ou não informada)
+    if (isCredito && numParcelas > 1 && (!form.parcela_atual || form.parcela_atual === 1)) {
+      const idAgrupador = crypto.randomUUID();
+      const listaParcelas = [];
+      const [year, month, day] = form.data.split('-').map(Number);
 
-  // 💳 PARCELADO
-  if (isCredito && numParcelas > 1) {
-    const idAgrupador = crypto.randomUUID();
-    const listaParcelas = [];
+      for (let i = 0; i < numParcelas; i++) {
+        // Lógica robusta de meses (evita pular meses em dias 31)
+        const dataParcela = new Date(year, month - 1 + i, day, 12, 0, 0);
+        if (dataParcela.getDate() !== day) {
+          dataParcela.setDate(0); // Volta para o último dia do mês anterior se houver overflow
+        }
 
-    for (let i = 0; i < numParcelas; i++) {
-      const dataParcela = new Date(form.data);
-      dataParcela.setMonth(dataParcela.getMonth() + i);
+        listaParcelas.push({
+          usuario_id,
+          descricao: descricaoLimpa,
+          valor: valorNumerico / numParcelas,
+          data: dataParcela.toISOString().split("T")[0],
+          categoria: form.categoria || "Outros",
+          classificacao: form.classificacao || "Variável",
+          tipo: form.tipo || "Essencial",
+          metodo_pagamento: "Crédito",
+          cartao_id: form.cartao_id,
+          parcela_atual: i + 1,
+          total_parcelas: numParcelas,
+          identificador_parcelamento: idAgrupador,
+          considerar_soma: false,
+        });
+      }
 
-      listaParcelas.push({
-        usuario_id,
-        descricao: descricaoLimpa, // ✅ LIMPO
-        valor: valorNumerico / numParcelas,
-        data: dataParcela.toISOString().split("T")[0],
-        categoria: form.categoria,
-        classificacao: form.classificacao,
-        tipo: form.tipo,
-        metodo_pagamento: "Crédito",
-        cartao_id: form.cartao_id,
-        parcela_atual: i + 1,
-        total_parcelas: numParcelas,
-        identificador_parcelamento: idAgrupador,
-        considerar_soma: false,
-      });
+      const { error } = await supabase.from("gastos").insert(listaParcelas);
+      if (error) throw error;
+      return;
     }
 
-    const { error } = await supabase.from("gastos").insert(listaParcelas);
+    // 💸 GASTO NORMAL OU PARCELA INTERMEDIÁRIA (IMPORTAÇÃO)
+    const { error } = await supabase.from("gastos").insert([
+      {
+        usuario_id,
+        descricao: descricaoLimpa,
+        valor: valorNumerico,
+        data: form.data,
+        categoria: form.categoria || "Outros",
+        classificacao: form.classificacao || "Variável",
+        tipo: form.tipo || "Essencial",
+        metodo_pagamento: form.metodo_pagamento,
+        cartao_id: isCredito ? form.cartao_id : null,
+        total_parcelas: form.total_parcelas || numParcelas || 1,
+        parcela_atual: form.parcela_atual || 1,
+        identificador_parcelamento: form.identificador_parcelamento || null,
+        considerar_soma: !isCredito,
+      },
+    ]);
+
     if (error) throw error;
-    return;
-  }
+  },
 
-  // 💸 GASTO NORMAL
-  const { error } = await supabase.from("gastos").insert([
-    {
-      usuario_id,
-      descricao: descricaoLimpa, // ✅ LIMPO
-      valor: valorNumerico,
-      data: form.data,
-      categoria: form.categoria,
-      classificacao: form.classificacao,
-      tipo: form.tipo,
-      metodo_pagamento: form.metodo_pagamento,
-      cartao_id: isCredito ? form.cartao_id : null,
-      total_parcelas: 1,
-      parcela_atual: 1,
-      considerar_soma: !isCredito,
-    },
-  ]);
+  async bulkAddGastos(usuario_id: string, gastos: any[]) {
+    const limparDescricao = (descricao: string) => {
+      return descricao.replace(/\(\d+\/\d+\)/g, "").trim();
+    };
 
-  if (error) throw error;
-}, 
+    const payload: any[] = [];
+
+    gastos.forEach(g => {
+      const isCredito = g.metodo_pagamento === "Crédito";
+      const descLimpa = limparDescricao(g.descricao);
+      const numParcelas = parseInt(g.total_parcelas) || 1;
+      const parcelaAtual = parseInt(g.parcela_atual) || 1;
+
+      // Se for a primeira parcela de um plano, expande para o futuro
+      if (isCredito && numParcelas > 1 && parcelaAtual === 1) {
+        const idAgrupador = crypto.randomUUID();
+        const [year, month, day] = g.data.split('-').map(Number);
+        // Em importações bulk, o valor já é o da parcela
+        const valorParcela = Math.round(Math.abs(g.valor) * 100) / 100;
+
+        for (let i = 0; i < numParcelas; i++) {
+          const dataParcela = new Date(year, month - 1 + i, day, 12, 0, 0);
+          if (dataParcela.getDate() !== day) {
+            dataParcela.setDate(0);
+          }
+
+          payload.push({
+            usuario_id,
+            descricao: descLimpa,
+            valor: valorParcela,
+            data: dataParcela.toISOString().split("T")[0],
+            categoria: g.categoria || "Outros",
+            classificacao: g.classificacao || "Variável",
+            tipo: g.tipo || "Essencial",
+            metodo_pagamento: "Crédito",
+            cartao_id: g.cartao_id,
+            parcela_atual: i + 1,
+            total_parcelas: numParcelas,
+            identificador_parcelamento: idAgrupador,
+            considerar_soma: false,
+          });
+        }
+      } else {
+        // Gasto normal
+        payload.push({
+          ...g,
+          usuario_id,
+          descricao: descLimpa,
+          considerar_soma: !isCredito,
+          categoria: g.categoria || "Outros",
+          classificacao: g.classificacao || "Variável",
+          tipo: g.tipo || "Essencial",
+          valor: Math.abs(g.valor)
+        });
+      }
+    });
+
+    const { error } = await supabase.from("gastos").insert(payload);
+    if (error) throw error;
+  },
 
   async getGastosPorCartao(cartao_id: string) {
     const { data, error } = await supabase.from("gastos").select("*").eq("cartao_id", cartao_id).order("data", { ascending: false });
@@ -187,7 +253,38 @@ async addGasto(usuario_id: string, form: any) {
     return data;
   },
 
-  async deleteRecord(table: 'gastos' | 'entradas', id: string) {
+  async getGlobalBalance(usuario_id: string) {
+    try {
+      const [entradas, gastosDebito, pagamentosFatura] = await Promise.all([
+        supabase.from("entradas").select("valor").eq("usuario_id", usuario_id),
+        supabase.from("gastos").select("valor").eq("usuario_id", usuario_id).eq("considerar_soma", true),
+        supabase.from("pagamentos_faturas").select("valor").eq("usuario_id", usuario_id),
+      ]);
+
+      const totalEntradas = entradas.data?.reduce((sum: number, item: any) => sum + Number(item.valor), 0) || 0;
+      const totalGastosDebito = gastosDebito.data?.reduce((sum: number, item: any) => sum + Number(item.valor), 0) || 0;
+      const totalPagamentos = pagamentosFatura.data?.reduce((sum: number, item: any) => sum + Number(item.valor), 0) || 0;
+
+      return totalEntradas - (totalGastosDebito + totalPagamentos);
+    } catch (error) {
+      console.error("Erro ao buscar saldo global:", error);
+      throw error;
+    }
+  },
+
+  async getInvestimentos(usuario_id: string) {
+    const { data, error } = await supabase.from("investimentos").select("*").eq("usuario_id", usuario_id).order("titulo");
+    if (error) throw error;
+    return data;
+  },
+
+  async addInvestimento(usuario_id: string, dados: any) {
+    const { data, error } = await supabase.from("investimentos").insert([{ ...dados, usuario_id }]).select();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteRecord(table: 'gastos' | 'entradas' | 'investimentos' | 'dividas' | 'metas', id: string) {
     const { error } = await supabase.from(table).delete().eq("id", id);
     if (error) throw error;
   }

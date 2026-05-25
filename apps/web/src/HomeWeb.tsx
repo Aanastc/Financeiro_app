@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../../packages/services/supabase";
 import {
 	BarChart,
@@ -13,6 +13,8 @@ import {
 import { ArrowUpRight, ArrowDownLeft, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../../../packages/services/auth.service";
+import { financeService } from "../../../packages/services/finance.service";
+import { ExportExcelButton } from "./components/ExportExcelButton";
 
 export default function HomeWeb() {
 	const navigate = useNavigate();
@@ -28,91 +30,87 @@ export default function HomeWeb() {
 		gastos: [],
 	});
 
-	useEffect(() => {
-		async function loadDashboardData() {
-			const {
-				data: { user },
-			} = await supabase.auth.getUser();
-			if (!user) return;
+	const loadDashboardData = useCallback(async () => {
+		const {
+			data: { user },
+		} = await supabase.auth.getUser();
+		if (!user) return;
 
-			// 1. BUSCA TOTAL (Sem filtro de data para o saldo real)
-			const [resEntradas, resGastos] = await Promise.all([
-				supabase.from("entradas").select("*").eq("usuario_id", user.id),
-				supabase.from("gastos").select("*").eq("usuario_id", user.id),
-			]);
+		// 1. BUSCA SALDO GLOBAL E STATS DO MÊS VIA SERVICE
+		const hoje = new Date();
+		const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split("T")[0];
+		const ultimoDiaMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().split("T")[0];
 
-			const todasEntradas = resEntradas.data || [];
-			const todosGastos = resGastos.data || [];
+		const [saldoAtual, statsMes, transacoesRecentes] = await Promise.all([
+			financeService.getGlobalBalance(user.id),
+			financeService.getMonthlyStats(user.id, primeiroDiaMes, ultimoDiaMes),
+			financeService.getRecentTransactions(user.id, 5),
+		]);
 
-			// 2. CÁLCULO DO VALOR ATUAL (Diferença total entre Entrada e Saída)
-			const totalEntradasHistorico = todasEntradas.reduce(
-				(acc, cur) => acc + Number(cur.valor),
-				0,
-			);
-			const totalGastosHistorico = todosGastos.reduce(
-				(acc, cur) => acc + Number(cur.valor),
-				0,
-			);
-			const saldoAtual = totalEntradasHistorico - totalGastosHistorico;
+		setStats({
+			entradasMes: statsMes.totalEntradas,
+			gastosMes: statsMes.totalGastos,
+			saldoTotal: saldoAtual,
+		});
 
-			// 3. STATS DO MÊS ATUAL
-			const hoje = new Date();
-			const mesAtualPrefix = hoje.toISOString().substring(0, 7); // "YYYY-MM"
+		// 2. DADOS DO GRÁFICO (Últimos 6 meses) - Mantemos lógica local por enquanto ou movemos para o service futuramente
+		const mesesNomes = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+		const dadosGrafico = [];
 
-			const entMes = todasEntradas
-				.filter((e) => e.data.startsWith(mesAtualPrefix))
-				.reduce((acc, cur) => acc + Number(cur.valor), 0);
+		// Busca dados históricos para o gráfico
+		const [resEntradas, resGastos] = await Promise.all([
+			supabase.from("entradas").select("*").eq("usuario_id", user.id).gte("data", new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1).toISOString().split("T")[0]),
+			supabase.from("gastos").select("*").eq("usuario_id", user.id).gte("data", new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1).toISOString().split("T")[0]),
+		]);
 
-			const gasMes = todosGastos
-				.filter((g) => g.data.startsWith(mesAtualPrefix))
-				.reduce((acc, cur) => acc + Number(cur.valor), 0);
+		const todasEntradas = resEntradas.data || [];
+		const todosGastos = resGastos.data || [];
 
-			setStats({
-				entradasMes: entMes,
-				gastosMes: gasMes,
-				saldoTotal: saldoAtual,
-			});
+		for (let i = 5; i >= 0; i--) {
+			const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+			const prefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
-			// 4. DADOS DO GRÁFICO (Últimos 6 meses)
-			const mesesNomes = [
-				"Jan",
-				"Fev",
-				"Mar",
-				"Abr",
-				"Mai",
-				"Jun",
-				"Jul",
-				"Ago",
-				"Set",
-				"Out",
-				"Nov",
-				"Dez",
-			];
-			const dadosGrafico = [];
-			for (let i = 5; i >= 0; i--) {
-				const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
-				const prefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-
-				dadosGrafico.push({
-					mes: mesesNomes[d.getMonth()],
-					entradas: todasEntradas
-						.filter((e) => e.data.startsWith(prefix))
-						.reduce((acc, cur) => acc + Number(cur.valor), 0),
-					gastos: todosGastos
-						.filter((g) => g.data.startsWith(prefix))
-						.reduce((acc, cur) => acc + Number(cur.valor), 0),
-				});
-			}
-			setChartData(dadosGrafico);
-			setRecentes({
-				entradas: todasEntradas.slice(0, 5),
-				gastos: todosGastos.slice(0, 5),
+			dadosGrafico.push({
+				mes: mesesNomes[d.getMonth()],
+				entradas: todasEntradas
+					.filter((e) => e.data.startsWith(prefix))
+					.reduce((acc, cur) => acc + Number(cur.valor), 0),
+				gastos: todosGastos
+					.filter((g) => g.data.startsWith(prefix))
+					.reduce((acc, cur) => acc + Number(cur.valor), 0),
 			});
 		}
+		
+		setChartData(dadosGrafico);
+		setRecentes({
+			entradas: transacoesRecentes.filter(t => t.tipo === 'entrada'),
+			gastos: transacoesRecentes.filter(t => t.tipo === 'gasto'),
+		});
+	}, []);
 
+	useEffect(() => {
 		loadDashboardData();
 		authService.getCurrentUser().then((u) => u && setNome(u.nome));
-	}, []);
+
+		// REALTIME SUBSCRIPTION
+		let channelEntradas: any;
+		let channelGastos: any;
+
+		async function setupRealtime() {
+			const { data: { user } } = await supabase.auth.getUser();
+			if (user) {
+				channelEntradas = financeService.subscribeToChanges("entradas", user.id, loadDashboardData);
+				channelGastos = financeService.subscribeToChanges("gastos", user.id, loadDashboardData);
+			}
+		}
+
+		setupRealtime();
+
+		return () => {
+			if (channelEntradas) supabase.removeChannel(channelEntradas);
+			if (channelGastos) supabase.removeChannel(channelGastos);
+		};
+	}, [loadDashboardData]);
 
 	return (
 		<div className="max-w-7xl mx-auto space-y-10 pb-20 p-6">
@@ -129,6 +127,8 @@ export default function HomeWeb() {
 					</span>
 				</p>
 			</div>
+
+			<ExportExcelButton />
 
 			{/* ENTRADA E SAÍDA DO MÊS ATUAL */}
 			<div className="flex flex-wrap gap-4">

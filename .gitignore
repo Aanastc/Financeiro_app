@@ -1,1 +1,11 @@
-node_modules
+# Dependências
+node_modules/
+.pnpm-store/
+
+# Dados Financeiros (Privados)
+lançamentos/
+consolidado/
+
+# Logs e Temporários
+*.log
+.DS_Store
