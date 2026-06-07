@@ -97,10 +97,10 @@ export function EditEntradaWeb({
 	if (!isOpen) return null;
 
 	return (
-		<div className="fixed inset-0 bg-[#5D4037]/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-			<div className="bg-white w-full max-w-5xl rounded-[50px] shadow-2xl flex overflow-hidden animate-in zoom-in duration-300 h-[650px]">
+		<div className="fixed inset-0 bg-[#5D4037]/60 backdrop-blur-md z-[100] flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+			<div className="bg-white w-full max-w-5xl rounded-[32px] sm:rounded-[50px] shadow-2xl flex flex-col md:flex-row overflow-hidden animate-in zoom-in duration-300 h-[95vh] md:h-[650px] max-h-[95vh] md:max-h-[650px]">
 				{/* BUSCA */}
-				<div className="w-2/5 bg-[#FCF8F8] p-10 border-r border-gray-100 flex flex-col">
+				<div className="w-full md:w-2/5 bg-[#FCF8F8] p-6 md:p-10 border-b md:border-b-0 md:border-r border-gray-100 flex flex-col h-[40%] md:h-full shrink-0 overflow-hidden">
 					<h3 className="text-2xl font-black text-[#5D4037] mb-8 flex items-center gap-2">
 						<Search size={24} className="text-[#4CAF50]" /> Localizar
 					</h3>
@@ -172,7 +172,7 @@ export function EditEntradaWeb({
 				</div>
 
 				{/* FORMULÁRIO */}
-				<div className="w-3/5 p-12 relative flex flex-col justify-center">
+				<div className="w-full md:w-3/5 p-6 md:p-12 relative flex flex-col justify-center bg-white overflow-y-auto h-[60%] md:h-full">
 					<button
 						onClick={onClose}
 						className="absolute top-10 right-10 text-gray-300 hover:text-gray-500 transition-colors">

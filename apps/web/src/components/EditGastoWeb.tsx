@@ -196,10 +196,10 @@ export function EditGastoWeb({
 	if (!isOpen) return null;
 
 	return (
-		<div className="fixed inset-0 bg-[#3D3030]/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-			<div className="bg-white w-full max-w-6xl rounded-[50px] shadow-2xl flex overflow-hidden h-[85vh] max-h-[800px] animate-in zoom-in-95 duration-300">
-				{/* COLUNA ESQUERDA: EXPLORADOR DE LANÇAMENTOS */}
-				<div className="w-80 lg:w-96 bg-[#FDFBFB] border-r border-gray-100 flex flex-col">
+		<div className="fixed inset-0 bg-[#3D3030]/80 backdrop-blur-md z-[100] flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+			<div className="bg-white w-full max-w-6xl rounded-[32px] sm:rounded-[50px] shadow-2xl flex flex-col md:flex-row overflow-hidden h-[95vh] md:h-[85vh] max-h-[95vh] md:max-h-[800px] animate-in zoom-in-95 duration-300">
+				{/* COLUNA ESQUERDA: EXPLORAR DE LANÇAMENTOS */}
+				<div className="w-full md:w-80 lg:w-96 bg-[#FDFBFB] border-b md:border-b-0 md:border-r border-gray-100 flex flex-col h-[35%] md:h-full shrink-0 overflow-hidden">
 					<div className="p-8 pb-4">
 						<h3 className="text-xl font-black text-[#3D3030] flex items-center gap-2 mb-6">
 							<Search size={20} className="text-pink-500" /> Explorar
@@ -271,7 +271,7 @@ export function EditGastoWeb({
 				</div>
 
 				{/* COLUNA DIREITA: FORMULÁRIO DE EDIÇÃO */}
-				<div className="flex-1 p-12 relative flex flex-col bg-white overflow-y-auto">
+				<div className="flex-1 p-6 md:p-12 relative flex flex-col bg-white overflow-y-auto h-[65%] md:h-full">
 					<button
 						onClick={onClose}
 						className="absolute top-8 right-8 text-gray-300 hover:text-pink-500 transition-transform hover:rotate-90">
