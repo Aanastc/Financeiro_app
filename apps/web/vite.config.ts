@@ -20,7 +20,7 @@ export default defineConfig({
     },
   },
   build: {
-    chunkSizeWarningLimit: 1600,
+    chunkSizeWarningLimit: 2500,
     commonjsOptions: {
       // Garante que o build suporte pacotes CommonJS se necessário
       include: [/packages/, /node_modules/],
