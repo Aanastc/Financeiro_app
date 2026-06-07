@@ -62,23 +62,23 @@ async register(email: string, password: string, nome: string) {
 
   /**
    * ATUALIZAÇÃO DE PERFIL
-   * Atualiza o nome na tabela pública e nos metadados do Auth.
+   * Atualiza o nome e foto na tabela pública e nos metadados do Auth.
    */
-  async updateProfile(nome: string) {
+  async updateProfile(nome: string, avatarUrl?: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Usuário não autenticado");
 
     // Atualiza na tabela pública 'usuarios'
     const { error: dbError } = await supabase
       .from("usuarios")
-      .update({ nome })
+      .update({ nome, avatar_url: avatarUrl })
       .eq("id", user.id);
 
     if (dbError) throw dbError;
 
     // Atualiza nos metadados do Auth (para o Dashboard Administrativo)
     await supabase.auth.updateUser({
-      data: { display_name: nome }
+      data: { display_name: nome, avatar_url: avatarUrl }
     });
   },
 
@@ -92,14 +92,16 @@ async register(email: string, password: string, nome: string) {
 
     const { data, error } = await supabase
       .from("usuarios")
-      .select("nome, email")
+      .select("id, nome, email, avatar_url")
       .eq("id", user.id)
       .single();
 
     if (error) {
       // Fallback: Retorna dados do Auth se a tabela pública falhar
       return { 
+        id: user.id,
         nome: user.user_metadata?.display_name || "Usuário", 
+        avatar_url: user.user_metadata?.avatar_url || null,
         email: user.email 
       };
     }

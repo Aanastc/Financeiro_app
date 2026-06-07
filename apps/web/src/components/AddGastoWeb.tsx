@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, ShoppingBag, CreditCard, Wallet, PlusCircle } from "lucide-react";
+import { X, ShoppingBag, CreditCard, Wallet, Zap } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { supabase } from "../../../../packages/services/supabase";
 import { AddCartaoWeb } from "./AddCartaoWeb";
@@ -25,6 +25,7 @@ export function AddGastoWeb({
 	onClose,
 	onSuccess,
 	sugestoes = [],
+	initialCartaoId = "",
 }: any) {
 	const [cartoes, setCartoes] = useState<any[]>([]);
 	const [isAddCartaoOpen, setIsAddCartaoOpen] = useState(false);
@@ -35,9 +36,9 @@ export function AddGastoWeb({
 		data: new Date().toISOString().split("T")[0],
 		categoria: "Outros",
 		classificacao: "Variável",
-		tipo: "Renda fixa (essencial)",
-		metodo_pagamento: "Débito",
-		cartao_id: "",
+		tipo: "", // Optional
+		metodo_pagamento: initialCartaoId ? "Crédito" : "Débito",
+		cartao_id: initialCartaoId,
 		parcelas: "1",
 	});
 
@@ -52,8 +53,15 @@ export function AddGastoWeb({
 	};
 
 	useEffect(() => {
-		if (isOpen) carregarCartoes();
-	}, [isOpen]);
+		if (isOpen) {
+			carregarCartoes();
+			setForm(prev => ({
+				...prev,
+				cartao_id: initialCartaoId || prev.cartao_id,
+				metodo_pagamento: initialCartaoId ? "Crédito" : prev.metodo_pagamento
+			}));
+		}
+	}, [isOpen, initialCartaoId]);
 
 	const formatCurrency = (v: string) => {
 		const n = v.replace(/\D/g, "");
@@ -153,16 +161,18 @@ export function AddGastoWeb({
 							{[
 								{ id: "Débito", icon: <Wallet size={18} /> },
 								{ id: "Crédito", icon: <CreditCard size={18} /> },
+								{ id: "Pix", icon: <Zap size={18} /> },
 							].map((m) => (
 								<button
+									type="button"
 									key={m.id}
 									onClick={() => setForm({ ...form, metodo_pagamento: m.id })}
-									className={`flex-1 p-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all ${
+									className={`flex-1 p-3 sm:p-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all ${
 										form.metodo_pagamento === m.id
 											? "bg-pink-500 text-white shadow-lg scale-[1.02]"
-											: "bg-[#FCF8F8] text-gray-400 hover:bg-pink-50"
+											: "bg-[#FCF8F8] text-gray-400 hover:bg-pink-50 hover:text-pink-600"
 									}`}>
-									{m.icon} {m.id}
+									{m.icon} <span className="hidden sm:inline">{m.id}</span><span className="sm:hidden text-xs">{m.id}</span>
 								</button>
 							))}
 						</div>
@@ -228,24 +238,29 @@ export function AddGastoWeb({
 					</div>
 
 					{/* 4. CLASSIFICAÇÃO */}
-					<div className="grid grid-cols-2 gap-3">
-						<select
-							className="p-4 bg-[#FCF8F8] rounded-2xl font-bold outline-none border-2 border-transparent focus:border-pink-200"
-							value={form.categoria}
-							onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
-							{CATEGORIAS_PADRAO.map((c) => (
-								<option key={c}>{c}</option>
-							))}
-						</select>
+					<div className="space-y-4">
+						<p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">4. Categorização</p>
+						<div className="grid grid-cols-2 gap-3">
+							<select
+								className="p-4 bg-[#FCF8F8] rounded-2xl font-bold text-slate-700 outline-none border-2 border-transparent focus:border-pink-200 cursor-pointer"
+								value={form.categoria}
+								onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
+								<option value="Outros">Categoria (Opcional)</option>
+								{CATEGORIAS_PADRAO.map((c) => (
+									<option key={c} value={c}>{c}</option>
+								))}
+							</select>
 
-						<select
-							className="p-4 bg-[#FCF8F8] rounded-2xl font-bold outline-none border-2 border-transparent focus:border-pink-200"
-							value={form.tipo}
-							onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
-							{TIPOS_PADRAO.map((t) => (
-								<option key={t}>{t}</option>
-							))}
-						</select>
+							<select
+								className="p-4 bg-[#FCF8F8] rounded-2xl font-bold text-slate-700 outline-none border-2 border-transparent focus:border-pink-200 cursor-pointer"
+								value={form.tipo}
+								onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
+								<option value="">Tipo do Gasto (Opcional)</option>
+								{TIPOS_PADRAO.map((t) => (
+									<option key={t} value={t}>{t}</option>
+								))}
+							</select>
+						</div>
 					</div>
 
 					{/* BOTÃO FINAL */}

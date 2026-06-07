@@ -139,6 +139,8 @@ export const financeService = {
           total_parcelas: numParcelas,
           identificador_parcelamento: idAgrupador,
           considerar_soma: false,
+          terceiro: form.terceiro || false,
+          contato_id: form.contato_id || null,
         });
       }
 
@@ -163,6 +165,8 @@ export const financeService = {
         parcela_atual: form.parcela_atual || 1,
         identificador_parcelamento: form.identificador_parcelamento || null,
         considerar_soma: !isCredito,
+        terceiro: form.terceiro || false,
+        contato_id: form.contato_id || null,
       },
     ]);
 
@@ -284,8 +288,139 @@ export const financeService = {
     return data;
   },
 
-  async deleteRecord(table: 'gastos' | 'entradas' | 'investimentos' | 'dividas' | 'metas', id: string) {
+  async deleteRecord(table: 'gastos' | 'entradas' | 'investimentos' | 'dividas' | 'metas' | 'contatos', id: string) {
     const { error } = await supabase.from(table).delete().eq("id", id);
     if (error) throw error;
+  },
+
+  // ==========================================
+  // MÓDULO DE DEVEDORES E CONTATOS (TERCEIROS)
+  // ==========================================
+  
+  async getContatos(usuario_id: string) {
+    const { data, error } = await supabase.from("contatos").select("*").eq("usuario_id", usuario_id).order("nome");
+    if (error) throw error;
+    return data;
+  },
+
+  async addContato(usuario_id: string, dados: any) {
+    const { data, error } = await supabase.from("contatos").insert([{ ...dados, usuario_id }]).select();
+    if (error) throw error;
+    return data;
+  },
+
+  async addMeta(usuario_id: string, dados: any) {
+    const { error } = await supabase.from("metas").insert([{ ...dados, usuario_id }]);
+    if (error) throw error;
+  },
+
+  async addDepositoMeta(usuario_id: string, dados: any) {
+    const { error } = await supabase.from("metas_depositos").insert([{ ...dados, usuario_id }]);
+    if (error) throw error;
+  },
+
+  async addDivida(usuario_id: string, dados: any) {
+    const { error } = await supabase.from("dividas").insert([{ ...dados, usuario_id }]);
+    if (error) throw error;
+  },
+
+  async getDevedores(usuario_id: string) {
+    // Busca TODOS os gastos marcados como terceiro = true (pagos e não pagos) para manter histórico
+    const { data, error } = await supabase
+      .from("gastos")
+      .select("*, contatos(*)")
+      .eq("usuario_id", usuario_id)
+      .eq("terceiro", true)
+      .order("data", { ascending: false });
+      
+    if (error) throw error;
+
+    // Agrupa por contato
+    const devedoresMap = new Map();
+    data.forEach((gasto: any) => {
+      const contatoId = gasto.contato_id;
+      if (!contatoId || !gasto.contatos) return;
+      
+      if (!devedoresMap.has(contatoId)) {
+        devedoresMap.set(contatoId, {
+          contato: gasto.contatos,
+          total_devido: 0,
+          itens: []
+        });
+      }
+      
+      const devedor = devedoresMap.get(contatoId);
+      // Soma apenas se NÃO estiver pago
+      if (!gasto.terceiro_pago) {
+        devedor.total_devido += Number(gasto.valor);
+      }
+      devedor.itens.push(gasto);
+    });
+
+    return Array.from(devedoresMap.values());
+  },
+
+  async marcarTerceiroPago(gasto_id: string, pago: boolean) {
+    const { error } = await supabase.from("gastos").update({ terceiro_pago: pago }).eq("id", gasto_id);
+    if (error) throw error;
+  },
+
+  // ==========================================
+  // MÓDULO DE FATURAS (CARTÕES)
+  // ==========================================
+
+  async getFaturaMensal(usuario_id: string, cartao_id: string, anoMes: string) {
+    // anoMes no formato "YYYY-MM"
+    const [ano, mes] = anoMes.split("-").map(Number);
+    
+    // Busca dados do cartão para saber os dias de fechamento/vencimento
+    const { data: cartao, error: cartaoError } = await supabase
+      .from("cartoes")
+      .select("*")
+      .eq("id", cartao_id)
+      .single();
+      
+    if (cartaoError || !cartao) throw cartaoError || new Error("Cartão não encontrado");
+
+    // Lógica para filtrar o mês: do primeiro ao último dia do mês
+    // Como a data já representa a data em que a parcela cai:
+    const dataInicio = `${ano}-${String(mes).padStart(2, '0')}-01`;
+    
+    // Para pegar o último dia do mês, criamos a data no dia 0 do próximo mês
+    const ultimoDia = new Date(ano, mes, 0).getDate();
+    const dataFim = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+    
+    const { data: itens, error } = await supabase
+      .from("gastos")
+      .select("*")
+      .eq("usuario_id", usuario_id)
+      .eq("cartao_id", cartao_id)
+      .gte("data", dataInicio)
+      .lte("data", dataFim)
+      .order("data", { ascending: true });
+
+    if (error) throw error;
+
+    const totalFatura = itens.reduce((sum, item) => sum + Number(item.valor), 0);
+
+    // Busca se já houve pagamento para esta fatura
+    const { data: pagamentos, error: pagError } = await supabase
+      .from("pagamentos_faturas")
+      .select("valor")
+      .eq("usuario_id", usuario_id)
+      .eq("cartao_id", cartao_id)
+      .eq("mes_referencia", anoMes);
+      
+    if (pagError) throw pagError;
+
+    const totalPago = pagamentos.reduce((sum, item) => sum + Number(item.valor), 0);
+    
+    return {
+      cartao,
+      itens,
+      totalFatura,
+      totalPago,
+      pendente: Math.max(0, totalFatura - totalPago)
+    };
   }
 };

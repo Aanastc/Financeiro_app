@@ -12,10 +12,14 @@ import {
 	ChevronRight
 } from "lucide-react";
 import { Toaster, toast } from "react-hot-toast";
+import AddMetaWeb from "../components/AddMetaWeb";
+import AddDepositoWeb from "../components/AddDepositoWeb";
 
 export default function MetasWeb() {
 	const [metas, setMetas] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
+	const [isAddMetaOpen, setIsAddMetaOpen] = useState(false);
+	const [depositoMeta, setDepositoMeta] = useState<{id: string, titulo: string} | null>(null);
 
 	const loadMetas = useCallback(async () => {
 		setLoading(true);
@@ -74,7 +78,7 @@ export default function MetasWeb() {
 				</div>
 
 				<button 
-					onClick={() => toast.success("Módulo em desenvolvimento!")}
+					onClick={() => setIsAddMetaOpen(true)}
 					className="px-8 py-4 bg-pink-500 text-white rounded-[25px] font-black flex items-center gap-2 hover:bg-pink-600 transition-all shadow-xl shadow-pink-100">
 					<Plus size={20} /> NOVA META
 				</button>
@@ -119,7 +123,10 @@ export default function MetasWeb() {
 								</div>
 							</div>
 
-							<button className="w-full py-4 bg-gray-50 rounded-2xl font-black text-[10px] text-gray-400 uppercase hover:bg-pink-500 hover:text-white transition-all flex items-center justify-center gap-2">
+							<button 
+								onClick={() => setDepositoMeta({ id: meta.id, titulo: meta.titulo })}
+								className="w-full py-4 bg-gray-50 rounded-2xl font-black text-[10px] text-gray-400 uppercase hover:bg-pink-500 hover:text-white transition-all flex items-center justify-center gap-2"
+							>
 								Adicionar Depósito <ArrowUpRight size={14} />
 							</button>
 						</div>
@@ -133,6 +140,22 @@ export default function MetasWeb() {
 					</div>
 				)}
 			</div>
+
+			{isAddMetaOpen && (
+				<AddMetaWeb 
+					onClose={() => setIsAddMetaOpen(false)} 
+					onSuccess={loadMetas} 
+				/>
+			)}
+
+			{depositoMeta && (
+				<AddDepositoWeb 
+					metaId={depositoMeta.id}
+					metaTitulo={depositoMeta.titulo}
+					onClose={() => setDepositoMeta(null)} 
+					onSuccess={loadMetas} 
+				/>
+			)}
 		</div>
 	);
 }

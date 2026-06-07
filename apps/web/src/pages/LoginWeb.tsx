@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { authService } from "../../../../packages/services/auth.service";
 import { useNavigate, Link } from "react-router-dom";
 
 export default function LoginWeb() {
 	const [form, setForm] = useState({ email: "", password: "" });
 	const [loading, setLoading] = useState(false);
+	const [showPassword, setShowPassword] = useState(false);
 	const navigate = useNavigate();
 
 	const handleLogin = async (e: React.FormEvent) => {
@@ -48,13 +50,22 @@ export default function LoginWeb() {
 						<label className="text-sm font-bold text-[#5D4037] ml-2">
 							SENHA
 						</label>
-						<input
-							className="w-full p-4 bg-[#FCF8F8] rounded-2xl border border-gray-100 focus:border-[#4CAF50] outline-none transition-all text-[#5D4037]"
-							type="password"
-							placeholder="Sua senha"
-							required
-							onChange={(e) => setForm({ ...form, password: e.target.value })}
-						/>
+						<div className="relative">
+							<input
+								className="w-full p-4 pr-12 bg-[#FCF8F8] rounded-2xl border border-gray-100 focus:border-[#4CAF50] outline-none transition-all text-[#5D4037]"
+								type={showPassword ? "text" : "password"}
+								placeholder="Sua senha"
+								required
+								onChange={(e) => setForm({ ...form, password: e.target.value })}
+							/>
+							<button
+								type="button"
+								onClick={() => setShowPassword(!showPassword)}
+								className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors flex items-center justify-center"
+							>
+								{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+							</button>
+						</div>
 					</div>
 				</div>
 

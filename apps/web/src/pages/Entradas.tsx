@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../../../../packages/services/supabase";
+import { financeService } from "../../../../packages/services/finance.service";
 import {
 	BarChart,
 	Bar,

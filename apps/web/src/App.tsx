@@ -12,6 +12,8 @@ import DividasWeb from "./pages/Dividas";
 import MetasWeb from "./pages/Metas";
 import InvestimentosWeb from "./pages/Investimentos";
 import ImportadorWeb from "./pages/Importador";
+import Devedores from "./pages/Devedores";
+import Faturas from "./pages/Faturas";
 
 export default function App() {
 	return (
@@ -43,6 +45,8 @@ export default function App() {
 					<Route path="/entradas" element={<EntradasWeb />} />
 					<Route path="/gastos" element={<GastosWeb />} />
 					<Route path="/cartoes" element={<Cartoes />} />
+					<Route path="/faturas/:cartao_id" element={<Faturas />} />
+					<Route path="/devedores" element={<Devedores />} />
 					<Route path="/dividas" element={<DividasWeb />} />
 					<Route path="/metas" element={<MetasWeb />} />
 					<Route path="/investimentos" element={<InvestimentosWeb />} />

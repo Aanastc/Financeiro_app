@@ -5,7 +5,6 @@ import { supabase } from "../../../../packages/services/supabase";
 export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 	const [form, setForm] = useState({
 		descricao: "",
-		nova: "",
 		valor: "", // Ex: "1.700,06"
 		data: new Date().toISOString().split("T")[0],
 	});
@@ -26,7 +25,7 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 		const {
 			data: { user },
 		} = await supabase.auth.getUser();
-		const descFinal = form.nova || form.descricao;
+		const descFinal = form.descricao;
 
 		// CONVERSÃO PARA O BANCO: Remove pontos e troca vírgula por ponto
 		// "1.700,06" -> "1700.06" -> 1700.06
@@ -49,7 +48,6 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 
 		setForm({
 			descricao: "",
-			nova: "",
 			valor: "",
 			data: new Date().toISOString().split("T")[0],
 		});
@@ -78,23 +76,18 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 						<label className="text-[10px] font-black uppercase text-gray-400 ml-2">
 							Categoria
 						</label>
-						<select
-							className="w-full p-5 bg-[#FCF8F8] rounded-3xl outline-none font-bold text-[#5D4037] appearance-none"
-							value={form.descricao}
-							onChange={(e) => setForm({ ...form, descricao: e.target.value })}>
-							<option value="">Selecione existente...</option>
-							{categorias.map((c: string) => (
-								<option key={c} value={c}>
-									{c}
-								</option>
-							))}
-						</select>
 						<input
-							placeholder="Ou digite um novo nome..."
-							className="w-full p-5 bg-[#FCF8F8] rounded-3xl border-dashed border-2 border-gray-200 outline-none focus:border-[#4CAF50]"
-							value={form.nova}
-							onChange={(e) => setForm({ ...form, nova: e.target.value })}
+							list="categorias-list"
+							placeholder="Digite a categoria ou escolha da lista..."
+							className="w-full p-5 bg-[#FCF8F8] rounded-3xl border border-gray-100 outline-none focus:border-[#4CAF50] font-bold text-[#5D4037]"
+							value={form.descricao}
+							onChange={(e) => setForm({ ...form, descricao: e.target.value })}
 						/>
+						<datalist id="categorias-list">
+							{categorias.map((c: string) => (
+								<option key={c} value={c} />
+							))}
+						</datalist>
 					</div>
 
 					<div className="grid grid-cols-2 gap-4">

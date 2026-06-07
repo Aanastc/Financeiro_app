@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { authService } from "../../../../packages/services/auth.service";
 import { useNavigate, Link } from "react-router-dom";
 
@@ -10,6 +11,8 @@ export default function RegisterWeb() {
 		confirmPassword: "",
 	});
 	const [loading, setLoading] = useState(false);
+	const [showPassword, setShowPassword] = useState(false);
+	const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 	const navigate = useNavigate();
 
 	const handleSubmit = async (e: React.FormEvent) => {
@@ -72,13 +75,22 @@ export default function RegisterWeb() {
 						<label className="text-sm font-bold text-[#5D4037] ml-2">
 							Senha
 						</label>
-						<input
-							className="w-full p-4 bg-[#FCF8F8] rounded-2xl border border-gray-100 focus:border-[#4CAF50] outline-none transition-all text-[#5D4037]"
-							type="password"
-							placeholder="No mínimo 8 dígitos"
-							required
-							onChange={(e) => setForm({ ...form, password: e.target.value })}
-						/>
+						<div className="relative">
+							<input
+								className="w-full p-4 pr-12 bg-[#FCF8F8] rounded-2xl border border-gray-100 focus:border-[#4CAF50] outline-none transition-all text-[#5D4037]"
+								type={showPassword ? "text" : "password"}
+								placeholder="No mínimo 8 dígitos"
+								required
+								onChange={(e) => setForm({ ...form, password: e.target.value })}
+							/>
+							<button
+								type="button"
+								onClick={() => setShowPassword(!showPassword)}
+								className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors flex items-center justify-center"
+							>
+								{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+							</button>
+						</div>
 						<p className="text-[10px] text-gray-400 mt-1 px-2 italic">
 							Mínimo de 8 caracteres obrigatório.
 						</p>
@@ -88,15 +100,24 @@ export default function RegisterWeb() {
 						<label className="text-sm font-bold text-[#5D4037] ml-2">
 							Confirmar Senha
 						</label>
-						<input
-							className="w-full p-4 bg-[#FCF8F8] rounded-2xl border border-gray-100 focus:border-[#4CAF50] outline-none transition-all text-[#5D4037]"
-							type="password"
-							placeholder="Repita sua senha"
-							required
-							onChange={(e) =>
-								setForm({ ...form, confirmPassword: e.target.value })
-							}
-						/>
+						<div className="relative">
+							<input
+								className="w-full p-4 pr-12 bg-[#FCF8F8] rounded-2xl border border-gray-100 focus:border-[#4CAF50] outline-none transition-all text-[#5D4037]"
+								type={showConfirmPassword ? "text" : "password"}
+								placeholder="Repita sua senha"
+								required
+								onChange={(e) =>
+									setForm({ ...form, confirmPassword: e.target.value })
+								}
+							/>
+							<button
+								type="button"
+								onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+								className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors flex items-center justify-center"
+							>
+								{showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+							</button>
+						</div>
 						{form.confirmPassword !== "" &&
 							form.password !== form.confirmPassword && (
 								<p className="text-[10px] text-red-400 mt-1 px-2 font-bold">

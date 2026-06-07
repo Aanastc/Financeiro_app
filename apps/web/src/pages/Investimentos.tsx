@@ -22,10 +22,12 @@ import {
 	Legend
 } from "recharts";
 import { Toaster, toast } from "react-hot-toast";
+import AddInvestimentoWeb from "../components/AddInvestimentoWeb";
 
 export default function InvestimentosWeb() {
 	const [investimentos, setInvestimentos] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
+	const [isAddInvestimentoOpen, setIsAddInvestimentoOpen] = useState(false);
 
 	const loadInvestimentos = useCallback(async () => {
 		setLoading(true);
@@ -88,8 +90,8 @@ export default function InvestimentosWeb() {
 				</div>
 
 				<button 
-					onClick={() => toast.success("Módulo de cadastro em desenvolvimento!")}
-					className="px-8 py-4 bg-indigo-600 text-white rounded-[25px] font-black flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100">
+					onClick={() => setIsAddInvestimentoOpen(true)}
+					className="px-8 py-4 bg-green-500 text-white rounded-[25px] font-black flex items-center gap-2 hover:bg-green-600 transition-all shadow-xl shadow-green-100">
 					<Plus size={20} /> NOVO ATIVO
 				</button>
 			</div>
@@ -211,6 +213,13 @@ export default function InvestimentosWeb() {
 					</div>
 				</div>
 			</div>
+
+			{isAddInvestimentoOpen && (
+				<AddInvestimentoWeb 
+					onClose={() => setIsAddInvestimentoOpen(false)} 
+					onSuccess={loadInvestimentos} 
+				/>
+			)}
 		</div>
 	);
 }
