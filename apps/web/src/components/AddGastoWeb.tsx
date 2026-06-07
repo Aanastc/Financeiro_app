@@ -37,7 +37,7 @@ export function AddGastoWeb({
 		categoria: "Outros",
 		classificacao: "Variável",
 		tipo: "", // Optional
-		metodo_pagamento: initialCartaoId ? "Crédito" : "Débito",
+		metodo_pagamento: initialCartaoId ? "Crédito" : "Débito/Pix",
 		cartao_id: initialCartaoId,
 		parcelas: "1",
 	});
@@ -104,7 +104,7 @@ export function AddGastoWeb({
 				...form,
 				descricao: "",
 				valor: "",
-				metodo_pagamento: "Débito",
+				metodo_pagamento: "Débito/Pix",
 			});
 
 			onSuccess();
@@ -117,19 +117,19 @@ export function AddGastoWeb({
 	if (!isOpen) return null;
 
 	return (
-		<div className="fixed inset-0 bg-[#5D4037]/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-			<div className="bg-white w-full max-w-xl rounded-[40px] shadow-2xl overflow-hidden">
+		<div className="fixed inset-0 bg-[#5D4037]/50 backdrop-blur-sm z-[100] flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-300">
+			<div className="bg-white w-full max-w-xl rounded-[32px] sm:rounded-[40px] shadow-2xl overflow-hidden max-h-[95vh] sm:max-h-[90vh] flex flex-col">
 				{/* HEADER */}
-				<div className="p-8 bg-pink-400 text-white flex justify-between items-center">
-					<h3 className="text-2xl font-black flex items-center gap-2">
+				<div className="p-6 sm:p-8 bg-pink-400 text-white flex justify-between items-center shrink-0">
+					<h3 className="text-xl sm:text-2xl font-black flex items-center gap-2">
 						<ShoppingBag /> Novo Gasto
 					</h3>
-					<button onClick={onClose}>
+					<button onClick={onClose} className="hover:bg-white/20 p-1 rounded-full transition-colors">
 						<X />
 					</button>
 				</div>
 
-				<div className="p-8 space-y-5">
+				<div className="p-6 sm:p-8 space-y-5 overflow-y-auto flex-1 custom-scrollbar">
 					{/* 1. INFORMAÇÕES BÁSICAS */}
 					<div className="space-y-4">
 						<p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">1. Informações Básicas</p>
@@ -155,13 +155,12 @@ export function AddGastoWeb({
 					</div>
 
 					{/* 2. FORMA DE PAGAMENTO */}
-					<div className="space-y-4">
-						<p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">2. Forma de Pagamento</p>
+					<div className="space-y-2">
+						<label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">2. Forma de Pagamento</label>
 						<div className="flex gap-2">
 							{[
-								{ id: "Débito", icon: <Wallet size={18} /> },
+								{ id: "Débito/Pix", icon: <Wallet size={18} /> },
 								{ id: "Crédito", icon: <CreditCard size={18} /> },
-								{ id: "Pix", icon: <Zap size={18} /> },
 							].map((m) => (
 								<button
 									type="button"
@@ -172,7 +171,7 @@ export function AddGastoWeb({
 											? "bg-pink-500 text-white shadow-lg scale-[1.02]"
 											: "bg-[#FCF8F8] text-gray-400 hover:bg-pink-50 hover:text-pink-600"
 									}`}>
-									{m.icon} <span className="hidden sm:inline">{m.id}</span><span className="sm:hidden text-xs">{m.id}</span>
+									{m.icon} <span>{m.id}</span>
 								</button>
 							))}
 						</div>
@@ -180,60 +179,74 @@ export function AddGastoWeb({
 
 					{/* 3. DETALHES DO VALOR (DINÂMICO) */}
 					<div className="space-y-4 animate-in slide-in-from-top-2 duration-300">
-						<p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">3. Detalhes do Gasto</p>
+						<label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">3. Detalhes do Gasto</label>
 						
 						{form.metodo_pagamento === "Crédito" ? (
 							<div className="p-5 bg-pink-50 rounded-[32px] space-y-4 border border-pink-100">
 								<div className="grid grid-cols-2 gap-3">
-									<select
-										className="p-4 rounded-2xl font-bold bg-white outline-none border-2 border-transparent focus:border-pink-300"
-										value={form.cartao_id}
-										onChange={(e) => setForm({ ...form, cartao_id: e.target.value })}>
-										<option value="">Selecione o Cartão</option>
-										{cartoes.map((c) => (
-											<option key={c.id} value={c.id}>{c.nome}</option>
-										))}
-									</select>
+									<div className="space-y-1">
+										<label className="text-[9px] font-black uppercase text-pink-600 ml-2">Selecione o Cartão</label>
+										<select
+											className="w-full p-4 rounded-2xl font-bold bg-white outline-none border-2 border-transparent focus:border-pink-300 text-sm text-slate-700"
+											value={form.cartao_id}
+											onChange={(e) => setForm({ ...form, cartao_id: e.target.value })}>
+											<option value="">Selecione...</option>
+											{cartoes.map((c) => (
+												<option key={c.id} value={c.id}>{c.nome}</option>
+											))}
+										</select>
+									</div>
 
-									<input
-										type="number"
-										min="1"
-										placeholder="Parcelas"
-										className="p-4 rounded-2xl font-bold bg-white outline-none border-2 border-transparent focus:border-pink-300"
-										value={form.parcelas}
-										onChange={(e) => setForm({ ...form, parcelas: e.target.value })}
-									/>
+									<div className="space-y-1">
+										<label className="text-[9px] font-black uppercase text-pink-600 ml-2">Nº de Parcelas</label>
+										<input
+											type="number"
+											min="1"
+											placeholder="Ex: 12"
+											className="w-full p-4 rounded-2xl font-bold bg-white outline-none border-2 border-transparent focus:border-pink-300 text-sm text-slate-700"
+											value={form.parcelas}
+											onChange={(e) => setForm({ ...form, parcelas: e.target.value })}
+										/>
+									</div>
 								</div>
 
-								<input
-									placeholder="Valor Total R$ 0,00"
-									className="w-full p-5 bg-white rounded-2xl font-black text-pink-500 text-2xl border-2 border-transparent focus:border-pink-300 outline-none shadow-inner"
-									value={form.valor}
-									onChange={(e) => setForm({ ...form, valor: formatCurrency(e.target.value) })}
-								/>
+								<div className="space-y-1">
+									<label className="text-[9px] font-black uppercase text-pink-600 ml-2">Valor Total do Gasto</label>
+									<input
+										placeholder="Valor Total R$ 0,00"
+										className="w-full p-5 bg-white rounded-2xl font-black text-pink-500 text-2xl border-2 border-transparent focus:border-pink-300 outline-none shadow-inner"
+										value={form.valor}
+										onChange={(e) => setForm({ ...form, valor: formatCurrency(e.target.value) })}
+									/>
+								</div>
 
 								{preview && (
 									<div className="p-4 bg-white/80 rounded-2xl border border-pink-200 animate-in zoom-in duration-300">
 										<div className="flex justify-between items-end">
 											<div>
-												<p className="text-[10px] font-bold text-gray-400 uppercase">Valor por Parcela</p>
-												<p className="text-xl font-black text-pink-600">{preview.valor}</p>
+												<p className="text-[10px] font-bold text-gray-400 uppercase">Parcelamento</p>
+												<p className="text-lg font-black text-pink-600">
+													{form.parcelas}x de {preview.valor}
+												</p>
 											</div>
 											<div className="text-right">
 												<p className="text-[10px] font-bold text-gray-400 uppercase">Fim do Pagamento</p>
-												<p className="text-sm font-black text-[#3D3030]">{preview.mesFinal}</p>
+												<p className="text-xs font-black text-[#3D3030]">{preview.mesFinal}</p>
 											</div>
 										</div>
 									</div>
 								)}
 							</div>
 						) : (
-							<input
-								placeholder="Valor R$ 0,00"
-								className="w-full p-6 bg-[#FCF8F8] rounded-3xl font-black text-pink-500 text-3xl border-2 border-transparent focus:border-pink-200 outline-none text-center"
-								value={form.valor}
-								onChange={(e) => setForm({ ...form, valor: formatCurrency(e.target.value) })}
-							/>
+							<div className="space-y-1">
+								<label className="text-[9px] font-black uppercase text-gray-400 ml-2">Valor do Gasto</label>
+								<input
+									placeholder="Valor R$ 0,00"
+									className="w-full p-6 bg-[#FCF8F8] rounded-3xl font-black text-pink-500 text-3xl border-2 border-transparent focus:border-pink-200 outline-none text-center"
+									value={form.valor}
+									onChange={(e) => setForm({ ...form, valor: formatCurrency(e.target.value) })}
+								/>
+							</div>
 						)}
 					</div>
 

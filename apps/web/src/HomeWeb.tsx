@@ -10,12 +10,28 @@ import {
 	ResponsiveContainer,
 	Legend,
 } from "recharts";
-import { ArrowUpRight, ArrowDownRight, ChevronRight, Wallet, TrendingUp, TrendingDown } from "lucide-react";
+import {
+	ArrowUpRight,
+	ArrowDownRight,
+	ChevronRight,
+	Wallet,
+	TrendingUp,
+	TrendingDown,
+	Sparkles,
+	AlertCircle,
+	Phone,
+	CreditCard,
+	ExternalLink,
+	RefreshCw,
+	Users,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../../../packages/services/auth.service";
 import { financeService } from "../../../packages/services/finance.service";
 import { ExportExcelButton } from "./components/ExportExcelButton";
 import { motion } from "framer-motion";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import toast from "react-hot-toast";
 
 export default function HomeWeb() {
 	const navigate = useNavigate();
@@ -25,23 +41,26 @@ export default function HomeWeb() {
 		saldoTotal: 0,
 	});
 	const [nome, setNome] = useState("");
-	const [chartData, setChartData] = useState<any[]>([]);
-	const [recentes, setRecentes] = useState<{ entradas: any[]; gastos: any[] }>({
-		entradas: [],
-		gastos: [],
-	});
+	const [rawEntradas, setRawEntradas] = useState<any[]>([]);
+	const [rawGastos, setRawGastos] = useState<any[]>([]);
+	const [rawFaturas, setRawFaturas] = useState<any[]>([]);
+	const [rawInvestimentos, setRawInvestimentos] = useState<any[]>([]);
+	const [rawDividas, setRawDividas] = useState<any[]>([]);
+
+	// NOVOS ESTADOS
+	const [rawFaturasNaoPagas, setRawFaturasNaoPagas] = useState<any[]>([]);
+	const [devedores, setDevedores] = useState<any[]>([]);
+	const [loadingFaturas, setLoadingFaturas] = useState(false);
+
+	// IA INSIGHTS
+	const [aiInsights, setAiInsights] = useState<any[]>([]);
+	const [loadingAI, setLoadingAI] = useState(false);
 
 	// FILTROS
 	const hoje = new Date();
 	const [filterYear, setFilterYear] = useState(hoje.getFullYear());
 	const [filterMonth, setFilterMonth] = useState<number | "all">("all");
 	const [filterCategory, setFilterCategory] = useState<string>("all");
-	
-	const [rawEntradas, setRawEntradas] = useState<any[]>([]);
-	const [rawGastos, setRawGastos] = useState<any[]>([]);
-	const [rawFaturas, setRawFaturas] = useState<any[]>([]);
-	const [rawInvestimentos, setRawInvestimentos] = useState<any[]>([]);
-	const [rawDividas, setRawDividas] = useState<any[]>([]);
 
 	const loadDashboardData = useCallback(async () => {
 		const {
@@ -52,13 +71,14 @@ export default function HomeWeb() {
 		const startOfYear = `${filterYear}-01-01`;
 		const endOfYear = `${filterYear}-12-31`;
 
-		const [saldoAtual, resEntradas, resGastos, resFaturas, resInv, resDiv] = await Promise.all([
+		const [saldoAtual, resEntradas, resGastos, resFaturas, resInv, resDiv, resDevedores] = await Promise.all([
 			financeService.getGlobalBalance(user.id),
 			supabase.from("entradas").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
 			supabase.from("gastos").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
 			supabase.from("pagamentos_faturas").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
 			supabase.from("investimentos").select("*").eq("usuario_id", user.id),
 			supabase.from("dividas").select("*").eq("usuario_id", user.id).gte("vencimento_parcela", startOfYear).lte("vencimento_parcela", endOfYear),
+			financeService.getDevedores(user.id)
 		]);
 
 		setStats(prev => ({ ...prev, saldoTotal: saldoAtual }));
@@ -67,11 +87,244 @@ export default function HomeWeb() {
 		setRawFaturas(resFaturas.data || []);
 		setRawInvestimentos(resInv.data || []);
 		setRawDividas(resDiv.data || []);
+		setDevedores(resDevedores || []);
+
+		// Buscar faturas não pagas dos últimos 3 meses
+		setLoadingFaturas(true);
+		try {
+			const cartoesData = await financeService.getCartoes(user.id);
+			if (cartoesData && cartoesData.length > 0) {
+				const lastMonths = [];
+				const d = new Date();
+				for (let i = 0; i < 3; i++) {
+					const year = d.getFullYear();
+					const month = d.getMonth() + 1;
+					lastMonths.push(`${year}-${String(month).padStart(2, '0')}`);
+					d.setMonth(d.getMonth() - 1);
+				}
+
+				const faturasPromises: Promise<any>[] = [];
+				cartoesData.forEach((c: any) => {
+					lastMonths.forEach((m) => {
+						faturasPromises.push(
+							financeService.getFaturaMensal(user.id, c.id, m)
+								.then(res => ({ ...res, mesReferencia: m }))
+								.catch(() => null)
+						);
+					});
+				});
+
+				const faturasResult = await Promise.all(faturasPromises);
+				const faturasNaoPagas = faturasResult.filter((f: any) => f && f.totalFatura > 0 && f.pendente > 0.01);
+				setRawFaturasNaoPagas(faturasNaoPagas);
+			} else {
+				setRawFaturasNaoPagas([]);
+			}
+		} catch (err) {
+			console.error("Erro ao carregar faturas pendentes:", err);
+		} finally {
+			setLoadingFaturas(false);
+		}
 	}, [filterYear]);
+
+	// Carregar cache de insights de IA
+	useEffect(() => {
+		const cached = localStorage.getItem(`finance_ai_insights_${filterYear}`);
+		if (cached) {
+			try {
+				setAiInsights(JSON.parse(cached));
+			} catch (e) {
+				console.error(e);
+			}
+		} else {
+			setAiInsights([]);
+		}
+	}, [filterYear]);
+
+	const generateAIInsights = async () => {
+		setLoadingAI(true);
+		try {
+			const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+			if (!apiKey) {
+				toast.error("Chave da API do Gemini não configurada!");
+				setLoadingAI(false);
+				return;
+			}
+
+			// Maiores categorias
+			const categoriasGastos: { [key: string]: number } = {};
+			rawGastos.forEach(g => {
+				const cat = g.categoria || "Outros";
+				categoriasGastos[cat] = (categoriasGastos[cat] || 0) + Number(g.valor);
+			});
+
+			const topCategories = Object.entries(categoriasGastos)
+				.map(([nome, valor]) => ({ nome, valor }))
+				.sort((a, b) => b.valor - a.valor)
+				.slice(0, 3);
+
+			const genAI = new GoogleGenerativeAI(apiKey);
+			const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+			const prompt = `Você é um consultor financeiro de inteligência artificial extremamente prático e amigável. Analise o seguinte resumo das finanças do usuário para o ano ${filterYear}:
+- Saldo Atual da Conta: R$ ${stats.saldoTotal}
+- Entradas Totais do Ano: R$ ${rawEntradas.reduce((acc, cur) => acc + Number(cur.valor), 0)}
+- Despesas Totais do Ano: R$ ${rawGastos.reduce((acc, cur) => acc + Number(cur.valor), 0)}
+- Dívidas Ativas: R$ ${rawDividas.reduce((acc, cur) => acc + Number(cur.valor), 0)}
+- Principais categorias de despesas: ${JSON.stringify(topCategories)}
+- Faturas de cartão não pagas: ${rawFaturasNaoPagas.length} faturas abertas, totalizando R$ ${rawFaturasNaoPagas.reduce((acc, cur) => acc + Number(cur.pendente), 0)}
+- Devedores pendentes (dinheiro a receber): ${devedores.length} pessoas devem ao usuário, totalizando R$ ${devedores.reduce((acc, cur) => acc + Number(cur.total_devido), 0)}
+
+Com base nestes dados, gere exatamente 3 insights financeiros muito curtos, práticos e acionáveis em português brasileiro (com emoji correspondente na frente de cada título, máximo 2 frases por insight). 
+Seja encorajador, identifique pontos de atenção, oportunidades de economia ou investimentos.
+Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação markdown (sem \`\`\`json ou semelhantes), contendo apenas o objeto JSON estruturado:
+{
+  "insights": [
+    { "titulo": "Título Curto 1", "texto": "Insight 1" },
+    { "titulo": "Título Curto 2", "texto": "Insight 2" },
+    { "titulo": "Título Curto 3", "texto": "Insight 3" }
+  ]
+}`;
+
+			const result = await model.generateContent(prompt);
+			const text = result.response.text();
+			const cleanText = text.replace(/```json/gi, "").replace(/```/g, "").trim();
+			const json = JSON.parse(cleanText);
+			if (json.insights && Array.isArray(json.insights)) {
+				setAiInsights(json.insights);
+				localStorage.setItem(`finance_ai_insights_${filterYear}`, JSON.stringify(json.insights));
+				toast.success("Insights gerados com IA!");
+			}
+		} catch (error) {
+			console.error("Erro ao gerar insights com IA:", error);
+			toast.error("Erro na leitura da IA. Usando regras locais.");
+		} finally {
+			setLoadingAI(false);
+		}
+	};
+
+	// Fallback de Insights Locais
+	const computedInsights = useMemo(() => {
+		if (aiInsights && aiInsights.length > 0) {
+			return aiInsights;
+		}
+
+		const list = [];
+		const totalEntradas = rawEntradas.reduce((acc, cur) => acc + Number(cur.valor), 0);
+		const totalGastos = rawGastos.reduce((acc, cur) => acc + Number(cur.valor), 0);
+		const totalDividas = rawDividas.reduce((acc, cur) => acc + Number(cur.valor), 0);
+		const totalFaturasPendente = rawFaturasNaoPagas.reduce((acc, cur) => acc + Number(cur.pendente), 0);
+		const totalDevedores = devedores.reduce((acc, cur) => acc + Number(cur.total_devido), 0);
+
+		const saldoPeriodo = totalEntradas - totalGastos;
+		if (totalEntradas > 0) {
+			const percentSavings = (saldoPeriodo / totalEntradas) * 100;
+			if (percentSavings > 25) {
+				list.push({
+					titulo: "Excelente Economia! 💰",
+					texto: `Você poupou ${percentSavings.toFixed(0)}% de suas entradas este ano. Que tal direcionar parte disso para novos investimentos?`
+				});
+			} else if (percentSavings > 0) {
+				list.push({
+					titulo: "Balanço Positivo 📈",
+					texto: `Você poupou ${percentSavings.toFixed(0)}% da sua renda. Tente alcançar a meta de 20% para acelerar sua independência financeira.`
+				});
+			} else {
+				list.push({
+					titulo: "Atenção ao Balanço ⚠️",
+					texto: `Suas despesas superaram suas receitas em R$ ${Math.abs(saldoPeriodo).toLocaleString("pt-BR")}. Revise seus gastos supérfluos.`
+				});
+			}
+		} else {
+			list.push({
+				titulo: "Comece seu Planejamento 📋",
+				texto: "Lance suas receitas recorrentes e crie um orçamento anual para acompanhar a saúde financeira do seu ano."
+			});
+		}
+
+		if (totalFaturasPendente > 0) {
+			list.push({
+				titulo: "Faturas em Aberto 💳",
+				texto: `Você tem R$ ${totalFaturasPendente.toLocaleString("pt-BR")} pendente em faturas de cartão. Lembre-se de pagar até o vencimento.`
+			});
+		} else if (totalDividas > 0) {
+			list.push({
+				titulo: "Foco nas Dívidas 📉",
+				texto: `Há R$ ${totalDividas.toLocaleString("pt-BR")} em dívidas cadastradas. Considere quitá-las antes de comprometer nova renda.`
+			});
+		} else {
+			list.push({
+				titulo: "Zero Dívidas 🎉",
+				texto: "Parabéns! Você está livre de dívidas ativas. Uma ótima oportunidade para focar no acúmulo de patrimônio."
+			});
+		}
+
+		if (totalDevedores > 0) {
+			list.push({
+				titulo: "Dinheiro a Receber 🤝",
+				texto: `Você tem R$ ${totalDevedores.toLocaleString("pt-BR")} emprestados para terceiros. Lembre-se de usar a cobrança via WhatsApp.`
+			});
+		} else {
+			list.push({
+				titulo: "Reserva de Emergência 🛡️",
+				texto: "Dica: Mantenha de 3 a 6 meses de seus custos mensais investidos em ativos de liquidez diária para proteção."
+			});
+		}
+
+		return list;
+	}, [aiInsights, rawEntradas, rawGastos, rawDividas, rawFaturasNaoPagas, devedores]);
+
+	const handleCobrarWhatsApp = (devedor: any) => {
+		const telefone = devedor.contato?.telefone?.replace(/\D/g, "");
+		if (!telefone || telefone.length < 10) {
+			toast.error("Telefone inválido ou não cadastrado.");
+			return;
+		}
+
+		const getPaymentInfo = (observacao: string) => {
+			if (!observacao) return null;
+			try {
+				if (observacao.trim().startsWith("{")) {
+					return JSON.parse(observacao);
+				}
+			} catch (e) {
+				// Ignore
+			}
+			return null;
+		};
+
+		const itensPendentes = devedor.itens.filter((i: any) => !i.terceiro_pago);
+		if (itensPendentes.length === 0) {
+			toast.error("Não há itens pendentes para cobrar.");
+			return;
+		}
+
+		const itensText = itensPendentes.map((i: any) => {
+			const dataFormatada = new Date(i.data).toLocaleDateString("pt-BR");
+			const payInfo = getPaymentInfo(i.observacao);
+			if (payInfo && typeof payInfo.valor_pago === "number") {
+				const restante = Math.max(0, Number(i.valor) - payInfo.valor_pago);
+				return `• ${i.descricao} (${dataFormatada}): R$ ${Number(i.valor).toFixed(2)} (Falta pagar: R$ ${restante.toFixed(2)})`;
+			}
+			return `• ${i.descricao} (${dataFormatada}): R$ ${Number(i.valor).toFixed(2)}`;
+		}).join("%0A");
+
+		const total = Number(devedor.total_devido).toFixed(2);
+		const mensagem = `Olá, ${devedor.contato.nome}! Tudo bem?%0A%0ASegue o demonstrativo detalhado dos valores em aberto:%0A%0A${itensText}%0A%0A*Total pendente:* R$ ${total}%0A%0AQuando puder realizar o acerto, por favor me envie o comprovante. Muito obrigado!`;
+
+		window.open(`https://wa.me/${telefone}?text=${mensagem}`, "_blank");
+	};
+
+	const formatMonthReference = (mesStr: string) => {
+		const [ano, mes] = mesStr.split("-").map(Number);
+		const data = new Date(ano, mes - 1, 1);
+		const nome = data.toLocaleString("pt-BR", { month: "long" });
+		return `${nome.charAt(0).toUpperCase() + nome.slice(1)} ${ano}`;
+	};
 
 	const dashboardData = useMemo(() => {
 		let filteredEntradas = rawEntradas;
-		let filteredGastos = rawGastos.filter(g => g.considerar_soma === true); // Débito/Dinheiro
+		let filteredGastos = rawGastos.filter(g => g.considerar_soma === true);
 		let filteredFaturas = rawFaturas;
 		let filteredInvestimentos = rawInvestimentos;
 		let filteredDividas = rawDividas;
@@ -84,7 +337,6 @@ export default function HomeWeb() {
 			filteredDividas = filteredDividas.filter(d => d.vencimento_parcela?.startsWith(prefix) || d.data?.startsWith(prefix));
 		}
 
-		// Calculate Stats for the cards (respecting Month filter, but we handle Category filter in the UI render logic)
 		const totaisMes = {
 			entradas: filteredEntradas.reduce((acc, cur) => acc + Number(cur.valor), 0),
 			gastos: filteredGastos.reduce((acc, cur) => acc + Number(cur.valor), 0) + filteredFaturas.reduce((acc, cur) => acc + Number(cur.valor), 0),
@@ -93,7 +345,6 @@ export default function HomeWeb() {
 			dividas: filteredDividas.reduce((acc, cur) => acc + Number(cur.valor), 0),
 		};
 
-		// Chart Data (12 months, NO month filter, but respecting what lines are drawn in UI)
 		const mesesNomes = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 		const dadosGrafico = [];
 
@@ -102,7 +353,7 @@ export default function HomeWeb() {
 			const ent = rawEntradas.filter(e => e.data.startsWith(prefix)).reduce((a, c) => a + Number(c.valor), 0);
 			const gas = rawGastos.filter(g => g.considerar_soma === true && g.data.startsWith(prefix)).reduce((a, c) => a + Number(c.valor), 0);
 			const fat = rawFaturas.filter(e => e.data.startsWith(prefix)).reduce((a, c) => a + Number(c.valor), 0);
-			const inv = rawInvestimentos.reduce((a, c) => a + Number(c.valor_investido), 0) / 12; // Apenas distribuindo o total visualmente, já que não temos data
+			const inv = rawInvestimentos.reduce((a, c) => a + Number(c.valor_investido), 0) / 12;
 			const div = rawDividas.filter(e => (e.vencimento_parcela?.startsWith(prefix) || e.data?.startsWith(prefix))).reduce((a, c) => a + Number(c.valor), 0);
 
 			dadosGrafico.push({
@@ -115,13 +366,11 @@ export default function HomeWeb() {
 			});
 		}
 
-		// Recent Transactions Lists
 		const parseDate = (d: any) => new Date(d).getTime();
-		
 		const recentesEntradas = [...filteredEntradas].sort((a, b) => parseDate(b.data) - parseDate(a.data)).slice(0, 5);
 		const recentesGastos = [...filteredGastos].sort((a, b) => parseDate(b.data) - parseDate(a.data)).slice(0, 5);
 		const recentesCartoes = [...filteredFaturas].sort((a, b) => parseDate(b.data) - parseDate(a.data)).slice(0, 5);
-		const recentesInvestimentos = [...filteredInvestimentos].slice(0, 5); // Sem campo de data para ordenar
+		const recentesInvestimentos = [...filteredInvestimentos].slice(0, 5);
 		const recentesDividas = [...filteredDividas].sort((a, b) => parseDate(b.vencimento_parcela) - parseDate(a.vencimento_parcela)).slice(0, 5);
 
 		return {
@@ -160,15 +409,9 @@ export default function HomeWeb() {
 		};
 	}, [loadDashboardData]);
 
-	// Framer Motion variants for staggered animations
 	const containerVariants = {
 		hidden: { opacity: 0 },
-		visible: {
-			opacity: 1,
-			transition: {
-				staggerChildren: 0.1
-			}
-		}
+		visible: { opacity: 1, transition: { staggerChildren: 0.1 } }
 	};
 
 	const itemVariants = {
@@ -231,7 +474,6 @@ export default function HomeWeb() {
 
 			{/* CARDS DE RESUMO */}
 			<motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-3 gap-6">
-				{/* Saldo Total sempre visível */}
 				<motion.div 
 					whileHover={{ y: -4, boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1)" }}
 					className="bg-gradient-to-br from-slate-800 to-slate-900 p-8 rounded-[32px] shadow-xl text-white relative overflow-hidden"
@@ -246,7 +488,6 @@ export default function HomeWeb() {
 					</h3>
 				</motion.div>
 
-				{/* Cards Dinâmicos */}
 				{(filterCategory === "all" || filterCategory === "entradas") && (
 					<MetricCard title="Entradas (Mês)" value={dashboardData.totaisMes.entradas} icon={<TrendingUp size={20} className="text-emerald-600" />} bgClass="bg-emerald-100" hoverClass="hover:shadow-[0_10px_25px_-5px_rgba(16,185,129,0.1)]" />
 				)}
@@ -268,31 +509,211 @@ export default function HomeWeb() {
 				)}
 			</motion.div>
 
-			{/* GRÁFICO DINÂMICO */}
-			<motion.div variants={itemVariants} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
-				<div className="flex justify-between items-center mb-8">
-					<h3 className="text-xl font-black text-slate-800 tracking-tight">Evolução de {filterYear}</h3>
+			{/* GRÁFICO DINÂMICO & INSIGHTS DE IA */}
+			<div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+				{/* Gráfico */}
+				<motion.div variants={itemVariants} className="lg:col-span-2 bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between">
+					<div className="flex justify-between items-center mb-8">
+						<h3 className="text-xl font-black text-slate-800 tracking-tight">Evolução de {filterYear}</h3>
+					</div>
+					<div className="h-80 w-full">
+						<ResponsiveContainer width="100%" height="100%">
+							<BarChart data={dashboardData.dadosGrafico} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+								<CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+								<XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontWeight: 600, fontSize: 13 }} dy={10} />
+								<YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} />
+								<Tooltip
+									cursor={{ fill: "#f8fafc" }}
+									contentStyle={{ borderRadius: "16px", border: "none", boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)", fontWeight: 600, padding: "12px 20px" }}
+									formatter={(value: number) => [`R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, ""]}
+								/>
+								<Legend iconType="circle" wrapperStyle={{ paddingTop: "20px" }} />
+								
+								{(filterCategory === "all" || filterCategory === "entradas") && <Bar dataKey="entradas" name="Entradas" fill="#10b981" radius={[6, 6, 0, 0]} barSize={24} />}
+								{(filterCategory === "all" || filterCategory === "gastos") && <Bar dataKey="gastos" name="Saídas/Gastos" fill="#f43f5e" radius={[6, 6, 0, 0]} barSize={24} />}
+								{filterCategory === "cartoes" && <Bar dataKey="cartoes" name="Faturas" fill="#a855f7" radius={[6, 6, 0, 0]} barSize={24} />}
+								{filterCategory === "investimentos" && <Bar dataKey="investimentos" name="Investimentos" fill="#3b82f6" radius={[6, 6, 0, 0]} barSize={24} />}
+								{filterCategory === "dividas" && <Bar dataKey="dividas" name="Dívidas" fill="#f97316" radius={[6, 6, 0, 0]} barSize={24} />}
+							</BarChart>
+						</ResponsiveContainer>
+					</div>
+				</motion.div>
+
+				{/* Insights */}
+				<motion.div variants={itemVariants} className="lg:col-span-1 bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between">
+					<div className="space-y-6">
+						<div className="flex justify-between items-center">
+							<h3 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+								<Sparkles className="text-pink-500" size={20} />
+								Insights Finanças
+							</h3>
+							<button
+								onClick={generateAIInsights}
+								disabled={loadingAI}
+								className="p-2 bg-pink-50 hover:bg-pink-100 text-pink-600 rounded-xl transition-all disabled:opacity-50 flex items-center gap-1.5 font-bold text-xs shadow-sm hover:shadow active:scale-95"
+								title="Gerar insights com Inteligência Artificial"
+							>
+								{loadingAI ? (
+									<div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-pink-600"></div>
+								) : (
+									<RefreshCw size={14} />
+								)}
+								IA ✨
+							</button>
+						</div>
+
+						<div className="space-y-4">
+							{computedInsights.map((insight, idx) => (
+								<div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex gap-3 hover:bg-pink-50/20 hover:border-pink-100/50 transition-all">
+									<div className="text-lg">💡</div>
+									<div className="space-y-1">
+										<h4 className="font-bold text-slate-800 text-sm">{insight.titulo}</h4>
+										<p className="text-xs text-slate-500 font-medium leading-relaxed">{insight.texto}</p>
+									</div>
+								</div>
+							))}
+						</div>
+					</div>
+
+					<div className="mt-6 pt-4 border-t border-slate-100 text-center">
+						<span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+							{aiInsights.length > 0 ? "Gerado por Gemini AI" : "Análise Baseada em Regras"}
+						</span>
+					</div>
+				</motion.div>
+			</div>
+
+			{/* FATURAS PENDENTES E DEVEDORES ATIVOS */}
+			<motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+				{/* Faturas Pendentes */}
+				<div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col h-full">
+					<div className="flex justify-between items-center mb-6">
+						<h3 className="font-black text-slate-800 text-xl tracking-tight flex items-center gap-2">
+							<CreditCard className="text-pink-500" size={22} />
+							Faturas Pendentes
+						</h3>
+						<button 
+							onClick={() => navigate("/cartoes")} 
+							className="text-xs font-bold text-indigo-500 hover:text-indigo-600 bg-indigo-50 hover:bg-indigo-100/60 px-3 py-1.5 rounded-full transition-all"
+						>
+							Ir para Cartões
+						</button>
+					</div>
+
+					<div className="space-y-4 flex-1">
+						{loadingFaturas ? (
+							<div className="flex justify-center items-center h-48">
+								<div className="animate-spin rounded-full h-6 w-6 border-b-2 border-pink-500"></div>
+							</div>
+						) : rawFaturasNaoPagas.length === 0 ? (
+							<div className="flex flex-col items-center justify-center h-48 text-center text-slate-400">
+								<AlertCircle size={32} className="text-emerald-400 mb-2" />
+								<p className="font-bold text-sm">Tudo pago por aqui!</p>
+								<p className="text-xs">Não há faturas pendentes nos últimos 3 meses.</p>
+							</div>
+						) : (
+							rawFaturasNaoPagas.map((f: any) => (
+								<div 
+									key={`${f.cartao.id}-${f.mesReferencia}`}
+									className="flex items-center justify-between p-4 bg-slate-50 hover:bg-pink-50/10 rounded-2xl border border-slate-100 hover:border-pink-100/30 transition-all"
+								>
+									<div className="flex items-center gap-3">
+										<span 
+											className="w-3.5 h-3.5 rounded-full border border-white shadow-sm" 
+											style={{ backgroundColor: f.cartao.cor_hex || "#F472B6" }}
+										/>
+										<div>
+											<p className="font-bold text-slate-800 text-sm">{f.cartao.nome}</p>
+											<p className="text-xs text-slate-400 font-medium mt-0.5">
+												Vence: Dia {f.cartao.vencimento_dia} • {formatMonthReference(f.mesReferencia)}
+											</p>
+										</div>
+									</div>
+
+									<div className="flex items-center gap-4">
+										<div className="text-right">
+											<p className="text-[10px] text-slate-400 font-bold uppercase">A pagar</p>
+											<p className="font-black text-rose-500 text-sm">
+												R$ {f.pendente.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+											</p>
+										</div>
+										<button 
+											onClick={() => navigate(`/faturas/${f.cartao.id}`)}
+											className="p-2 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-xl transition-all"
+											title="Visualizar Detalhes"
+										>
+											<ExternalLink size={16} />
+										</button>
+									</div>
+								</div>
+							))
+						)}
+					</div>
 				</div>
-				<div className="h-80 w-full">
-					<ResponsiveContainer width="100%" height="100%">
-						<BarChart data={dashboardData.dadosGrafico} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-							<CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-							<XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontWeight: 600, fontSize: 13 }} dy={10} />
-							<YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} />
-							<Tooltip
-								cursor={{ fill: "#f8fafc" }}
-								contentStyle={{ borderRadius: "16px", border: "none", boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)", fontWeight: 600, padding: "12px 20px" }}
-								formatter={(value: number) => [`R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, ""]}
-							/>
-							<Legend iconType="circle" wrapperStyle={{ paddingTop: "20px" }} />
-							
-							{(filterCategory === "all" || filterCategory === "entradas") && <Bar dataKey="entradas" name="Entradas" fill="#10b981" radius={[6, 6, 0, 0]} barSize={24} />}
-							{(filterCategory === "all" || filterCategory === "gastos") && <Bar dataKey="gastos" name="Saídas/Gastos" fill="#f43f5e" radius={[6, 6, 0, 0]} barSize={24} />}
-							{filterCategory === "cartoes" && <Bar dataKey="cartoes" name="Faturas" fill="#a855f7" radius={[6, 6, 0, 0]} barSize={24} />}
-							{filterCategory === "investimentos" && <Bar dataKey="investimentos" name="Investimentos" fill="#3b82f6" radius={[6, 6, 0, 0]} barSize={24} />}
-							{filterCategory === "dividas" && <Bar dataKey="dividas" name="Dívidas" fill="#f97316" radius={[6, 6, 0, 0]} barSize={24} />}
-						</BarChart>
-					</ResponsiveContainer>
+
+				{/* Devedores Ativos */}
+				<div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col h-full">
+					<div className="flex justify-between items-center mb-6">
+						<h3 className="font-black text-slate-800 text-xl tracking-tight flex items-center gap-2">
+							<Users className="text-pink-500" size={22} />
+							Devedores Ativos
+						</h3>
+						<button 
+							onClick={() => navigate("/devedores")} 
+							className="text-xs font-bold text-indigo-500 hover:text-indigo-600 bg-indigo-50 hover:bg-indigo-100/60 px-3 py-1.5 rounded-full transition-all"
+						>
+							Ir para Devedores
+						</button>
+					</div>
+
+					<div className="space-y-4 flex-1">
+						{devedores.filter(d => d.total_devido > 0).length === 0 ? (
+							<div className="flex flex-col items-center justify-center h-48 text-center text-slate-400">
+								<AlertCircle size={32} className="text-emerald-400 mb-2" />
+								<p className="font-bold text-sm">Ninguém deve nada!</p>
+								<p className="text-xs">Não há valores a receber de terceiros pendentes.</p>
+							</div>
+						) : (
+							devedores
+								.filter((d: any) => d.total_devido > 0)
+								.map((devedor: any) => (
+									<div 
+										key={devedor.contato.id}
+										className="flex items-center justify-between p-4 bg-slate-50 hover:bg-pink-50/10 rounded-2xl border border-slate-100 hover:border-pink-100/30 transition-all"
+									>
+										<div className="flex items-center gap-3">
+											<div className="w-9 h-9 bg-pink-100 rounded-full flex justify-center items-center">
+												<span className="text-pink-600 font-black text-sm">
+													{devedor.contato.nome.charAt(0).toUpperCase()}
+												</span>
+											</div>
+											<div>
+												<p className="font-bold text-slate-800 text-sm">{devedor.contato.nome}</p>
+												<p className="text-xs text-slate-400 font-medium mt-0.5">
+													{devedor.contato.telefone || "Sem Telefone"}
+												</p>
+											</div>
+										</div>
+
+										<div className="flex items-center gap-4">
+											<div className="text-right">
+												<p className="text-[10px] text-slate-400 font-bold uppercase">Total devido</p>
+												<p className="font-black text-rose-500 text-sm">
+													R$ {devedor.total_devido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+												</p>
+											</div>
+											<button 
+												onClick={() => handleCobrarWhatsApp(devedor)}
+												className="p-2 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-xl transition-all shadow-sm shadow-emerald-100"
+												title="Cobrar via WhatsApp"
+											>
+												<Phone size={16} />
+											</button>
+										</div>
+									</div>
+								))
+						)}
+					</div>
 				</div>
 			</motion.div>
 

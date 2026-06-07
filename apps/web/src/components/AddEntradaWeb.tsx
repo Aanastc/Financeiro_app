@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Save, ArrowUpCircle } from "lucide-react";
+import { X, Save, ArrowUpCircle, Edit3 } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
 
 export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
@@ -19,6 +19,33 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 			parseFloat(onlyNumbers) / 100,
 		);
 		return result === "NaN" ? "" : result;
+	};
+
+	const handleRenameCategory = async (oldName: string) => {
+		const newName = prompt(`Renomear categoria "${oldName}" para:`, oldName);
+		if (!newName || newName.trim() === "" || newName.trim() === oldName) return;
+
+		const { data: { user } } = await supabase.auth.getUser();
+		if (!user) return;
+
+		try {
+			const { error } = await supabase
+				.from("entradas")
+				.update({ descricao: newName.trim() })
+				.eq("usuario_id", user.id)
+				.eq("descricao", oldName);
+
+			if (error) throw error;
+
+			if (form.descricao === oldName) {
+				setForm(f => ({ ...f, descricao: newName.trim() }));
+			}
+
+			onSuccess(); // Recarrega do banco
+		} catch (err) {
+			console.error(err);
+			alert("Erro ao renomear categoria.");
+		}
 	};
 
 	const handleSave = async () => {
@@ -72,7 +99,7 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 				</div>
 
 				<div className="p-10 space-y-6">
-					<div className="space-y-2">
+					<div className="space-y-3">
 						<label className="text-[10px] font-black uppercase text-gray-400 ml-2">
 							Categoria
 						</label>
@@ -88,6 +115,43 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 								<option key={c} value={c} />
 							))}
 						</datalist>
+
+						{/* LIST OF CATEGORIES WITH EDIT BUTTONS */}
+						<div className="space-y-1">
+							<span className="text-[9px] font-black uppercase text-gray-400 ml-2">Categorias Existentes</span>
+							<div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto p-2 bg-[#FCF8F8] rounded-2xl border border-gray-100/50 custom-scrollbar">
+								{categorias.length === 0 ? (
+									<span className="text-xs text-gray-400 italic font-medium p-1">Nenhuma categoria registrada</span>
+								) : (
+									categorias.map((c: string) => (
+										<div
+											key={c}
+											className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
+												form.descricao === c
+													? "bg-[#4CAF50] text-white"
+													: "bg-white text-[#5D4037] border border-gray-100 hover:bg-gray-50"
+											}`}
+											onClick={() => setForm({ ...form, descricao: c })}
+										>
+											<span>{c}</span>
+											<button
+												type="button"
+												className={`p-0.5 rounded-full hover:bg-black/10 transition-colors ${
+													form.descricao === c ? "text-white" : "text-gray-400 hover:text-[#5D4037]"
+												}`}
+												onClick={(e) => {
+													e.stopPropagation();
+													handleRenameCategory(c);
+												}}
+												title={`Renomear categoria ${c}`}
+											>
+												<Edit3 size={10} />
+											</button>
+										</div>
+									))
+								)}
+							</div>
+						</div>
 					</div>
 
 					<div className="grid grid-cols-2 gap-4">

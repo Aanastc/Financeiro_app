@@ -352,7 +352,20 @@ export const financeService = {
       const devedor = devedoresMap.get(contatoId);
       // Soma apenas se NÃO estiver pago
       if (!gasto.terceiro_pago) {
-        devedor.total_devido += Number(gasto.valor);
+        let valorDevido = Number(gasto.valor);
+        if (gasto.observacao) {
+          try {
+            if (gasto.observacao.trim().startsWith("{")) {
+              const meta = JSON.parse(gasto.observacao);
+              if (meta && typeof meta.valor_pago === "number") {
+                valorDevido = Math.max(0, valorDevido - meta.valor_pago);
+              }
+            }
+          } catch (e) {
+            // Ignore JSON parsing errors for plain observations
+          }
+        }
+        devedor.total_devido += valorDevido;
       }
       devedor.itens.push(gasto);
     });
@@ -392,7 +405,7 @@ export const financeService = {
     
     const { data: itens, error } = await supabase
       .from("gastos")
-      .select("*")
+      .select("*, contatos(*)")
       .eq("usuario_id", usuario_id)
       .eq("cartao_id", cartao_id)
       .gte("data", dataInicio)

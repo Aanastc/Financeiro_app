@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { authService } from "../../../../packages/services/auth.service";
 import { financeService } from "../../../../packages/services/finance.service";
 import { motion } from "framer-motion";
@@ -12,6 +12,7 @@ export default function Faturas() {
 	
 	const [fatura, setFatura] = useState<any>(null);
 	const [loading, setLoading] = useState(true);
+	const [filtroBusca, setFiltroBusca] = useState("");
 	
 	// Default to current month
 	const [mesSelecionado, setMesSelecionado] = useState(() => {
@@ -53,6 +54,18 @@ export default function Faturas() {
 		const nome = data.toLocaleString("pt-BR", { month: "long" });
 		return `${nome.charAt(0).toUpperCase() + nome.slice(1)} ${ano}`;
 	};
+
+	const itensFiltrados = useMemo(() => {
+		if (!fatura || !fatura.itens) return [];
+		const query = filtroBusca.toLowerCase().trim();
+		if (!query) return fatura.itens;
+		return fatura.itens.filter((item: any) => {
+			const descMatch = item.descricao?.toLowerCase().includes(query);
+			const catMatch = item.categoria?.toLowerCase().includes(query);
+			const contatoMatch = item.contatos?.nome?.toLowerCase().includes(query);
+			return descMatch || catMatch || contatoMatch;
+		});
+	}, [fatura, filtroBusca]);
 
 	const containerVariants = {
 		hidden: { opacity: 0 },
@@ -146,21 +159,28 @@ export default function Faturas() {
 			{/* TRANSACTIONS LIST */}
 			{fatura && (
 				<motion.div variants={itemVariants} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
-					<div className="p-8 border-b border-slate-100">
+					<div className="p-8 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 						<h3 className="font-black text-slate-800 text-xl tracking-tight">Lançamentos da Fatura</h3>
+						<input
+							type="text"
+							placeholder="Buscar por descrição, categoria ou devedor..."
+							className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-indigo-500 w-full sm:w-80 shadow-inner bg-slate-50 transition-colors"
+							value={filtroBusca}
+							onChange={(e) => setFiltroBusca(e.target.value)}
+						/>
 					</div>
 					<div className="p-4">
-						{fatura.itens.length === 0 ? (
+						{itensFiltrados.length === 0 ? (
 							<div className="text-center py-10 text-slate-400 italic">
-								Nenhum lançamento encontrado para esta fatura.
+								{filtroBusca ? "Nenhum lançamento corresponde à busca." : "Nenhum lançamento encontrado para esta fatura."}
 							</div>
 						) : (
 							<div className="space-y-2">
-								{fatura.itens.map((item: any) => (
+								{itensFiltrados.map((item: any) => (
 									<div key={item.id} className="flex justify-between items-center p-4 hover:bg-slate-50 rounded-2xl transition-colors">
 										<div>
 											<p className="font-bold text-slate-800 text-lg">{item.descricao}</p>
-											<div className="flex gap-3 text-xs font-medium text-slate-400 mt-1">
+											<div className="flex flex-wrap gap-2 text-xs font-medium text-slate-400 mt-1">
 												<span>{new Date(item.data).toLocaleDateString("pt-BR")}</span>
 												{item.total_parcelas > 1 && (
 													<span className="text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full">
@@ -168,8 +188,11 @@ export default function Faturas() {
 													</span>
 												)}
 												{item.terceiro && (
-													<span className="text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full">
-														Compra para Terceiro
+													<span 
+														className="text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full cursor-help hover:bg-rose-100 transition-colors"
+														title={`Devedor: ${item.contatos?.nome || "Não informado"}\nStatus: ${item.terceiro_pago ? "Pago" : "Pendente"}`}
+													>
+														Compra para Terceiro: {item.contatos?.nome || "Não informado"}
 													</span>
 												)}
 											</div>

@@ -56,7 +56,7 @@ export function EditGastoWeb({
 		classificacao: "Variável",
 		categoria: "Outros",
 		tipo: "Renda fixa (essencial)",
-		metodo_pagamento: "Débito",
+		metodo_pagamento: "Débito/Pix",
 		cartao_id: "",
 		parcelas: "1",
 		observacao: "",
@@ -134,7 +134,7 @@ export function EditGastoWeb({
 			classificacao: item.classificacao || "Variável",
 			categoria: item.categoria || "Outros",
 			tipo: item.tipo || "Renda fixa (essencial)",
-			metodo_pagamento: item.metodo_pagamento || "Débito",
+			metodo_pagamento: item.metodo_pagamento === "Pix" || item.metodo_pagamento === "Débito" ? "Débito/Pix" : item.metodo_pagamento || "Débito/Pix",
 			cartao_id: item.cartao_id || "",
 			parcelas: (item.total_parcelas || 1).toString(),
 			observacao: item.observacao || "",
@@ -376,7 +376,7 @@ export function EditGastoWeb({
 									<label className="text-[10px] font-black uppercase text-gray-400 ml-2">Forma de Pagamento</label>
 									<div className="flex gap-2">
 										{[
-											{ id: "Débito", icon: <Layers size={14} /> },
+											{ id: "Débito/Pix", icon: <Layers size={14} /> },
 											{ id: "Crédito", icon: <CreditCard size={14} /> },
 										].map((m) => (
 											<button
@@ -423,8 +423,10 @@ export function EditGastoWeb({
 											<div className="col-span-2 p-4 bg-white/60 rounded-2xl border border-pink-200 animate-in zoom-in duration-300">
 												<div className="flex justify-between items-end">
 													<div>
-														<p className="text-[10px] font-bold text-gray-400 uppercase">Valor por Parcela</p>
-														<p className="text-xl font-black text-pink-600">{preview.valor}</p>
+														<p className="text-[10px] font-bold text-gray-400 uppercase">Parcelamento</p>
+														<p className="text-lg font-black text-pink-600">
+															{formEdit.parcelas}x de {preview.valor}
+														</p>
 													</div>
 													<div className="text-right">
 														<p className="text-[10px] font-bold text-gray-400 uppercase">Finaliza em</p>

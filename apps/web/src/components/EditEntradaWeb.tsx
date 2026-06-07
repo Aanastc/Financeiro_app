@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { X, Trash2, Save, Calendar, Search, Edit3 } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
+import toast from "react-hot-toast";
 
 export function EditEntradaWeb({
 	isOpen,
@@ -13,6 +14,8 @@ export function EditEntradaWeb({
 	const [itemSelecionado, setItemSelecionado] = useState<any>(null);
 	const [valorEdit, setValorEdit] = useState("");
 	const [dataEdit, setDataEdit] = useState("");
+	const [descEdit, setDescEdit] = useState("");
+	const [novoNomeCategoria, setNovoNomeCategoria] = useState("");
 
 	const ocorrencias = dataSnapshot
 		.filter((i: any) => i.descricao === filtroDesc)
@@ -32,19 +35,52 @@ export function EditEntradaWeb({
 		setItemSelecionado(item);
 		setValorEdit(item.valor.toString());
 		setDataEdit(item.data);
+		setDescEdit(item.descricao);
 	};
 
 	const handleUpdate = async () => {
 		if (!itemSelecionado) return;
+		if (!descEdit.trim()) {
+			alert("Informe uma categoria.");
+			return;
+		}
 		await supabase
 			.from("entradas")
 			.update({
+				descricao: descEdit.trim(),
 				valor: parseFloat(valorEdit),
 				data: dataEdit,
 			})
 			.eq("id", itemSelecionado.id);
+		toast.success("Lançamento atualizado!");
 		onSuccess();
 		onClose();
+	};
+
+	const handleRenomearCategoria = async () => {
+		if (!filtroDesc || !novoNomeCategoria.trim() || filtroDesc === novoNomeCategoria.trim()) return;
+		
+		const { data: { user } } = await supabase.auth.getUser();
+		if (!user) return;
+
+		if (!confirm(`Deseja alterar a categoria "${filtroDesc}" para "${novoNomeCategoria.trim()}" em todos os lançamentos?`)) return;
+
+		try {
+			const { error } = await supabase
+				.from("entradas")
+				.update({ descricao: novoNomeCategoria.trim() })
+				.eq("usuario_id", user.id)
+				.eq("descricao", filtroDesc);
+
+			if (error) throw error;
+			
+			toast.success("Categoria renomeada com sucesso!");
+			setFiltroDesc(novoNomeCategoria.trim());
+			onSuccess();
+		} catch (err) {
+			console.error(err);
+			alert("Erro ao renomear categoria.");
+		}
 	};
 
 	const handleDelete = async () => {
@@ -80,6 +116,7 @@ export function EditEntradaWeb({
 								onChange={(e) => {
 									setFiltroDesc(e.target.value);
 									setItemSelecionado(null);
+									setNovoNomeCategoria(e.target.value);
 								}}>
 								<option value="">Selecione...</option>
 								{categorias.map((c: string) => (
@@ -88,6 +125,24 @@ export function EditEntradaWeb({
 									</option>
 								))}
 							</select>
+
+							{filtroDesc && (
+								<div className="mt-4 flex gap-2 animate-in slide-in-from-top-2 duration-300">
+									<input
+										type="text"
+										className="flex-1 p-4 bg-white rounded-2xl font-bold text-[#5D4037] outline-none shadow-sm border border-slate-100 text-sm"
+										value={novoNomeCategoria}
+										onChange={(e) => setNovoNomeCategoria(e.target.value)}
+										placeholder="Novo nome da categoria..."
+									/>
+									<button
+										onClick={handleRenomearCategoria}
+										className="px-5 py-2.5 bg-[#4CAF50] hover:bg-[#43a047] text-white rounded-2xl font-bold text-xs shadow-sm hover:shadow transition-all"
+									>
+										Renomear
+									</button>
+								</div>
+							)}
 						</div>
 
 						<div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
@@ -143,6 +198,25 @@ export function EditEntradaWeb({
 							</div>
 
 							<div className="space-y-6">
+								<div className="space-y-2">
+									<label className="text-[10px] font-black uppercase text-gray-400 ml-2">
+										Categoria
+									</label>
+									<input
+										list="edit-entradas-categorias-list"
+										type="text"
+										className="w-full p-6 bg-[#FCF8F8] rounded-[30px] border border-gray-100 font-black text-[#5D4037] outline-none"
+										value={descEdit}
+										onChange={(e) => setDescEdit(e.target.value)}
+										placeholder="Digite ou selecione a categoria..."
+									/>
+									<datalist id="edit-entradas-categorias-list">
+										{categorias.map((c: string) => (
+											<option key={c} value={c} />
+										))}
+									</datalist>
+								</div>
+
 								<div className="space-y-2">
 									<label className="text-[10px] font-black uppercase text-gray-400 ml-2">
 										Novo Valor

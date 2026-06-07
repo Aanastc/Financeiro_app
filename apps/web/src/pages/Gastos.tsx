@@ -441,7 +441,9 @@ export default function GastosWeb() {
 										<tr key={i} className="hover:bg-[#FDFCFB] transition-colors group">
 											<td 
 												title={resumoObs}
-												className="p-6 sticky left-0 bg-white group-hover:bg-[#FDFCFB] z-10 border-r transition-colors cursor-help">
+												className={`p-6 sticky left-0 bg-white group-hover:bg-[#FDFCFB] z-10 border-r transition-colors ${
+													resumoObs ? "cursor-help" : "cursor-default"
+												}`}>
 												<div className="flex items-center gap-3">
 													<div className="w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400 group-hover:bg-pink-50 group-hover:text-pink-500 transition-all shadow-sm">
 														{CATEGORIA_ICONS[row.categoria] || <HelpCircle size={14} />}
@@ -462,7 +464,7 @@ export default function GastosWeb() {
 														key={idx}
 														title={obsText}
 														className={`p-4 text-center text-sm relative transition-all group/cell ${
-															temObs ? "cursor-help" : ""
+															temObs ? "cursor-help" : "cursor-default"
 														} ${monthFilter === idx ? "bg-pink-50/20" : ""} ${isCurrentMonth ? "bg-pink-50/10" : ""}`}>
 														<div className="flex flex-col items-center">
 															<span className={`font-bold transition-colors ${

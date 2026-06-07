@@ -389,8 +389,7 @@ O JSON deve ter um array chamado "transacoes", e cada objeto deve ter:
                                     value={globalMetodoPagamento}
                                     onChange={(e) => setGlobalMetodoPagamento(e.target.value)}
                                 >
-                                    <option value="Débito">Débito (Conta Corrente)</option>
-                                    <option value="Pix">Pix (Conta Corrente)</option>
+                                    <option value="Débito/Pix">Débito/Pix (Conta Corrente)</option>
                                     <option value="Crédito">Cartão de Crédito (Fatura)</option>
                                 </select>
 

@@ -14,6 +14,7 @@ import InvestimentosWeb from "./pages/Investimentos";
 import ImportadorWeb from "./pages/Importador";
 import Devedores from "./pages/Devedores";
 import Faturas from "./pages/Faturas";
+import LandingPage from "./pages/LandingPage";
 
 export default function App() {
 	return (
@@ -32,6 +33,9 @@ export default function App() {
 				}}
 			/>
 			<Routes>
+				{/* Landing Page Inicial */}
+				<Route path="/" element={<LandingPage />} />
+
 				{/* Rota Inicial: Cadastro */}
 				<Route path="/register" element={<RegisterWeb />} />
 
@@ -53,9 +57,8 @@ export default function App() {
 					<Route path="/importar" element={<ImportadorWeb />} />
 				</Route>
 
-				{/* Redirecionamento para Cadastro se a rota não for encontrada */}
-				<Route path="/" element={<Navigate to="/register" replace />} />
-				<Route path="*" element={<Navigate to="/register" replace />} />
+				{/* Redirecionamento se a rota não for encontrada */}
+				<Route path="*" element={<Navigate to="/" replace />} />
 			</Routes>
 		</BrowserRouter>
 	);
