@@ -17,7 +17,10 @@ export default function AddDividaWeb({ onClose, onSuccess }: AddDividaProps) {
 		parcelas: "1",
 		juros: "0",
 		vencimento_parcela: new Date().toISOString().split('T')[0],
-		vencimento_total: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0]
+		vencimento_total: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+		banco: "",
+		tipo_divida: "Outros",
+		data_inicio: new Date().toISOString().split('T')[0]
 	});
 
 	const handleSubmit = async (e: React.FormEvent) => {
@@ -32,6 +35,11 @@ export default function AddDividaWeb({ onClose, onSuccess }: AddDividaProps) {
 			const { data: { user } } = await supabase.auth.getUser();
 			if (!user) throw new Error("Usuário não autenticado");
 
+			// Calcula vencimento total baseado no início + parcelas
+			const date = new Date(form.data_inicio + "T12:00:00");
+			date.setMonth(date.getMonth() + (parseInt(form.parcelas) || 1));
+			const vencimentoTotalCalculado = date.toISOString().split("T")[0];
+
 			await financeService.addDivida(user.id, {
 				descricao: form.descricao,
 				valor_total: parseFloat(form.valor_total.replace(/\./g, "").replace(",", ".")),
@@ -39,8 +47,11 @@ export default function AddDividaWeb({ onClose, onSuccess }: AddDividaProps) {
 				parcela_atual: 1,
 				juros: parseFloat(form.juros.replace(/\./g, "").replace(",", ".")) || 0,
 				vencimento_parcela: form.vencimento_parcela,
-				vencimento_total: form.vencimento_total,
-				status: "pendente"
+				vencimento_total: vencimentoTotalCalculado,
+				status: "pendente",
+				banco: form.banco || null,
+				tipo_divida: form.tipo_divida,
+				data_inicio: form.data_inicio
 			});
 
 			toast.success("Dívida registrada com sucesso!");
@@ -86,6 +97,34 @@ export default function AddDividaWeb({ onClose, onSuccess }: AddDividaProps) {
 
 					<div className="grid grid-cols-2 gap-4">
 						<div className="space-y-2">
+							<label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Banco / Credor</label>
+							<input 
+								type="text" 
+								className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 font-bold text-[#2D2424] outline-none focus:ring-2 focus:ring-purple-500"
+								placeholder="Ex: Nubank, Itaú"
+								value={form.banco}
+								onChange={e => setForm({...form, banco: e.target.value})}
+							/>
+						</div>
+						<div className="space-y-2">
+							<label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Origem / Tipo</label>
+							<select 
+								className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 font-bold text-[#2D2424] outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+								value={form.tipo_divida}
+								onChange={e => setForm({...form, tipo_divida: e.target.value})}
+							>
+								<option value="Empréstimo">Empréstimo</option>
+								<option value="Consignado">Consignado</option>
+								<option value="Renegociação de Cartão">Renegociação de Cartão</option>
+								<option value="Multa">Multa</option>
+								<option value="Juros">Juros</option>
+								<option value="Outros">Outros</option>
+							</select>
+						</div>
+					</div>
+
+					<div className="grid grid-cols-2 gap-4">
+						<div className="space-y-2">
 							<label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Valor Total (R$)</label>
 							<input 
 								type="text" 
@@ -120,12 +159,22 @@ export default function AddDividaWeb({ onClose, onSuccess }: AddDividaProps) {
 								onChange={e => setForm({...form, parcelas: e.target.value})}
 							/>
 						</div>
-						<div className="space-y-2 col-span-2">
+						<div className="space-y-2">
+							<label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Data de Início</label>
+							<input 
+								type="date" 
+								required
+								className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-4 font-bold text-[#2D2424] outline-none focus:ring-2 focus:ring-purple-500 text-xs"
+								value={form.data_inicio}
+								onChange={e => setForm({...form, data_inicio: e.target.value})}
+							/>
+						</div>
+						<div className="space-y-2">
 							<label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Venc. Próx. Parcela</label>
 							<input 
 								type="date" 
 								required
-								className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 font-bold text-[#2D2424] outline-none focus:ring-2 focus:ring-purple-500"
+								className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-4 font-bold text-[#2D2424] outline-none focus:ring-2 focus:ring-purple-500 text-xs"
 								value={form.vencimento_parcela}
 								onChange={e => setForm({...form, vencimento_parcela: e.target.value})}
 							/>

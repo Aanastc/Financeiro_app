@@ -111,45 +111,64 @@ export const financeService = {
     const isCredito = form.metodo_pagamento === "Crédito";
     const descricaoLimpa = limparDescricao(form.descricao);
 
-    // 💳 PARCELADO (CRIAÇÃO MANUAL OU INÍCIO DE IMPORTAÇÃO)
-    // Se for crédito e tiver mais de 1 parcela, e for a primeira (ou não informada)
-    if (isCredito && numParcelas > 1 && (!form.parcela_atual || form.parcela_atual === 1)) {
-      const idAgrupador = crypto.randomUUID();
-      const listaParcelas = [];
+    // 💳 PARCELADO (CRIAÇÃO MANUAL OU IMPORTAÇÃO DE SÉRIE)
+    if (isCredito && numParcelas > 1) {
+      const valorDaParcela = form.valor_ja_dividido ? valorNumerico : (valorNumerico / numParcelas);
       const [year, month, day] = form.data.split('-').map(Number);
+      const currentParcelaInput = form.parcela_atual || 1;
 
-      for (let i = 0; i < numParcelas; i++) {
-        // Lógica robusta de meses (evita pular meses em dias 31)
-        const dataParcela = new Date(year, month - 1 + i, day, 12, 0, 0);
+      // 1. Procurar parcelas já existentes para essa mesma descrição e total de parcelas
+      const { data: existingSeries } = await supabase
+        .from("gastos")
+        .select("id, parcela_atual, identificador_parcelamento, data")
+        .eq("usuario_id", usuario_id)
+        .eq("total_parcelas", numParcelas)
+        .ilike("descricao", `%${descricaoLimpa}%`);
+
+      const foundAgrupador = existingSeries?.find(g => g.identificador_parcelamento)?.identificador_parcelamento;
+      const finalAgrupador = foundAgrupador || form.identificador_parcelamento || crypto.randomUUID();
+      const existingParcelas = new Set(existingSeries?.map(g => g.parcela_atual) || []);
+
+      const listaParcelas = [];
+
+      for (let i = 1; i <= numParcelas; i++) {
+        // Se a parcela já existe no banco de dados, pulamos
+        if (existingParcelas.has(i)) continue;
+
+        // Calcula a data da parcela i deslocada a partir do mês da parcela de entrada
+        const deslocamentoMeses = i - currentParcelaInput;
+        const dataParcela = new Date(year, month - 1 + deslocamentoMeses, day, 12, 0, 0);
         if (dataParcela.getDate() !== day) {
-          dataParcela.setDate(0); // Volta para o último dia do mês anterior se houver overflow
+          dataParcela.setDate(0); // Ajuste de fim de mês
         }
 
         listaParcelas.push({
           usuario_id,
           descricao: descricaoLimpa,
-          valor: valorNumerico / numParcelas,
+          valor: valorDaParcela,
           data: dataParcela.toISOString().split("T")[0],
           categoria: form.categoria || "Outros",
           classificacao: form.classificacao || "Variável",
           tipo: form.tipo || "Essencial",
           metodo_pagamento: "Crédito",
           cartao_id: form.cartao_id,
-          parcela_atual: i + 1,
+          parcela_atual: i,
           total_parcelas: numParcelas,
-          identificador_parcelamento: idAgrupador,
+          identificador_parcelamento: finalAgrupador,
           considerar_soma: false,
           terceiro: form.terceiro || false,
           contato_id: form.contato_id || null,
         });
       }
 
-      const { error } = await supabase.from("gastos").insert(listaParcelas);
-      if (error) throw error;
+      if (listaParcelas.length > 0) {
+        const { error } = await supabase.from("gastos").insert(listaParcelas);
+        if (error) throw error;
+      }
       return;
     }
 
-    // 💸 GASTO NORMAL OU PARCELA INTERMEDIÁRIA (IMPORTAÇÃO)
+    // 💸 GASTO NORMAL
     const { error } = await supabase.from("gastos").insert([
       {
         usuario_id,
@@ -160,11 +179,11 @@ export const financeService = {
         classificacao: form.classificacao || "Variável",
         tipo: form.tipo || "Essencial",
         metodo_pagamento: form.metodo_pagamento,
-        cartao_id: isCredito ? form.cartao_id : null,
-        total_parcelas: form.total_parcelas || numParcelas || 1,
-        parcela_atual: form.parcela_atual || 1,
-        identificador_parcelamento: form.identificador_parcelamento || null,
-        considerar_soma: !isCredito,
+        cartao_id: null,
+        total_parcelas: 1,
+        parcela_atual: 1,
+        identificador_parcelamento: null,
+        considerar_soma: true,
         terceiro: form.terceiro || false,
         contato_id: form.contato_id || null,
       },
@@ -244,13 +263,23 @@ export const financeService = {
    * LANÇAR PAGAMENTO DE FATURA (NOVA LOGICA)
    * Registra na tabela de pagamentos para liberar limite e abater saldo global
    */
-  async pagarFatura(usuario_id: string, cartao_id: string, valor: number, mesReferencia: string) {
+  async pagarFatura(
+    usuario_id: string,
+    cartao_id: string,
+    valor: number,
+    mesReferencia: string,
+    tipoPagamento: string = 'Total',
+    dataPagamento?: string,
+    observacao?: string
+  ) {
     const { data, error } = await supabase.from("pagamentos_faturas").insert([{
       usuario_id,
       cartao_id,
       valor,
       mes_referencia: mesReferencia,
-      data: new Date().toISOString().split("T")[0]
+      tipo_pagamento: tipoPagamento,
+      data: dataPagamento || new Date().toISOString().split("T")[0],
+      observacao: observacao || null
     }]);
     
     if (error) throw error;
@@ -259,17 +288,32 @@ export const financeService = {
 
   async getGlobalBalance(usuario_id: string) {
     try {
-      const [entradas, gastosDebito, pagamentosFatura] = await Promise.all([
+      const [entradas, gastosDebito, pagamentosFatura, metas, investimentos] = await Promise.all([
         supabase.from("entradas").select("valor").eq("usuario_id", usuario_id),
         supabase.from("gastos").select("valor").eq("usuario_id", usuario_id).eq("considerar_soma", true),
         supabase.from("pagamentos_faturas").select("valor").eq("usuario_id", usuario_id),
+        supabase.from("metas").select("id, metas_depositos(valor)").eq("usuario_id", usuario_id),
+        supabase.from("investimentos").select("valor_investido").eq("usuario_id", usuario_id),
       ]);
 
       const totalEntradas = entradas.data?.reduce((sum: number, item: any) => sum + Number(item.valor), 0) || 0;
       const totalGastosDebito = gastosDebito.data?.reduce((sum: number, item: any) => sum + Number(item.valor), 0) || 0;
       const totalPagamentos = pagamentosFatura.data?.reduce((sum: number, item: any) => sum + Number(item.valor), 0) || 0;
 
-      return totalEntradas - (totalGastosDebito + totalPagamentos);
+      let totalMetaDepositos = 0;
+      if (metas.data) {
+        metas.data.forEach((m: any) => {
+          if (m.metas_depositos) {
+            m.metas_depositos.forEach((d: any) => {
+              totalMetaDepositos += Number(d.valor || 0);
+            });
+          }
+        });
+      }
+
+      const totalInvestido = investimentos.data?.reduce((sum: number, item: any) => sum + Number(item.valor_investido || 0), 0) || 0;
+
+      return totalEntradas - (totalGastosDebito + totalPagamentos + totalMetaDepositos + totalInvestido);
     } catch (error) {
       console.error("Erro ao buscar saldo global:", error);
       throw error;
@@ -321,6 +365,36 @@ export const financeService = {
 
   async addDivida(usuario_id: string, dados: any) {
     const { error } = await supabase.from("dividas").insert([{ ...dados, usuario_id }]);
+    if (error) throw error;
+  },
+
+  async pagarParcelaDivida(dividaId: string, currentParcela: number, totalParcelas: number, currentVencimento: string) {
+    const nextParcela = currentParcela + 1;
+    const status = nextParcela >= totalParcelas ? 'quitada' : 'pendente';
+    
+    // Calcula vencimento do próximo mês
+    const date = new Date(currentVencimento + "T12:00:00");
+    date.setMonth(date.getMonth() + 1);
+    const nextVencimento = date.toISOString().split("T")[0];
+
+    const { error } = await supabase
+      .from("dividas")
+      .update({
+        parcela_atual: nextParcela,
+        status,
+        vencimento_parcela: nextVencimento
+      })
+      .eq("id", dividaId);
+
+    if (error) throw error;
+  },
+
+  async quitarDivida(dividaId: string) {
+    const { error } = await supabase
+      .from("dividas")
+      .update({ status: 'quitada' })
+      .eq("id", dividaId);
+
     if (error) throw error;
   },
 

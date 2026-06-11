@@ -87,6 +87,13 @@ export default function EntradasWeb() {
 		};
 	}, [loadData]);
 
+	useEffect(() => {
+		const params = new URLSearchParams(window.location.search);
+		if (params.get("add") === "true") {
+			setIsAddOpen(true);
+		}
+	}, []);
+
 	const categoriasExistentes = useMemo(
 		() => Array.from(new Set(data.map((i) => i.descricao))).sort(),
 		[data],

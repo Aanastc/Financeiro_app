@@ -9,6 +9,9 @@ import {
 	Tooltip,
 	ResponsiveContainer,
 	Legend,
+	PieChart,
+	Pie,
+	Cell,
 } from "recharts";
 import {
 	ArrowUpRight,
@@ -24,6 +27,7 @@ import {
 	ExternalLink,
 	RefreshCw,
 	Users,
+	HandCoins,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../../../packages/services/auth.service";
@@ -164,7 +168,6 @@ export default function HomeWeb() {
 				.slice(0, 3);
 
 			const genAI = new GoogleGenerativeAI(apiKey);
-			const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 			const prompt = `Você é um consultor financeiro de inteligência artificial extremamente prático e amigável. Analise o seguinte resumo das finanças do usuário para o ano ${filterYear}:
 - Saldo Atual da Conta: R$ ${stats.saldoTotal}
@@ -186,7 +189,38 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
   ]
 }`;
 
-			const result = await model.generateContent(prompt);
+			const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+			let result;
+			let lastError;
+
+			const callModelWithRetry = async (modelName: string, retries = 1, delay = 1500): Promise<any> => {
+				const modelInstance = genAI.getGenerativeModel({ model: modelName });
+				try {
+					return await modelInstance.generateContent(prompt);
+				} catch (error: any) {
+					const errorMessage = error?.message || "";
+					const isTransient = errorMessage.includes("503") || errorMessage.includes("experiencing high demand") || errorMessage.includes("429");
+					if (retries > 0 && isTransient) {
+						await new Promise(resolve => setTimeout(resolve, delay));
+						return callModelWithRetry(modelName, retries - 1, delay * 2);
+					}
+					throw error;
+				}
+			};
+
+			for (const modelName of modelsToTry) {
+				try {
+					result = await callModelWithRetry(modelName);
+					break;
+				} catch (err) {
+					console.warn(`Falha no modelo ${modelName} no Dashboard:`, err);
+					lastError = err;
+				}
+			}
+
+			if (!result) {
+				throw lastError || new Error("Todos os modelos de IA falharam.");
+			}
 			const text = result.response.text();
 			const cleanText = text.replace(/```json/gi, "").replace(/```/g, "").trim();
 			const json = JSON.parse(cleanText);
@@ -242,10 +276,29 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 			});
 		}
 
-		if (totalFaturasPendente > 0) {
+		const faturasAtrasadasList = rawFaturasNaoPagas.filter((f: any) => {
+			const [ano, mes] = f.mesReferencia.split("-").map(Number);
+			const vencimentoDia = f.cartao.vencimento_dia;
+			const ultimoDiaMes = new Date(ano, mes, 0).getDate();
+			const diaReal = Math.min(vencimentoDia, ultimoDiaMes);
+			const dataVencimento = new Date(ano, mes - 1, diaReal, 23, 59, 59);
+			return new Date() > dataVencimento;
+		});
+
+		const totalFaturasAtrasadas = faturasAtrasadasList.reduce((acc, cur) => acc + Number(cur.pendente), 0);
+		const totalFaturasAbertas = rawFaturasNaoPagas
+			.filter((f: any) => !faturasAtrasadasList.includes(f))
+			.reduce((acc, cur) => acc + Number(cur.pendente), 0);
+
+		if (totalFaturasAtrasadas > 0) {
+			list.push({
+				titulo: "Faturas em Atraso ⚠️",
+				texto: `Você tem R$ ${totalFaturasAtrasadas.toLocaleString("pt-BR")} em faturas de cartão em atraso. Por favor, regularize o quanto antes.`
+			});
+		} else if (totalFaturasAbertas > 0) {
 			list.push({
 				titulo: "Faturas em Aberto 💳",
-				texto: `Você tem R$ ${totalFaturasPendente.toLocaleString("pt-BR")} pendente em faturas de cartão. Lembre-se de pagar até o vencimento.`
+				texto: `Você tem R$ ${totalFaturasAbertas.toLocaleString("pt-BR")} pendente em faturas de cartão. Lembre-se de pagar até o vencimento.`
 			});
 		} else if (totalDividas > 0) {
 			list.push({
@@ -386,6 +439,37 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 		};
 	}, [rawEntradas, rawGastos, rawFaturas, rawInvestimentos, rawDividas, filterYear, filterMonth]);
 
+	const entradaPieData = useMemo(() => {
+		let filtered = rawEntradas;
+		if (filterMonth !== "all") {
+			const prefix = `${filterYear}-${String(filterMonth).padStart(2, '0')}`;
+			filtered = filtered.filter(e => e.data.startsWith(prefix));
+		}
+		const grouped = filtered.reduce((acc: any, item: any) => {
+			const cat = item.categoria || "Outros";
+			acc[cat] = (acc[cat] || 0) + Number(item.valor);
+			return acc;
+		}, {});
+		return Object.keys(grouped).map(name => ({ name, value: grouped[name] }));
+	}, [rawEntradas, filterYear, filterMonth]);
+
+	const gastoPieData = useMemo(() => {
+		let filtered = rawGastos.filter(g => g.considerar_soma === true);
+		if (filterMonth !== "all") {
+			const prefix = `${filterYear}-${String(filterMonth).padStart(2, '0')}`;
+			filtered = filtered.filter(g => g.data.startsWith(prefix));
+		}
+		const grouped = filtered.reduce((acc: any, item: any) => {
+			const cat = item.categoria || "Outros";
+			acc[cat] = (acc[cat] || 0) + Number(item.valor);
+			return acc;
+		}, {});
+		return Object.keys(grouped).map(name => ({ name, value: grouped[name] }));
+	}, [rawGastos, filterYear, filterMonth]);
+
+	const COLORS_ENTRADAS = ["#10B981", "#34D399", "#059669", "#6EE7B7", "#047857"];
+	const COLORS_GASTOS = ["#F43F5E", "#FB7185", "#E11D48", "#FDA4AF", "#BE123C", "#F87171", "#EF4444"];
+
 	useEffect(() => {
 		loadDashboardData();
 		authService.getCurrentUser().then((u) => u && setNome(u.nome.split(" ")[0]));
@@ -470,6 +554,31 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 					<div className="h-8 w-px bg-slate-200 hidden sm:block mx-1"></div>
 					<ExportExcelButton />
 				</div>
+			</motion.div>
+
+			{/* BOTÕES RÁPIDOS */}
+			<motion.div variants={itemVariants} className="flex justify-center sm:justify-start gap-4">
+				<button 
+					onClick={() => navigate("/gastos?add=true")}
+					className="w-10 h-10 bg-rose-500 hover:bg-rose-600 text-white rounded-full flex items-center justify-center transition-all hover:scale-110 shadow-lg shadow-rose-200 cursor-pointer"
+					title="Lançar Gasto"
+				>
+					<TrendingDown size={18} />
+				</button>
+				<button 
+					onClick={() => navigate("/entradas?add=true")}
+					className="w-10 h-10 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full flex items-center justify-center transition-all hover:scale-110 shadow-lg shadow-emerald-200 cursor-pointer"
+					title="Lançar Entrada"
+				>
+					<TrendingUp size={18} />
+				</button>
+				<button 
+					onClick={() => navigate("/dividas?add=true")}
+					className="w-10 h-10 bg-purple-500 hover:bg-purple-600 text-white rounded-full flex items-center justify-center transition-all hover:scale-110 shadow-lg shadow-purple-200 cursor-pointer"
+					title="Lançar Dívida"
+				>
+					<HandCoins size={18} />
+				</button>
 			</motion.div>
 
 			{/* CARDS DE RESUMO */}
@@ -583,6 +692,71 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 				</motion.div>
 			</div>
 
+			{/* GRÁFICOS DE PIZZA DE CATEGORIAS */}
+			<motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+				{/* Entradas */}
+				<div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col items-center">
+					<h3 className="text-lg font-black text-slate-800 tracking-tight mb-4 self-start flex items-center gap-2">
+						<TrendingUp className="text-emerald-500" size={20} /> Origem das Entradas
+					</h3>
+					<div className="h-64 w-full flex justify-center items-center">
+						{entradaPieData.length > 0 ? (
+							<ResponsiveContainer width="100%" height="100%">
+								<PieChart>
+									<Pie
+										data={entradaPieData}
+										innerRadius={60}
+										outerRadius={80}
+										paddingAngle={5}
+										dataKey="value"
+										stroke="none"
+									>
+										{entradaPieData.map((_, index) => (
+											<Cell key={`cell-${index}`} fill={COLORS_ENTRADAS[index % COLORS_ENTRADAS.length]} />
+										))}
+									</Pie>
+									<Tooltip formatter={(value: number) => `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} />
+									<Legend verticalAlign="bottom" height={36} iconType="circle" />
+								</PieChart>
+							</ResponsiveContainer>
+						) : (
+							<p className="text-slate-300 italic text-sm">Sem entradas cadastradas neste período</p>
+						)}
+					</div>
+				</div>
+
+				{/* Gastos */}
+				<div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col items-center">
+					<h3 className="text-lg font-black text-slate-800 tracking-tight mb-4 self-start flex items-center gap-2">
+						<TrendingDown className="text-rose-500" size={20} /> Destino dos Gastos
+					</h3>
+					<div className="h-64 w-full flex justify-center items-center">
+						{gastoPieData.length > 0 ? (
+							<ResponsiveContainer width="100%" height="100%">
+								<PieChart>
+									<Pie
+										data={gastoPieData}
+										innerRadius={60}
+										outerRadius={80}
+										paddingAngle={5}
+										dataKey="value"
+										stroke="none"
+									>
+										{gastoPieData.map((_, index) => (
+											<Cell key={`cell-${index}`} fill={COLORS_GASTOS[index % COLORS_GASTOS.length]} />
+										))}
+									</Pie>
+									<Tooltip formatter={(value: number) => `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} />
+									<Legend verticalAlign="bottom" height={36} iconType="circle" />
+								</PieChart>
+							</ResponsiveContainer>
+						) : (
+							<p className="text-slate-300 italic text-sm">Sem gastos cadastrados neste período</p>
+						)}
+					</div>
+				</div>
+			</motion.div>
+
 			{/* FATURAS PENDENTES E DEVEDORES ATIVOS */}
 			<motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 				{/* Faturas Pendentes */}
@@ -606,47 +780,61 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 								<div className="animate-spin rounded-full h-6 w-6 border-b-2 border-pink-500"></div>
 							</div>
 						) : rawFaturasNaoPagas.length === 0 ? (
-							<div className="flex flex-col items-center justify-center h-48 text-center text-slate-400">
+							<div className="flex flex-col items-center justify-center h-48 text-center text-slate-400 dark:text-slate-500">
 								<AlertCircle size={32} className="text-emerald-400 mb-2" />
 								<p className="font-bold text-sm">Tudo pago por aqui!</p>
 								<p className="text-xs">Não há faturas pendentes nos últimos 3 meses.</p>
 							</div>
 						) : (
-							rawFaturasNaoPagas.map((f: any) => (
-								<div 
-									key={`${f.cartao.id}-${f.mesReferencia}`}
-									className="flex items-center justify-between p-4 bg-slate-50 hover:bg-pink-50/10 rounded-2xl border border-slate-100 hover:border-pink-100/30 transition-all"
-								>
-									<div className="flex items-center gap-3">
-										<span 
-											className="w-3.5 h-3.5 rounded-full border border-white shadow-sm" 
-											style={{ backgroundColor: f.cartao.cor_hex || "#F472B6" }}
-										/>
-										<div>
-											<p className="font-bold text-slate-800 text-sm">{f.cartao.nome}</p>
-											<p className="text-xs text-slate-400 font-medium mt-0.5">
-												Vence: Dia {f.cartao.vencimento_dia} • {formatMonthReference(f.mesReferencia)}
-											</p>
-										</div>
-									</div>
+							rawFaturasNaoPagas.map((f: any) => {
+								const [ano, mes] = f.mesReferencia.split("-").map(Number);
+								const vencimentoDia = f.cartao.vencimento_dia;
+								const ultimoDiaMes = new Date(ano, mes, 0).getDate();
+								const diaReal = Math.min(vencimentoDia, ultimoDiaMes);
+								const dataVencimento = new Date(ano, mes - 1, diaReal, 23, 59, 59);
+								const isAtrasada = new Date() > dataVencimento;
 
-									<div className="flex items-center gap-4">
-										<div className="text-right">
-											<p className="text-[10px] text-slate-400 font-bold uppercase">A pagar</p>
-											<p className="font-black text-rose-500 text-sm">
-												R$ {f.pendente.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-											</p>
+								return (
+									<div 
+										key={`${f.cartao.id}-${f.mesReferencia}`}
+										className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-850 hover:bg-pink-50/10 dark:hover:bg-pink-950/10 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all"
+									>
+										<div className="flex items-center gap-3">
+											<span 
+												className="w-3.5 h-3.5 rounded-full border border-white dark:border-slate-900 shadow-sm" 
+												style={{ backgroundColor: f.cartao.cor_hex || "#F472B6" }}
+											/>
+											<div>
+												<div className="flex items-center gap-2">
+													<p className="font-bold text-slate-800 dark:text-slate-100 text-sm">{f.cartao.nome}</p>
+													<span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${isAtrasada ? 'bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 animate-pulse' : 'bg-orange-100 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400'}`}>
+														{isAtrasada ? 'Atrasada' : 'Aberta'}
+													</span>
+												</div>
+												<p className="text-xs text-slate-400 dark:text-slate-500 font-medium mt-0.5">
+													Vence: Dia {f.cartao.vencimento_dia} • {formatMonthReference(f.mesReferencia)}
+												</p>
+											</div>
 										</div>
-										<button 
-											onClick={() => navigate(`/faturas/${f.cartao.id}`)}
-											className="p-2 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-xl transition-all"
-											title="Visualizar Detalhes"
-										>
-											<ExternalLink size={16} />
-										</button>
+
+										<div className="flex items-center gap-4">
+											<div className="text-right">
+												<p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase">A pagar</p>
+												<p className="font-black text-rose-500 dark:text-rose-455 text-sm">
+													R$ {f.pendente.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+												</p>
+											</div>
+											<button 
+												onClick={() => navigate(`/faturas/${f.cartao.id}`)}
+												className="p-2 text-slate-400 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-xl transition-all"
+												title="Visualizar Detalhes"
+											>
+												<ExternalLink size={16} />
+											</button>
+										</div>
 									</div>
-								</div>
-							))
+								);
+							})
 						)}
 					</div>
 				</div>
@@ -743,16 +931,16 @@ function MetricCard({ title, value, icon, bgClass, hoverClass }: any) {
 	return (
 		<motion.div 
 			whileHover={{ y: -4 }}
-			className={`bg-white p-8 rounded-[32px] shadow-sm border border-slate-100 flex flex-col justify-center ${hoverClass} transition-shadow`}
+			className={`bg-white dark:bg-slate-900 p-8 rounded-[32px] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col justify-center ${hoverClass} transition-all`}
 		>
 			<div className="flex items-center gap-3 mb-3">
-				<div className={`${bgClass} p-2.5 rounded-full`}>
+				<div className={`${bgClass} p-2.5 rounded-full dark:bg-opacity-20`}>
 					{icon}
 				</div>
-				<p className="text-slate-500 font-semibold uppercase tracking-wider text-xs">{title}</p>
+				<p className="text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider text-xs">{title}</p>
 			</div>
-			<h3 className="text-3xl font-black text-slate-800">
-				<span className="text-slate-400 text-xl mr-1">R$</span>
+			<h3 className="text-3xl font-black text-slate-800 dark:text-slate-100">
+				<span className="text-slate-400 dark:text-slate-550 text-xl mr-1">R$</span>
 				{value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 			</h3>
 		</motion.div>
@@ -761,12 +949,12 @@ function MetricCard({ title, value, icon, bgClass, hoverClass }: any) {
 
 function RecentSection({ title, items, colorClass, bgIconClass, icon, onMore, titleField = "descricao", dateField = "data" }: any) {
 	return (
-		<div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col h-full">
+		<div className="bg-white dark:bg-slate-900 p-8 rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col h-full transition-colors">
 			<div className="flex justify-between items-center mb-6">
-				<h3 className="font-black text-slate-800 text-xl tracking-tight">{title}</h3>
+				<h3 className="font-black text-slate-800 dark:text-slate-100 text-xl tracking-tight">{title}</h3>
 				<button
 					onClick={onMore}
-					className="text-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 px-3 py-1.5 rounded-full transition-colors flex items-center text-sm font-bold"
+					className="text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-305 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 px-3 py-1.5 rounded-full transition-colors flex items-center text-sm font-bold"
 				>
 					Ver mais <ChevronRight size={16} className="ml-1" />
 				</button>
@@ -774,7 +962,7 @@ function RecentSection({ title, items, colorClass, bgIconClass, icon, onMore, ti
 			
 			<div className="space-y-5 flex-1">
 				{items.length === 0 ? (
-					<div className="flex items-center justify-center h-full text-slate-400 italic text-sm">
+					<div className="flex items-center justify-center h-full text-slate-400 dark:text-slate-500 italic text-sm">
 						Nenhum registro encontrado.
 					</div>
 				) : (
@@ -785,13 +973,13 @@ function RecentSection({ title, items, colorClass, bgIconClass, icon, onMore, ti
 							className="flex justify-between items-center group cursor-default"
 						>
 							<div className="flex items-center gap-4">
-								<div className={`p-3 rounded-2xl ${bgIconClass}`}>
+								<div className={`p-3 rounded-2xl ${bgIconClass} dark:bg-opacity-20`}>
 									{icon}
 								</div>
 								<div>
-									<p className="font-bold text-slate-700 group-hover:text-slate-900 transition-colors">{item[titleField] || item.descricao}</p>
+									<p className="font-bold text-slate-700 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-slate-100 transition-colors">{item[titleField] || item.descricao}</p>
 									{dateField && item[dateField] && (
-										<p className="text-xs text-slate-400 font-medium mt-0.5">
+										<p className="text-xs text-slate-400 dark:text-slate-550 font-medium mt-0.5">
 											{new Date(item[dateField] + "T12:00:00").toLocaleDateString("pt-BR")}
 										</p>
 									)}

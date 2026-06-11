@@ -96,6 +96,11 @@ export default function MetasWeb() {
 								<div className="text-right">
 									<p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Até {new Date(meta.prazo).toLocaleDateString('pt-BR')}</p>
 									<h3 className="text-xl font-black text-[#3D3030] mt-1">{meta.titulo}</h3>
+									{meta.debito_automatico && (
+										<span className="inline-block mt-2 bg-pink-50 text-pink-600 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider">
+											🔄 Débito: Dia {meta.debito_dia} (R$ {Number(meta.debito_valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+										</span>
+									)}
 								</div>
 							</div>
 

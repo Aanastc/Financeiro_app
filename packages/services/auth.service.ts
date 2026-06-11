@@ -48,6 +48,20 @@ async register(email: string, password: string, nome: string) {
   },
 
   /**
+   * REENVIAR TOKEN (OTP)
+   * Reenvia o código de ativação para o e-mail do usuário.
+   */
+  async resendOtp(email: string) {
+    const { data, error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+    });
+    
+    if (error) throw error;
+    return data;
+  },
+
+  /**
    * LOGIN
    */
   async login(email: string, password: string) {
