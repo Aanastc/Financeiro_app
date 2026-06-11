@@ -397,7 +397,7 @@ export function ExportExcelButton() {
 	return (
 		<button
 			onClick={handleExportExcel}
-			className="bg-pink-500 hover:bg-pink-600 text-white px-4 py-2 rounded-lg font-bold shadow-md hover:shadow-lg active:scale-95 transition-all">
+			className="w-full sm:w-auto bg-pink-500 hover:bg-pink-600 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-md hover:shadow-lg active:scale-95 transition-all cursor-pointer text-center flex items-center justify-center">
 			Baixar Resumo Excel
 		</button>
 	);

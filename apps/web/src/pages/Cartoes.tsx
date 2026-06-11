@@ -124,12 +124,12 @@ export default function Cartoes() {
 
 	return (
 		<motion.div 
-			className="max-w-7xl mx-auto space-y-8 pb-20 p-6 sm:p-10 text-slate-800 dark:text-slate-100"
+			className="space-y-6 sm:space-y-8 pb-20 text-slate-800 dark:text-slate-100"
 			variants={containerVariants}
 			initial="hidden"
 			animate="visible"
 		>
-			<motion.div variants={itemVariants} className="flex flex-col md:flex-row md:justify-between md:items-end gap-4">
+			<motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 				<div>
 					<h2 className="text-4xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-3">
 						<CreditCardIcon className="text-indigo-600 dark:text-indigo-400" size={40} />
@@ -141,7 +141,7 @@ export default function Cartoes() {
 				</div>
 				<button 
 					onClick={() => setIsModalOpen(true)}
-					className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3.5 rounded-2xl font-bold transition-all shadow-md shadow-indigo-200 dark:shadow-none"
+					className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3.5 rounded-2xl font-bold transition-all shadow-md shadow-indigo-200 dark:shadow-none w-full sm:w-auto cursor-pointer"
 				>
 					<Plus size={20} />
 					Novo Cartão
@@ -161,7 +161,7 @@ export default function Cartoes() {
 						const melhorDia = cartao.fechamento_dia === 31 ? 1 : cartao.fechamento_dia + 1;
 
 						return (
-							<div key={cartao.id} className="bg-white dark:bg-slate-900 rounded-[32px] border border-slate-100 dark:border-slate-800 shadow-sm p-6 relative overflow-hidden flex flex-col h-full hover:shadow-md transition-shadow duration-300">
+							<div key={cartao.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm p-5 sm:p-6 relative overflow-hidden flex flex-col h-full hover:shadow-md transition-shadow duration-300">
 								{/* Card appearance */}
 								<div 
 									className="h-40 rounded-2xl p-5 text-white flex flex-col justify-between mb-6 shadow-md transition-all duration-300"

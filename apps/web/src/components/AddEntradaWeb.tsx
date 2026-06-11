@@ -83,30 +83,30 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 	};
 
 	return (
-		<div className="fixed inset-0 bg-[#5D4037]/40 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-			<div className="bg-white w-full max-w-md rounded-[50px] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
-				<div className="p-10 bg-[#4CAF50] text-white relative">
-					<div className="flex items-center gap-3 mb-2">
-						<ArrowUpCircle size={24} />
-						<h3 className="text-3xl font-black">Nova Entrada</h3>
+		<div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-2 sm:p-4 overflow-y-auto" role="dialog" aria-modal="true">
+			<div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl sm:rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in duration-300 border border-slate-100 dark:border-slate-800 flex flex-col max-h-[95vh] sm:max-h-[90vh] transition-colors duration-200">
+				<div className="p-6 sm:p-8 bg-emerald-600 dark:bg-slate-950 text-white relative shrink-0">
+					<div className="flex items-center gap-3 mb-1">
+						<ArrowUpCircle className="w-6 h-6 text-emerald-350 dark:text-emerald-400" />
+						<h3 className="text-2xl sm:text-3xl font-black">Nova Entrada</h3>
 					</div>
-					<p className="font-bold opacity-80">Registre um novo ganho mensal</p>
+					<p className="font-bold opacity-80 text-sm">Registre um novo ganho mensal</p>
 					<button
 						onClick={onClose}
-						className="absolute top-8 right-8 bg-white/20 p-2 rounded-full hover:bg-white/40">
-						<X size={20} />
+						className="absolute top-6 right-6 bg-white/20 p-2 rounded-full hover:bg-white/30 cursor-pointer">
+						<X size={18} />
 					</button>
 				</div>
 
-				<div className="p-10 space-y-6">
-					<div className="space-y-3">
-						<label className="text-[10px] font-black uppercase text-gray-400 ml-2">
+				<div className="p-6 sm:p-8 space-y-5 overflow-y-auto flex-1 scrollbar-thin">
+					<div className="space-y-2">
+						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-wider">
 							Categoria
 						</label>
 						<input
 							list="categorias-list"
 							placeholder="Digite a categoria ou escolha da lista..."
-							className="w-full p-5 bg-[#FCF8F8] rounded-3xl border border-gray-100 outline-none focus:border-[#4CAF50] font-bold text-[#5D4037]"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 outline-none focus:border-emerald-500 font-bold text-slate-700 dark:text-slate-200 text-sm transition-colors"
 							value={form.descricao}
 							onChange={(e) => setForm({ ...form, descricao: e.target.value })}
 						/>
@@ -117,19 +117,19 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 						</datalist>
 
 						{/* LIST OF CATEGORIES WITH EDIT BUTTONS */}
-						<div className="space-y-1">
-							<span className="text-[9px] font-black uppercase text-gray-400 ml-2">Categorias Existentes</span>
-							<div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto p-2 bg-[#FCF8F8] rounded-2xl border border-gray-100/50 custom-scrollbar">
+						<div className="space-y-1.5">
+							<span className="text-[9px] font-black uppercase text-slate-450 dark:text-slate-500 ml-2">Categorias Existentes</span>
+							<div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto p-2 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-100 dark:border-slate-800 custom-scrollbar">
 								{categorias.length === 0 ? (
-									<span className="text-xs text-gray-400 italic font-medium p-1">Nenhuma categoria registrada</span>
+									<span className="text-xs text-slate-400 dark:text-slate-500 italic font-medium p-1">Nenhuma categoria registrada</span>
 								) : (
 									categorias.map((c: string) => (
 										<div
 											key={c}
 											className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
 												form.descricao === c
-													? "bg-[#4CAF50] text-white"
-													: "bg-white text-[#5D4037] border border-gray-100 hover:bg-gray-50"
+													? "bg-emerald-600 text-white"
+													: "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750"
 											}`}
 											onClick={() => setForm({ ...form, descricao: c })}
 										>
@@ -137,7 +137,7 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 											<button
 												type="button"
 												className={`p-0.5 rounded-full hover:bg-black/10 transition-colors ${
-													form.descricao === c ? "text-white" : "text-gray-400 hover:text-[#5D4037]"
+													form.descricao === c ? "text-white" : "text-slate-400 hover:text-slate-200"
 												}`}
 												onClick={(e) => {
 													e.stopPropagation();
@@ -155,28 +155,28 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 					</div>
 
 					<div className="grid grid-cols-2 gap-4">
-						<div className="space-y-2">
-							<label className="text-[10px] font-black uppercase text-gray-400 ml-2">
+						<div className="space-y-1.5">
+							<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-wider">
 								Valor (R$)
 							</label>
 							<input
 								type="text"
 								inputMode="numeric"
 								placeholder="0,00"
-								className="w-full p-5 bg-[#FCF8F8] rounded-3xl font-black text-[#4CAF50] text-2xl outline-none"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-black text-emerald-600 dark:text-emerald-450 text-2xl outline-none border border-slate-200 dark:border-slate-700 focus:border-emerald-500 transition-colors"
 								value={form.valor}
 								onChange={(e) =>
 									setForm({ ...form, valor: formatCurrency(e.target.value) })
 								}
 							/>
 						</div>
-						<div className="space-y-2">
-							<label className="text-[10px] font-black uppercase text-gray-400 ml-2">
+						<div className="space-y-1.5">
+							<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-wider">
 								Data
 							</label>
 							<input
 								type="date"
-								className="w-full p-5 bg-[#FCF8F8] rounded-3xl font-bold text-gray-500 outline-none"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-650 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-emerald-500 transition-colors text-sm"
 								value={form.data}
 								onChange={(e) => setForm({ ...form, data: e.target.value })}
 							/>
@@ -185,8 +185,8 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 
 					<button
 						onClick={handleSave}
-						className="w-full bg-[#5D4037] text-white p-6 rounded-[30px] font-black text-xl hover:bg-[#4a332c] transition-all flex items-center justify-center gap-3">
-						<Save size={24} /> SALVAR REGISTRO
+						className="w-full bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white p-4.5 rounded-2xl font-black text-sm transition-all flex items-center justify-center gap-2 mt-4 cursor-pointer uppercase shrink-0">
+						<Save size={18} /> SALVAR REGISTRO
 					</button>
 				</div>
 			</div>

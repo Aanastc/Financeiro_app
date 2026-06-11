@@ -117,26 +117,26 @@ export function AddGastoWeb({
 	if (!isOpen) return null;
 
 	return (
-		<div className="fixed inset-0 bg-[#5D4037]/50 backdrop-blur-sm z-[100] flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-300">
-			<div className="bg-white w-full max-w-xl rounded-[32px] sm:rounded-[40px] shadow-2xl overflow-hidden max-h-[95vh] sm:max-h-[90vh] flex flex-col">
+		<div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-300" role="dialog" aria-modal="true">
+			<div className="bg-white dark:bg-slate-900 w-full max-w-xl rounded-3xl sm:rounded-[40px] shadow-2xl overflow-hidden max-h-[95vh] sm:max-h-[90vh] flex flex-col border border-slate-100 dark:border-slate-800 transition-colors duration-200">
 				{/* HEADER */}
-				<div className="p-6 sm:p-8 bg-pink-400 text-white flex justify-between items-center shrink-0">
-					<h3 className="text-xl sm:text-2xl font-black flex items-center gap-2">
-						<ShoppingBag /> Novo Gasto
+				<div className="p-5 sm:p-6 bg-rose-500 dark:bg-slate-950 text-white flex justify-between items-center shrink-0">
+					<h3 className="text-lg sm:text-xl font-black flex items-center gap-2">
+						<ShoppingBag className="w-5 h-5 text-rose-300 dark:text-rose-400" /> Novo Gasto
 					</h3>
-					<button onClick={onClose} className="hover:bg-white/20 p-1 rounded-full transition-colors">
-						<X />
+					<button onClick={onClose} className="hover:bg-slate-700 dark:hover:bg-slate-800 p-1.5 rounded-full transition-colors cursor-pointer text-white">
+						<X className="w-5 h-5" />
 					</button>
 				</div>
 
-				<div className="p-6 sm:p-8 space-y-5 overflow-y-auto flex-1 custom-scrollbar">
+				<div className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1 custom-scrollbar">
 					{/* 1. INFORMAÇÕES BÁSICAS */}
-					<div className="space-y-4">
-						<p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">1. Informações Básicas</p>
+					<div className="space-y-3">
+						<p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">1. Informações Básicas</p>
 						<input
 							list="descricao-sugestoes"
 							placeholder="O que você comprou?"
-							className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-bold border-2 border-transparent focus:border-pink-200 transition-all outline-none"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-850 text-slate-700 dark:text-slate-200 rounded-2xl font-bold border border-slate-200 dark:border-slate-700 focus:border-rose-500 transition-colors outline-none text-sm"
 							value={form.descricao}
 							onChange={(e) => setForm({ ...form, descricao: e.target.value })}
 						/>
@@ -148,7 +148,7 @@ export function AddGastoWeb({
 
 						<input
 							type="date"
-							className="w-full p-4 bg-[#FCF8F8] rounded-2xl font-bold border-2 border-transparent focus:border-pink-200 transition-all outline-none"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-850 text-slate-700 dark:text-slate-200 rounded-2xl font-bold border border-slate-200 dark:border-slate-700 focus:border-rose-500 transition-colors outline-none text-sm"
 							value={form.data}
 							onChange={(e) => setForm({ ...form, data: e.target.value })}
 						/>
@@ -156,20 +156,20 @@ export function AddGastoWeb({
 
 					{/* 2. FORMA DE PAGAMENTO */}
 					<div className="space-y-2">
-						<label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">2. Forma de Pagamento</label>
+						<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2">2. Forma de Pagamento</label>
 						<div className="flex gap-2">
 							{[
-								{ id: "Débito/Pix", icon: <Wallet size={18} /> },
-								{ id: "Crédito", icon: <CreditCard size={18} /> },
+								{ id: "Débito/Pix", icon: <Wallet size={16} /> },
+								{ id: "Crédito", icon: <CreditCard size={16} /> },
 							].map((m) => (
 								<button
 									type="button"
 									key={m.id}
 									onClick={() => setForm({ ...form, metodo_pagamento: m.id })}
-									className={`flex-1 p-3 sm:p-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all ${
+									className={`flex-1 p-3 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer text-sm ${
 										form.metodo_pagamento === m.id
-											? "bg-pink-500 text-white shadow-lg scale-[1.02]"
-											: "bg-[#FCF8F8] text-gray-400 hover:bg-pink-50 hover:text-pink-600"
+											? "bg-rose-500 text-white shadow-lg shadow-rose-200/20 dark:shadow-none scale-[1.01]"
+											: "bg-slate-50 dark:bg-slate-850 text-slate-400 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700"
 									}`}>
 									{m.icon} <span>{m.id}</span>
 								</button>
@@ -178,16 +178,16 @@ export function AddGastoWeb({
 					</div>
 
 					{/* 3. DETALHES DO VALOR (DINÂMICO) */}
-					<div className="space-y-4 animate-in slide-in-from-top-2 duration-300">
-						<label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">3. Detalhes do Gasto</label>
+					<div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+						<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2">3. Detalhes do Gasto</label>
 						
 						{form.metodo_pagamento === "Crédito" ? (
-							<div className="p-5 bg-pink-50 rounded-[32px] space-y-4 border border-pink-100">
+							<div className="p-4 bg-rose-500/10 dark:bg-rose-500/5 rounded-3xl space-y-4 border border-rose-500/20">
 								<div className="grid grid-cols-2 gap-3">
-									<div className="space-y-1">
-										<label className="text-[9px] font-black uppercase text-pink-600 ml-2">Selecione o Cartão</label>
+									<div className="space-y-1.5">
+										<label className="text-[9px] font-black uppercase text-rose-500 dark:text-rose-400 ml-2">Selecione o Cartão</label>
 										<select
-											className="w-full p-4 rounded-2xl font-bold bg-white outline-none border-2 border-transparent focus:border-pink-300 text-sm text-slate-700"
+											className="w-full p-3.5 rounded-2xl font-bold bg-white dark:bg-slate-850 text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 text-sm cursor-pointer"
 											value={form.cartao_id}
 											onChange={(e) => setForm({ ...form, cartao_id: e.target.value })}>
 											<option value="">Selecione...</option>
@@ -197,52 +197,52 @@ export function AddGastoWeb({
 										</select>
 									</div>
 
-									<div className="space-y-1">
-										<label className="text-[9px] font-black uppercase text-pink-600 ml-2">Nº de Parcelas</label>
+									<div className="space-y-1.5">
+										<label className="text-[9px] font-black uppercase text-rose-500 dark:text-rose-400 ml-2">Nº de Parcelas</label>
 										<input
 											type="number"
 											min="1"
 											placeholder="Ex: 12"
-											className="w-full p-4 rounded-2xl font-bold bg-white outline-none border-2 border-transparent focus:border-pink-300 text-sm text-slate-700"
+											className="w-full p-3.5 rounded-2xl font-bold bg-white dark:bg-slate-850 text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 text-sm"
 											value={form.parcelas}
 											onChange={(e) => setForm({ ...form, parcelas: e.target.value })}
 										/>
 									</div>
 								</div>
 
-								<div className="space-y-1">
-									<label className="text-[9px] font-black uppercase text-pink-600 ml-2">Valor Total do Gasto</label>
+								<div className="space-y-1.5">
+									<label className="text-[9px] font-black uppercase text-rose-500 dark:text-rose-400 ml-2">Valor Total do Gasto</label>
 									<input
 										placeholder="Valor Total R$ 0,00"
-										className="w-full p-5 bg-white rounded-2xl font-black text-pink-500 text-2xl border-2 border-transparent focus:border-pink-300 outline-none shadow-inner"
+										className="w-full p-4.5 bg-white dark:bg-slate-850 rounded-2xl font-black text-rose-500 dark:text-rose-400 text-2xl border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none"
 										value={form.valor}
 										onChange={(e) => setForm({ ...form, valor: formatCurrency(e.target.value) })}
 									/>
 								</div>
 
 								{preview && (
-									<div className="p-4 bg-white/80 rounded-2xl border border-pink-200 animate-in zoom-in duration-300">
+									<div className="p-4 bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-rose-500/20 animate-in zoom-in duration-300">
 										<div className="flex justify-between items-end">
 											<div>
-												<p className="text-[10px] font-bold text-gray-400 uppercase">Parcelamento</p>
-												<p className="text-lg font-black text-pink-600">
+												<p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Parcelamento</p>
+												<p className="text-base sm:text-lg font-black text-rose-500">
 													{form.parcelas}x de {preview.valor}
 												</p>
 											</div>
 											<div className="text-right">
-												<p className="text-[10px] font-bold text-gray-400 uppercase">Fim do Pagamento</p>
-												<p className="text-xs font-black text-[#3D3030]">{preview.mesFinal}</p>
+												<p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Fim do Pagamento</p>
+												<p className="text-xs font-black text-slate-700 dark:text-slate-200">{preview.mesFinal}</p>
 											</div>
 										</div>
 									</div>
 								)}
 							</div>
 						) : (
-							<div className="space-y-1">
-								<label className="text-[9px] font-black uppercase text-gray-400 ml-2">Valor do Gasto</label>
+							<div className="space-y-1.5">
+								<label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">Valor do Gasto</label>
 								<input
 									placeholder="Valor R$ 0,00"
-									className="w-full p-6 bg-[#FCF8F8] rounded-3xl font-black text-pink-500 text-3xl border-2 border-transparent focus:border-pink-200 outline-none text-center"
+									className="w-full p-5 bg-slate-50 dark:bg-slate-850 rounded-3xl font-black text-rose-500 dark:text-rose-400 text-3xl border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none text-center"
 									value={form.valor}
 									onChange={(e) => setForm({ ...form, valor: formatCurrency(e.target.value) })}
 								/>
@@ -251,11 +251,11 @@ export function AddGastoWeb({
 					</div>
 
 					{/* 4. CLASSIFICAÇÃO */}
-					<div className="space-y-4">
-						<p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">4. Categorização</p>
-						<div className="grid grid-cols-2 gap-3">
+					<div className="space-y-3">
+						<p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">4. Categorização</p>
+						<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 							<select
-								className="p-4 bg-[#FCF8F8] rounded-2xl font-bold text-slate-700 outline-none border-2 border-transparent focus:border-pink-200 cursor-pointer"
+								className="p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
 								value={form.categoria}
 								onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
 								<option value="Outros">Categoria (Opcional)</option>
@@ -265,7 +265,7 @@ export function AddGastoWeb({
 							</select>
 
 							<select
-								className="p-4 bg-[#FCF8F8] rounded-2xl font-bold text-slate-700 outline-none border-2 border-transparent focus:border-pink-200 cursor-pointer"
+								className="p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
 								value={form.tipo}
 								onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
 								<option value="">Tipo do Gasto (Opcional)</option>
@@ -279,7 +279,7 @@ export function AddGastoWeb({
 					{/* BOTÃO FINAL */}
 					<button
 						onClick={handleSave}
-						className="w-full bg-[#3D3030] text-white p-6 rounded-[30px] font-black text-xl shadow-2xl hover:bg-black transition-all active:scale-95 mt-4">
+						className="w-full bg-rose-500 hover:bg-rose-600 dark:bg-rose-600 dark:hover:bg-rose-700 text-white p-4.5 rounded-2xl font-black text-sm shadow-xl hover:shadow-rose-200/30 dark:shadow-none transition-all mt-4 cursor-pointer uppercase shrink-0">
 						SALVAR REGISTRO
 					</button>
 				</div>

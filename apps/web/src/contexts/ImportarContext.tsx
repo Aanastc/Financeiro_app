@@ -170,13 +170,16 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 Retorne APENAS um JSON estrito, sem blocos de código (markdown \`\`\`json), sem textos adicionais, apenas o objeto JSON.
 O JSON deve ter um array chamado "transacoes", e cada objeto deve ter:
 - "data": string (formato YYYY-MM-DD)
-- "descricao": string (nome limpo da transação, se for parcela mantenha a indicação X/Y)
+- "descricao": string (nome limpo da transação. Remova quaisquer indicações ou sufixos de parcelas como "de - X/Y", "X/Y", "de Y", "parcela X", etc., deixando apenas o nome do estabelecimento ou operação base, por exemplo: se a transação for "Htm Operacao Codigo de - 1/12", a descrição deve ser apenas "Htm Operacao Codigo")
 - "valor": number (positivo, float)
 - "tipo_transacao": string (exatamente "Entrada", "Gasto", "Meta" ou "PagamentoFatura". Classifique como "Meta" se a descrição indicar transferência, depósito ou resgate de caixinha, cofrinho, investimentos de metas ou reserva de economia, como "retirado para caixinha", "guardado na caixinha", "cofrinho", etc. Classifique como "PagamentoFatura" se a descrição indicar explicitamente o pagamento ou liquidação da fatura de um cartão de crédito, por exemplo "Pagamento de fatura", "Pagamento Nubank", "Fatura paga", etc.)
 - "categoria": string (adivinhe uma dessas: Moradia, Alimentação, Transporte, Saúde, Lazer, Educação, Assinaturas, Presente, Estetica e Comercio, Emprestimo, Salário, Serviços, Outros)
-- "parcela_atual": number (se for "1/10", coloque 1. Se não tiver parcela, 1)
-- "total_parcelas": number (se for "1/10", coloque 10. Se não tiver parcela, 1)
-- "terceiro": boolean (true se for pagamento para/por terceiro e não do próprio titular, ex: compra pra fulano)`;
+- "parcela_atual": number (se for "1/10" ou "de - 1/12", coloque 1. Se não tiver parcela, 1)
+- "total_parcelas": number (se for "1/10" ou "de - 1/12", coloque 12 ou o número total de parcelas indicado. Se não tiver parcela, 1)
+- "terceiro": boolean (true se for pagamento para/por terceiro e não do próprio titular, ex: compra pra fulano)
+
+Regras Importantes de Análise:
+1. Quando houver operações de crédito/antecipação ou empréstimo onde o valor do crédito entra como saldo na conta, mas há uma diferença de juros/taxas retida, identifique essa diferença e gere uma transação separada do tipo "Gasto" (categoria "Emprestimo" ou "Outros") com descrição apropriada (ex: "Juros de Antecipação" ou similar) representando esse gasto correspondente à diferença dos juros.`;
 
 			let base64String = "";
 			let mimeType = "";

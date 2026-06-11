@@ -140,83 +140,83 @@ export default function EntradasWeb() {
 	}, [data]);
 
 	return (
-		<div className="p-8 space-y-8 bg-[#FDFCFB] min-h-screen animate-in fade-in duration-500">
+		<div className="space-y-6 sm:space-y-8 pb-20 animate-in fade-in duration-500">
 			{/* SECTION: HEADER & ACTIONS */}
-			<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white p-8 rounded-[40px] shadow-sm border border-gray-100">
+			<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 transition-colors">
 				<div className="space-y-1">
 					<div className="flex items-center gap-3">
-						<div className="bg-green-100 p-2 rounded-xl text-green-600">
+						<div className="bg-green-100 dark:bg-green-950/40 p-2 rounded-xl text-green-600 dark:text-green-400">
 							<TrendingUp size={24} />
 						</div>
-						<h1 className="text-3xl font-black text-[#2D2424]">
+						<h1 className="text-3xl font-black text-[#2D2424] dark:text-slate-100">
 							Fluxo de Entradas
 						</h1>
 					</div>
-					<p className="text-gray-400 font-medium text-sm ml-12">
+					<p className="text-gray-400 dark:text-slate-500 font-medium text-sm ml-12">
 						Monitore o crescimento da sua receita em {year}
 					</p>
 				</div>
 
 				<div className="flex flex-wrap items-center gap-3">
-					<div className="flex items-center bg-gray-50 rounded-2xl p-1 border border-gray-100">
+					<div className="flex items-center bg-gray-50 dark:bg-slate-800 rounded-2xl p-1 border border-gray-100 dark:border-slate-700 transition-colors">
 						<button
 							onClick={() => setYear(year - 1)}
-							className="p-2 hover:bg-white hover:shadow-sm rounded-xl transition-all">
+							className="p-2 hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm rounded-xl transition-all text-slate-600 dark:text-slate-400">
 							<ChevronLeft size={20} />
 						</button>
-						<span className="px-4 font-black text-[#2D2424]">{year}</span>
+						<span className="px-4 font-black text-[#2D2424] dark:text-white">{year}</span>
 						<button
 							onClick={() => setYear(year + 1)}
-							className="p-2 hover:bg-white hover:shadow-sm rounded-xl transition-all">
+							className="p-2 hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm rounded-xl transition-all text-slate-600 dark:text-slate-400">
 							<ChevronRight size={20} />
 						</button>
 					</div>
 
 					<button
 						onClick={() => setIsEditOpen(true)}
-						className="px-6 py-3 bg-white border border-gray-200 text-[#2D2424] rounded-2xl font-bold flex items-center gap-2 hover:bg-gray-50 transition-all text-sm">
+						className="px-6 py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-[#2D2424] dark:text-slate-200 rounded-2xl font-bold flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-slate-700 transition-all text-sm cursor-pointer">
 						<Edit3 size={16} /> Gerenciar
 					</button>
-
+ 
 					<button
 						onClick={() => setIsAddOpen(true)}
-						className="px-6 py-3 bg-green-500 text-white rounded-2xl font-bold flex items-center gap-2 hover:bg-green-600 transition-all shadow-lg shadow-green-100 text-sm">
+						className="px-6 py-3 bg-green-500 text-white rounded-2xl font-bold flex items-center gap-2 hover:bg-green-600 transition-all shadow-lg shadow-green-100 dark:shadow-none text-sm cursor-pointer">
 						<Plus size={20} /> Novo Lançamento
 					</button>
 				</div>
 			</div>
 
 			{/* SECTION: KPI CARDS */}
-			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-				<div className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm">
-					<p className="text-xs font-bold text-gray-400 uppercase mb-2">
+			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+				<div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl sm:rounded-[32px] border border-gray-100 dark:border-slate-800 shadow-sm transition-colors">
+					<p className="text-xs font-bold text-gray-400 dark:text-slate-500 uppercase mb-2">
 						Total no Período
 					</p>
-					<h3 className="text-2xl font-black text-green-600">
+					<h3 className="text-2xl font-black text-green-600 dark:text-green-400">
 						R$ {totalPeriodo.toLocaleString()}
 					</h3>
 				</div>
-				<div className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm">
-					<p className="text-xs font-bold text-gray-400 uppercase mb-2">
+				<div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl sm:rounded-[32px] border border-gray-100 dark:border-slate-800 shadow-sm transition-colors">
+					<p className="text-xs font-bold text-gray-400 dark:text-slate-500 uppercase mb-2">
 						Média por Lançamento
 					</p>
-					<h3 className="text-2xl font-black text-[#2D2424]">
+					<h3 className="text-2xl font-black text-[#2D2424] dark:text-slate-100">
 						R${" "}
 						{(totalPeriodo / (data.length || 1)).toLocaleString(undefined, {
 							maximumFractionDigits: 0,
 						})}
 					</h3>
 				</div>
-				<div className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm">
-					<p className="text-xs font-bold text-gray-400 uppercase mb-2">
+				<div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl sm:rounded-[32px] border border-gray-100 dark:border-slate-800 shadow-sm transition-colors">
+					<p className="text-xs font-bold text-gray-400 dark:text-slate-500 uppercase mb-2">
 						Maior Receita
 					</p>
-					<h3 className="text-2xl font-black text-[#2D2424]">
+					<h3 className="text-2xl font-black text-[#2D2424] dark:text-slate-100">
 						R${" "}
 						{Math.max(...data.map((d) => Number(d.valor)), 0).toLocaleString()}
 					</h3>
 				</div>
-				<div className="bg-green-600 p-6 rounded-[32px] shadow-lg text-white">
+				<div className="bg-green-600 p-5 sm:p-6 rounded-2xl sm:rounded-[32px] shadow-lg text-white">
 					<p className="text-xs font-bold text-green-200 uppercase mb-2">
 						Status Anual
 					</p>
@@ -234,10 +234,10 @@ export default function EntradasWeb() {
 						<button
 							key={m}
 							onClick={() => setMonthFilter(m as any)}
-							className={`px-6 py-2.5 rounded-full font-bold text-xs transition-all whitespace-nowrap border ${
+							className={`px-6 py-2.5 rounded-full font-bold text-xs transition-all whitespace-nowrap border cursor-pointer ${
 								monthFilter === m
-									? "bg-[#2D2424] text-white border-[#2D2424]"
-									: "bg-white text-gray-400 border-gray-200 hover:border-gray-300"
+									? "bg-[#2D2424] text-white border-[#2D2424] dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100"
+									: "bg-white dark:bg-slate-900 text-gray-400 dark:text-slate-400 border-gray-200 dark:border-slate-800 hover:border-gray-300 dark:hover:border-slate-700"
 							}`}>
 							{m === "all" ? "ANO COMPLETO" : MESES[m as number].toUpperCase()}
 						</button>
@@ -245,9 +245,9 @@ export default function EntradasWeb() {
 				</div>
 
 				<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-					<div className="lg:col-span-2 bg-white p-8 rounded-[40px] shadow-sm border border-gray-100 h-[400px]">
+					<div className="lg:col-span-2 bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 h-[400px] transition-colors">
 						<div className="flex justify-between items-center mb-8">
-							<h3 className="font-black text-[#2D2424] flex items-center gap-2">
+							<h3 className="font-black text-[#2D2424] dark:text-slate-100 flex items-center gap-2">
 								<Calendar size={18} className="text-green-500" /> Sazonalidade
 								Mensal
 							</h3>
@@ -294,8 +294,8 @@ export default function EntradasWeb() {
 						</ResponsiveContainer>
 					</div>
 
-					<div className="bg-white p-8 rounded-[40px] shadow-sm border border-gray-100 flex flex-col">
-						<h3 className="font-black text-[#2D2424] mb-6 flex items-center gap-2">
+					<div className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 flex flex-col transition-colors">
+						<h3 className="font-black text-[#2D2424] dark:text-slate-100 mb-6 flex items-center gap-2">
 							<Target size={18} className="text-green-500" /> Últimos
 							Lançamentos
 						</h3>
@@ -303,16 +303,16 @@ export default function EntradasWeb() {
 							{ultimosLancamentos.map((item) => (
 								<div
 									key={item.id}
-									className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl hover:bg-green-50 transition-colors group">
+									className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-850/40 rounded-2xl hover:bg-green-50 dark:hover:bg-green-950/20 transition-colors group">
 									<div className="min-w-0">
-										<p className="font-bold text-[#2D2424] truncate text-sm">
+										<p className="font-bold text-[#2D2424] dark:text-slate-100 truncate text-sm">
 											{item.descricao}
 										</p>
-										<p className="text-[10px] text-gray-400 font-bold uppercase">
+										<p className="text-[10px] text-gray-400 dark:text-slate-500 font-bold uppercase">
 											{new Date(item.data).toLocaleDateString("pt-BR")}
 										</p>
 									</div>
-									<p className="font-black text-green-600 text-sm">
+									<p className="font-black text-green-600 dark:text-green-400 text-sm">
 										R$ {Number(item.valor).toLocaleString()}
 									</p>
 								</div>
@@ -328,41 +328,41 @@ export default function EntradasWeb() {
 			</div>
 
 			{/* SECTION: MATRIX TABLE */}
-			<div className="bg-white rounded-[40px] shadow-sm border border-gray-100 overflow-hidden">
-				<div className="p-8 border-b border-gray-50 flex justify-between items-center">
-					<h3 className="font-black text-[#2D2424] flex items-center gap-2">
+			<div className="bg-white dark:bg-slate-900 rounded-3xl sm:rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden transition-colors">
+				<div className="p-5 sm:p-8 border-b border-gray-50 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+					<h3 className="font-black text-[#2D2424] dark:text-slate-100 flex items-center gap-2">
 						<LayoutGrid size={18} className="text-green-500" /> Matriz de
 						Receitas Recorrentes
 					</h3>
-					<span className="text-[10px] bg-green-100 text-green-700 px-3 py-1 rounded-full font-black">
+					<span className="text-[10px] bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400 px-3 py-1 rounded-full font-black self-start sm:self-auto">
 						ANUAL {year}
 					</span>
 				</div>
 				<div className="overflow-x-auto">
 					<table className="w-full text-left border-collapse">
 						<thead>
-							<tr className="bg-gray-50/50">
-								<th className="p-6 font-black text-[#2D2424] sticky left-0 bg-white z-20 border-r w-64">
+							<tr className="bg-gray-50/50 dark:bg-slate-800/30">
+								<th className="p-6 font-black text-[#2D2424] dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-20 border-r border-slate-100 dark:border-slate-800 w-64">
 									Descrição
 								</th>
 								{MESES.map((m, i) => (
 									<th
 										key={m}
-										className={`p-4 text-center text-[10px] font-black uppercase transition-all ${monthFilter === i ? "text-green-600 bg-green-50/50" : "text-gray-400"}`}>
+										className={`p-4 text-center text-[10px] font-black uppercase transition-all ${monthFilter === i ? "text-green-600 bg-green-50/50 dark:bg-green-950/20" : "text-gray-400 dark:text-slate-400"}`}>
 										{m}
 									</th>
 								))}
-								<th className="p-6 text-right font-black text-green-700 bg-green-50">
+								<th className="p-6 text-right font-black text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30">
 									Total
 								</th>
 							</tr>
 						</thead>
-						<tbody className="divide-y divide-gray-50">
+						<tbody className="divide-y divide-gray-50 dark:divide-slate-800">
 							{loading ? (
 								<tr>
 									<td
 										colSpan={14}
-										className="p-20 text-center animate-pulse font-black text-gray-300">
+										className="p-20 text-center animate-pulse font-black text-gray-300 dark:text-slate-700">
 										CARREGANDO DADOS...
 									</td>
 								</tr>
@@ -370,14 +370,14 @@ export default function EntradasWeb() {
 								matrixData.map((row, i) => (
 									<tr
 										key={i}
-										className="hover:bg-gray-50 transition-colors group">
-										<td className="p-6 font-bold text-gray-700 sticky left-0 bg-white group-hover:bg-gray-50 z-10 border-r">
+										className="hover:bg-gray-50 dark:hover:bg-slate-800/40 transition-colors group">
+										<td className="p-6 font-bold text-gray-700 dark:text-slate-300 sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-gray-50 dark:group-hover:bg-slate-800/40 z-10 border-r border-slate-100 dark:border-slate-800">
 											{row.descricao}
 										</td>
 										{row.valores.map((v, idx) => (
 											<td
 												key={idx}
-												className={`p-4 text-center text-sm ${monthFilter === idx ? "bg-green-50/30 font-black text-green-600" : v > 0 ? "font-bold text-gray-600" : "text-gray-200"}`}>
+												className={`p-4 text-center text-sm border-b border-slate-100 dark:border-slate-800/50 ${monthFilter === idx ? "bg-green-50/30 dark:bg-green-950/10 font-black text-green-600 dark:text-green-400" : v > 0 ? "font-bold text-gray-600 dark:text-slate-350" : "text-gray-200 dark:text-slate-800"}`}>
 												{v > 0
 													? v.toLocaleString(undefined, {
 															minimumFractionDigits: 0,
@@ -385,7 +385,7 @@ export default function EntradasWeb() {
 													: "—"}
 											</td>
 										))}
-										<td className="p-6 text-right font-black text-green-600 bg-green-50/40">
+										<td className="p-6 text-right font-black text-green-600 dark:text-green-400 bg-green-50/40 dark:bg-green-950/20">
 											R$ {row.total.toLocaleString()}
 										</td>
 									</tr>

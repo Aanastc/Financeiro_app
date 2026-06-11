@@ -13,6 +13,7 @@ import {
 	Users, // Para Devedores
 	Sun,
 	Moon,
+	ChevronDown,
 } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
 import { authService } from "../../../../packages/services/auth.service";
@@ -25,6 +26,7 @@ export default function DashboardLayout() {
 	const [loading, setLoading] = useState(true);
 	const [userProfile, setUserProfile] = useState<any>(null);
 	const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+	const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 	const [theme, setTheme] = useState(() => {
 		return localStorage.getItem("theme") || "light";
 	});
@@ -66,103 +68,178 @@ export default function DashboardLayout() {
 		await supabase.auth.signOut();
 		navigate("/login");
 	};
+	const fluxoPaths = ["/entradas", "/gastos", "/cartoes", "/devedores"];
+	const planejamentoPaths = ["/dividas", "/metas", "/investimentos"];
+
+	const isGroupActive = (paths: string[]) => paths.includes(location.pathname);
+
+	const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+		if (e.target.value) {
+			navigate(e.target.value);
+		}
+	};
 
 	if (loading) return null; // Ou um loading spinner bonito
 
-	const menuItems = [
-		{ path: "/home", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
-		{ path: "/entradas", label: "Entradas", icon: <ArrowUpCircle size={20} /> },
-		{ path: "/gastos", label: "Gastos", icon: <ArrowDownCircle size={20} /> },
-		{ path: "/cartoes", label: "Cartões", icon: <CreditCard size={20} /> },
-		{ path: "/devedores", label: "Devedores", icon: <Users size={20} /> },
-		{ path: "/dividas", label: "Dívidas", icon: <AlertTriangle size={20} /> },
-		{ path: "/metas", label: "Metas", icon: <Target size={20} /> },
-		{ path: "/investimentos", label: "Investimentos", icon: <Briefcase size={20} /> },
-		{ path: "/importar", label: "Importar", icon: <Upload size={20} /> },
-	];
-
 	return (
 		<ImportarProvider>
-			<div className="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors duration-200">
-				{/* Sidebar */}
-				<aside className="w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-850 flex flex-col p-6 shadow-sm z-10 transition-colors duration-200">
-					<div className="mb-10 px-4">
-						<h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tighter flex items-center gap-2">
-							<div className="w-8 h-8 bg-indigo-600 rounded-xl flex items-center justify-center">
-								<span className="text-white text-lg">F</span>
+			<div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors duration-250 flex flex-col">
+				{/* Header / Navbar superior */}
+				<header className="sticky top-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-50 transition-colors duration-200">
+					{/* Primeira Linha: Marca, Modo Escuro e Perfil */}
+					<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+						<div className="flex items-center gap-3">
+							<div className="w-8 h-8 bg-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-indigo-200 dark:shadow-none">
+								<span className="text-white text-lg font-black">F</span>
 							</div>
-							FINANCE.
-						</h2>
+							<h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tighter">
+								FINANCE.
+							</h2>
+						</div>
+
+						<div className="flex items-center gap-3">
+							{/* Botão de Tema */}
+							<button
+								onClick={toggleTheme}
+								className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-450 transition-all outline-none cursor-pointer"
+								title={theme === "light" ? "Modo Escuro" : "Modo Claro"}
+							>
+								{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+							</button>
+
+							<div className="h-6 w-px bg-slate-200 dark:bg-slate-800" />
+
+							{/* Dropdown do Perfil */}
+							{userProfile && (
+								<div className="relative">
+									<button
+										onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+										className="flex items-center gap-2 p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-all outline-none cursor-pointer"
+									>
+										{userProfile.avatar_url ? (
+											<img src={userProfile.avatar_url} alt="Avatar" className="w-8 h-8 rounded-full object-cover shadow-sm" />
+										) : (
+											<div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-950 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold shadow-sm text-sm">
+												{userProfile.nome ? userProfile.nome.charAt(0).toUpperCase() : "U"}
+											</div>
+										)}
+										<span className="hidden sm:inline font-bold text-sm text-slate-700 dark:text-slate-300 pr-1">{userProfile.nome}</span>
+										<ChevronDown size={14} className="text-slate-400 hidden sm:inline" />
+									</button>
+
+									{isDropdownOpen && (
+										<>
+											<div className="fixed inset-0 z-30" onClick={() => setIsDropdownOpen(false)} />
+											
+											<div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl py-3 z-40 animate-in fade-in slide-in-from-top-2 duration-150">
+												<div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800/80 mb-2">
+													<p className="text-[10px] font-black text-slate-455 uppercase tracking-wider">Conta</p>
+													<p className="font-bold text-slate-800 dark:text-slate-200 truncate">{userProfile.nome}</p>
+													{userProfile.email && <p className="text-xs text-slate-400 dark:text-slate-500 truncate">{userProfile.email}</p>}
+												</div>
+
+												<button
+													onClick={() => {
+														setIsDropdownOpen(false);
+														setIsEditModalOpen(true);
+													}}
+													className="flex w-full items-center gap-3 px-4 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all text-left cursor-pointer"
+												>
+													Editar perfil
+												</button>
+
+												<button
+													onClick={handleLogout}
+													className="flex w-full items-center gap-3 px-4 py-2.5 text-sm font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-all text-left cursor-pointer"
+												>
+													<LogOut size={16} />
+													Sair
+												</button>
+											</div>
+										</>
+									)}
+								</div>
+							)}
+						</div>
 					</div>
 
-					<nav className="flex-1 space-y-2 overflow-y-auto pr-1">
-						{menuItems.map((item) => {
-							const isActive = location.pathname === item.path;
-							return (
+					{/* Segunda Linha: Abas de navegação (rolagem horizontal suave em telas menores) */}
+					<div className="border-t border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50">
+						<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+							<nav className="flex items-center gap-3 py-3 overflow-x-auto no-scrollbar scroll-smooth flex-nowrap w-full">
+								{/* Link: Dashboard */}
 								<Link
-									key={item.path}
-									to={item.path}
-									className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl font-bold transition-all ${
-										isActive
-											? "bg-indigo-600 text-white shadow-md shadow-indigo-200 dark:shadow-none"
-											: "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+									to="/home"
+									className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
+										location.pathname === "/home"
+											? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100 dark:shadow-none"
+											: "text-slate-500 dark:text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-800 dark:hover:text-slate-200"
 									}`}>
-									<div className={`${isActive ? "text-white" : "text-slate-400 dark:text-slate-550"}`}>
-										{item.icon}
-									</div>
-									{item.label}
+									<LayoutDashboard size={14} />
+									Dashboard
 								</Link>
-							);
-						})}
-					</nav>
 
-					<div className="mt-auto border-t border-slate-100 dark:border-slate-800 pt-4 px-2 space-y-2">
-						{userProfile && (
-							<div className="flex items-center justify-between mb-2 px-2">
-								<div className="flex items-center gap-3 overflow-hidden">
-									{userProfile.avatar_url ? (
-										<img src={userProfile.avatar_url} alt="Avatar" className="w-10 h-10 rounded-full object-cover shadow-sm" />
-									) : (
-										<div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-950 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold shadow-sm">
-											{userProfile.nome ? userProfile.nome.charAt(0).toUpperCase() : "U"}
-										</div>
-									)}
-									<div className="flex flex-col overflow-hidden">
-										<span className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate" title={userProfile.nome}>{userProfile.nome}</span>
-										<button 
-											onClick={() => setIsEditModalOpen(true)}
-											className="text-xs text-indigo-600 dark:text-indigo-400 text-left hover:underline"
-										>
-											Editar perfil
-										</button>
+								{/* Select: Fluxo de Caixa */}
+								<div className="relative">
+									<select
+										value={fluxoPaths.includes(location.pathname) ? location.pathname : ""}
+										onChange={handleSelectChange}
+										className={`appearance-none pr-8 pl-4 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer outline-none ${
+											isGroupActive(fluxoPaths)
+												? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100 dark:shadow-none"
+												: "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-850"
+										}`}
+									>
+										<option value="" disabled className="text-slate-450 dark:text-slate-500">Fluxo de Caixa</option>
+										<option value="/entradas" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-bold">📈 Entradas</option>
+										<option value="/gastos" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-bold">📉 Gastos</option>
+										<option value="/cartoes" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-bold">💳 Cartões</option>
+										<option value="/devedores" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-bold">👥 Devedores</option>
+									</select>
+									<div className={`pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 ${isGroupActive(fluxoPaths) ? "text-white" : "text-slate-400"}`}>
+										<ChevronDown size={12} />
 									</div>
 								</div>
-							</div>
-						)}
-						
-						{/* Dark Mode Toggle */}
-						<button
-							onClick={toggleTheme}
-							className="flex w-full items-center gap-3 px-4 py-3 rounded-2xl font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-all text-left">
-							<div className="text-slate-400 dark:text-slate-550">
-								{theme === "light" ? <Moon size={20} /> : <Sun size={20} />}
-							</div>
-							{theme === "light" ? "Modo Escuro" : "Modo Claro"}
-						</button>
 
-						<button
-							onClick={handleLogout}
-							className="flex w-full items-center gap-3 px-4 py-3 rounded-2xl font-bold text-slate-500 dark:text-slate-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 hover:text-rose-600 dark:hover:text-rose-450 transition-all text-left">
-							<div className="text-slate-400 dark:text-slate-500">
-								<LogOut size={20} />
-							</div>
-							Sair
-						</button>
+								{/* Select: Planejamento */}
+								<div className="relative">
+									<select
+										value={planejamentoPaths.includes(location.pathname) ? location.pathname : ""}
+										onChange={handleSelectChange}
+										className={`appearance-none pr-8 pl-4 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer outline-none ${
+											isGroupActive(planejamentoPaths)
+												? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100 dark:shadow-none"
+												: "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-850"
+										}`}
+									>
+										<option value="" disabled className="text-slate-450 dark:text-slate-500">Planejamento</option>
+										<option value="/dividas" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-bold">⚠️ Dívidas</option>
+										<option value="/metas" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-bold">🎯 Metas</option>
+										<option value="/investimentos" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-bold">💼 Investimentos</option>
+									</select>
+									<div className={`pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 ${isGroupActive(planejamentoPaths) ? "text-white" : "text-slate-400"}`}>
+										<ChevronDown size={12} />
+									</div>
+								</div>
+
+								{/* Link: Importar */}
+								<Link
+									to="/importar"
+									className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
+										location.pathname === "/importar"
+											? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100 dark:shadow-none"
+											: "text-slate-500 dark:text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-800 dark:hover:text-slate-200"
+									}`}>
+									<Upload size={14} />
+									Importar
+								</Link>
+							</nav>
+						</div>
 					</div>
-				</aside>
+				</header>
 
-				{/* Main Content */}
-				<main className="flex-1 overflow-y-auto">
+				{/* Conteúdo Principal */}
+				<main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
 					<Outlet />
 				</main>
 

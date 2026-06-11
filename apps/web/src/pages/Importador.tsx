@@ -67,8 +67,8 @@ export default function ImportadorWeb() {
 	};
 
 	return (
-		<div className="p-4 md:p-8 space-y-8 bg-[#FDFCFB] dark:bg-[#0f172a] min-h-screen transition-colors duration-250">
-			<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-8 rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 transition-colors">
+		<div className="space-y-6 sm:space-y-8 pb-20 transition-colors duration-250">
+			<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 transition-colors">
 				<div className="space-y-1">
 					<div className="flex items-center gap-3">
 						<div className="bg-indigo-100 dark:bg-indigo-950 p-2 rounded-xl text-indigo-600 dark:text-indigo-400">
@@ -87,8 +87,8 @@ export default function ImportadorWeb() {
 					onDragOver={handleDrag}
 					onDrop={handleDrop}
 					className={`
-						relative h-[400px] rounded-[50px] border-4 border-dashed transition-all flex flex-col items-center justify-center gap-6
-						${dragActive ? 'border-indigo-500 bg-indigo-50/50 scale-[0.99]' : 'border-gray-100 dark:border-slate-850 bg-white dark:bg-slate-900 hover:border-indigo-200 dark:hover:border-indigo-800 hover:bg-indigo-50/20 dark:hover:bg-indigo-950/20'}
+						relative h-[400px] rounded-3xl sm:rounded-[50px] border-4 border-dashed transition-all flex flex-col items-center justify-center gap-6
+						${dragActive ? 'border-indigo-500 bg-indigo-50/50 scale-[0.99]' : 'border-gray-150 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-200 dark:hover:border-indigo-800 hover:bg-indigo-50/20 dark:hover:bg-indigo-950/20'}
 					`}
 				>
 					<input 
@@ -138,7 +138,7 @@ export default function ImportadorWeb() {
 					</div>
 
 					{loading ? (
-						<div className="bg-white dark:bg-slate-900 rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 p-20 flex flex-col items-center justify-center gap-4 transition-colors">
+						<div className="bg-white dark:bg-slate-900 rounded-3xl sm:rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 p-10 sm:p-20 flex flex-col items-center justify-center gap-4 transition-colors">
 							<div className="relative w-48 h-48 flex items-center justify-center">
 								<svg className="w-full h-full transform -rotate-90">
 									<circle 
@@ -167,8 +167,8 @@ export default function ImportadorWeb() {
 							</div>
 						</div>
 					) : (
-						<div className="bg-white dark:bg-slate-900 rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden transition-colors animate-in fade-in duration-300">
-							<div className="p-8 border-b border-gray-50 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+						<div className="bg-white dark:bg-slate-900 rounded-3xl sm:rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden transition-colors animate-in fade-in duration-300">
+							<div className="p-5 sm:p-8 border-b border-gray-50 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
 								<div className="flex flex-wrap items-center gap-6">
 									<div className="space-y-1">
 										<label className="text-[10px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest">Método Padrão</label>
@@ -377,16 +377,18 @@ export default function ImportadorWeb() {
 																		<Users size={14} /> 
 																		{item.terceiro ? "Para Terceiro" : "Meu Gasto"}
 																	</button>
-																	<button
-																		onClick={() => {
-																			updateItem(item.id, "terceiro", true);
-																			setIsAddContatoOpen(item.id);
-																		}}
-																		className="p-2 text-slate-400 hover:text-[#D97706] hover:bg-amber-50 dark:hover:bg-amber-950/20 rounded-xl transition-all border border-slate-100 dark:border-slate-800 hover:border-amber-200 cursor-pointer"
-																		title="Cadastrar Novo Devedor"
-																	>
-																		<UserPlus size={14} />
-																	</button>
+																	{item.terceiro && (
+																		<button
+																			onClick={() => {
+																				updateItem(item.id, "terceiro", true);
+																				setIsAddContatoOpen(item.id);
+																			}}
+																			className="p-2 text-slate-400 hover:text-[#D97706] hover:bg-amber-50 dark:hover:bg-amber-950/20 rounded-xl transition-all border border-slate-100 dark:border-slate-800 hover:border-amber-200 cursor-pointer"
+																			title="Cadastrar Novo Devedor"
+																		>
+																			<UserPlus size={14} />
+																		</button>
+																	)}
 																</div>
 																
 																{item.terceiro && (
@@ -430,29 +432,7 @@ export default function ImportadorWeb() {
 				</div>
 			)}
 
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-				<div className="bg-indigo-600 p-8 rounded-[40px] text-white space-y-4">
-					<div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center">
-						<CheckCircle2 size={24} />
-					</div>
-					<h4 className="text-xl font-black">Seguro e Inteligente</h4>
-					<p className="text-indigo-100 text-sm font-medium leading-relaxed">Parcelas que já constam no banco são ignoradas automaticamente.</p>
-				</div>
-				<div className="bg-white dark:bg-slate-900 p-8 rounded-[40px] border border-gray-100 dark:border-slate-800 space-y-4 shadow-sm transition-colors">
-					<div className="w-12 h-12 bg-gray-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center text-indigo-500 dark:text-indigo-400">
-						<AlertCircle size={24} />
-					</div>
-					<h4 className="text-xl font-black text-[#2D2424] dark:text-slate-100">Cartão Global</h4>
-					<p className="text-gray-400 dark:text-slate-400 text-sm font-medium leading-relaxed">Selecione o cartão de destino no topo uma única vez para toda a fatura.</p>
-				</div>
-				<div className="bg-white dark:bg-slate-900 p-8 rounded-[40px] border border-gray-100 dark:border-slate-800 space-y-4 shadow-sm transition-colors">
-					<div className="w-12 h-12 bg-gray-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center text-indigo-500 dark:text-indigo-400">
-						<Users size={24} />
-					</div>
-					<h4 className="text-xl font-black text-[#2D2424] dark:text-slate-100">Gestão de Terceiros</h4>
-					<p className="text-gray-400 dark:text-slate-400 text-sm font-medium leading-relaxed">Marque gastos como "Terceiros" e vincule ao Devedor direto na importação.</p>
-				</div>
-			</div>
+
 
 			{isAddContatoOpen && (
 				<AddContatoWeb 

@@ -350,9 +350,9 @@ export default function GastosWeb() {
 	}));
 
 	return (
-		<div className="p-8 space-y-8 bg-[#FDFBFB] dark:bg-slate-950 min-h-screen text-slate-800 dark:text-slate-100 transition-colors duration-250">
+		<div className="space-y-6 sm:space-y-8 pb-20 text-slate-800 dark:text-slate-100 transition-colors duration-250">
 			{/* HEADER E AÇÕES */}
-			<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-8 rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 transition-colors">
+			<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 transition-colors">
 				<div className="space-y-1">
 					<div className="flex items-center gap-3">
 						<div className="bg-pink-100 dark:bg-pink-950 p-2 rounded-xl text-pink-600 dark:text-pink-400">
@@ -362,7 +362,7 @@ export default function GastosWeb() {
 							Controle de Gastos
 						</h1>
 					</div>
-					<p className="text-gray-400 dark:text-slate-405 font-medium text-sm ml-12">
+					<p className="text-gray-400 dark:text-slate-400 font-medium text-sm ml-12">
 						Gestão inteligente de despesas para {year}
 					</p>
 				</div>
@@ -397,9 +397,9 @@ export default function GastosWeb() {
 			</div>
 
 			{/* KPI CARDS - GASTOS */}
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
 				{/* Gasto no Período */}
-				<div className="bg-white dark:bg-slate-900 p-6 rounded-[32px] border border-gray-100 dark:border-slate-800 shadow-sm transition-colors flex flex-col justify-between">
+				<div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl sm:rounded-[32px] border border-gray-100 dark:border-slate-800 shadow-sm transition-colors flex flex-col justify-between">
 					<div>
 						<p className="text-xs font-bold text-gray-400 dark:text-slate-500 uppercase mb-2">
 							Gasto no Período
@@ -414,7 +414,7 @@ export default function GastosWeb() {
 				</div>
 
 				{/* Média p/ Despesa */}
-				<div className="bg-white dark:bg-slate-900 p-6 rounded-[32px] border border-gray-100 dark:border-slate-800 shadow-sm transition-colors flex flex-col justify-between">
+				<div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl sm:rounded-[32px] border border-gray-100 dark:border-slate-800 shadow-sm transition-colors flex flex-col justify-between">
 					<div>
 						<p className="text-xs font-bold text-gray-400 dark:text-slate-500 uppercase mb-2">
 							Média p/ Despesa
@@ -437,7 +437,7 @@ export default function GastosWeb() {
 				</div>
 
 				{/* Despesa Mais Alta */}
-				<div className="bg-white dark:bg-slate-900 p-6 rounded-[32px] border border-gray-100 dark:border-slate-800 shadow-sm transition-colors flex flex-col justify-between">
+				<div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl sm:rounded-[32px] border border-gray-100 dark:border-slate-800 shadow-sm transition-colors flex flex-col justify-between">
 					<div>
 						<p className="text-xs font-bold text-gray-400 dark:text-slate-500 uppercase mb-2">
 							Despesa Mais Alta
@@ -464,7 +464,7 @@ export default function GastosWeb() {
 			{/* CHARTS E FILTROS */}
 			<div className="space-y-4">
 				<div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
-					<Filter size={16} className="text-gray-400 ml-2 mr-2" />
+					<Filter size={16} className="text-gray-400 dark:text-slate-500 ml-2 mr-2" />
 					{["all", ...Array.from({ length: 12 }, (_, i) => i)].map((m) => (
 						<button
 							key={m}
@@ -472,7 +472,7 @@ export default function GastosWeb() {
 							className={`px-6 py-2.5 rounded-full font-bold text-xs transition-all whitespace-nowrap border cursor-pointer ${
 								monthFilter === m
 									? "bg-pink-500 text-white border-pink-500 shadow-md"
-									: "bg-white dark:bg-slate-900 text-gray-400 dark:text-slate-400 border-gray-200 dark:border-slate-800 hover:border-pink-200"
+									: "bg-white dark:bg-slate-900 text-gray-400 dark:text-slate-400 border-gray-200 dark:border-slate-800 hover:border-pink-300 dark:hover:border-pink-900"
 							}`}>
 							{m === "all" ? "VISÃO ANUAL" : MESES[m as number].toUpperCase()}
 						</button>
@@ -480,7 +480,7 @@ export default function GastosWeb() {
 				</div>
 
 				<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-					<div className="lg:col-span-2 bg-white dark:bg-slate-900 p-8 rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 h-[400px] transition-colors">
+					<div className="lg:col-span-2 bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 h-[400px] transition-colors">
 						<h3 className="font-black text-[#3D3030] dark:text-slate-100 flex items-center gap-2 mb-8">
 							<TrendingDown size={18} className="text-pink-500" /> Fluxo de
 							Saída por Mês
@@ -528,7 +528,7 @@ export default function GastosWeb() {
 					</div>
 
 					{/* DYNAMIC CARD 50-30-20 */}
-					<div className="bg-[#3D3030] dark:bg-slate-900 p-8 rounded-[40px] shadow-xl dark:border dark:border-slate-800 text-white flex flex-col relative overflow-hidden transition-colors">
+					<div className="bg-[#3D3030] dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] shadow-xl dark:border dark:border-slate-800 text-white flex flex-col relative overflow-hidden transition-colors">
 						<div className="z-10">
 							<p className="text-pink-400 font-black uppercase text-[10px] tracking-widest flex items-center gap-2">
 								<PieIcon size={14} /> Distribuição Sugerida
@@ -629,8 +629,8 @@ export default function GastosWeb() {
 			</div>
 
 			{/* MATRIZ DE GASTOS */}
-			<div className="bg-white dark:bg-slate-900 rounded-[40px] shadow-[0_20px_50px_rgba(0,0,0,0.02)] border border-gray-100 dark:border-slate-800 overflow-hidden transition-colors">
-				<div className="p-8 border-b border-gray-50 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-900">
+			<div className="bg-white dark:bg-slate-900 rounded-3xl sm:rounded-[40px] shadow-[0_20px_50px_rgba(0,0,0,0.02)] border border-gray-100 dark:border-slate-800 overflow-hidden transition-colors">
+				<div className="p-5 sm:p-8 border-b border-gray-50 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900">
 					<div className="space-y-1">
 						<h3 className="font-black text-[#3D3030] dark:text-slate-100 flex items-center gap-2">
 							<LayoutGrid size={18} className="text-pink-500" /> Matriz de Fluxo Mensal

@@ -35,6 +35,16 @@ export default function Devedores() {
 
 	useEffect(() => {
 		loadDevedores();
+
+		let channel: any;
+		async function setupRealtime() {
+			const { data: { user } } = await supabase.auth.getUser();
+			if (user) {
+				channel = financeService.subscribeToChanges("gastos", user.id, loadDevedores);
+			}
+		}
+		setupRealtime();
+		return () => { if (channel) supabase.removeChannel(channel); };
 	}, []);
 
 	const getPaymentInfo = (observacao: string) => {
@@ -165,19 +175,19 @@ export default function Devedores() {
 
 	return (
 		<motion.div 
-			className="max-w-6xl mx-auto space-y-8 pb-20 p-6 sm:p-10"
+			className="space-y-6 sm:space-y-8 pb-20 text-slate-800 dark:text-slate-100"
 			variants={containerVariants}
 			initial="hidden"
 			animate="visible"
 		>
 			{/* HEADER */}
-			<motion.div variants={itemVariants} className="flex justify-between items-end">
+			<motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 				<div>
-					<h2 className="text-4xl font-black text-slate-800 tracking-tight flex items-center gap-3">
-						<Users className="text-indigo-600" size={40} />
+					<h2 className="text-4xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-3">
+						<Users className="text-indigo-600 dark:text-indigo-400" size={40} />
 						Devedores
 					</h2>
-					<p className="text-slate-500 font-medium text-lg mt-1">
+					<p className="text-slate-500 dark:text-slate-400 font-medium text-lg mt-1">
 						Controle de compras e empréstimos para terceiros.
 					</p>
 				</div>
@@ -188,42 +198,42 @@ export default function Devedores() {
 					<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
 				</div>
 			) : devedores.length === 0 ? (
-				<motion.div variants={itemVariants} className="bg-white p-10 rounded-3xl border border-slate-100 shadow-sm text-center">
+				<motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm text-center">
 					<AlertCircle size={48} className="mx-auto text-emerald-400 mb-4" />
-					<h3 className="text-xl font-bold text-slate-700">Tudo limpo por aqui!</h3>
-					<p className="text-slate-500 mt-2">Ninguém te deve dinheiro no momento.</p>
+					<h3 className="text-xl font-bold text-slate-700 dark:text-slate-200">Tudo limpo por aqui!</h3>
+					<p className="text-slate-500 dark:text-slate-400 mt-2">Ninguém te deve dinheiro no momento.</p>
 				</motion.div>
 			) : (
 				<motion.div variants={itemVariants} className="space-y-4">
 					{devedores.map((devedor) => (
-						<div key={devedor.contato.id} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
+						<div key={devedor.contato.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
 							{/* CARD HEADER */}
 							<div 
-								className="p-6 cursor-pointer flex justify-between items-center bg-slate-50 hover:bg-slate-100 transition-colors"
+								className="p-5 sm:p-6 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
 								onClick={() => setExpandedId(expandedId === devedor.contato.id ? null : devedor.contato.id)}
 							>
 								<div className="flex items-center gap-4">
-									<div className="w-12 h-12 bg-indigo-100 rounded-full flex justify-center items-center">
-										<span className="text-indigo-600 font-black text-xl">
+									<div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-950 rounded-full flex justify-center items-center shrink-0">
+										<span className="text-indigo-600 dark:text-indigo-400 font-black text-xl">
 											{devedor.contato.nome.charAt(0).toUpperCase()}
 										</span>
 									</div>
 									<div>
-										<h3 className="font-bold text-lg text-slate-800">{devedor.contato.nome}</h3>
-										<p className="text-sm text-slate-500 flex items-center gap-1">
+										<h3 className="font-bold text-lg text-slate-800 dark:text-slate-100">{devedor.contato.nome}</h3>
+										<p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1">
 											{devedor.contato.telefone || "Sem telefone"}
 										</p>
 									</div>
 								</div>
 								
-								<div className="flex items-center gap-6">
-									<div className="text-right">
-										<p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Total Devido</p>
-										<p className="text-xl font-black text-rose-500">
+								<div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-100 dark:border-slate-800">
+									<div className="text-left sm:text-right">
+										<p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">Total Devido</p>
+										<p className="text-xl font-black text-rose-500 dark:text-rose-400">
 											R$ {Number(devedor.total_devido).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 										</p>
 									</div>
-									<div className="text-slate-400">
+									<div className="text-slate-400 dark:text-slate-500">
 										{expandedId === devedor.contato.id ? <ChevronUp size={24} /> : <ChevronDown size={24} />}
 									</div>
 								</div>
@@ -236,16 +246,16 @@ export default function Devedores() {
 										initial={{ height: 0, opacity: 0 }}
 										animate={{ height: "auto", opacity: 1 }}
 										exit={{ height: 0, opacity: 0 }}
-										className="border-t border-slate-100"
+										className="border-t border-slate-100 dark:border-slate-800"
 									>
-										<div className="p-6 space-y-4">
-											<div className="flex justify-between items-center mb-4">
-												<h4 className="font-bold text-slate-700">Itens Pendentes ({devedor.itens.length})</h4>
+										<div className="p-5 sm:p-6 space-y-4 bg-white dark:bg-slate-900 transition-colors">
+											<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+												<h4 className="font-bold text-slate-700 dark:text-slate-300">Itens Pendentes ({devedor.itens.length})</h4>
 												<button
 													onClick={() => handleCobrarWhatsApp(devedor)}
-													className="flex items-center gap-2 bg-[#25D366] hover:bg-[#20bd5a] text-white px-4 py-2 rounded-xl font-bold transition-colors shadow-sm"
+													className="flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#20bd5a] text-white px-4 py-2 rounded-xl font-bold transition-colors shadow-sm w-full sm:w-auto cursor-pointer text-sm"
 												>
-													<Phone size={18} />
+													<Phone size={16} />
 													Cobrar via WhatsApp
 												</button>
 											</div>
@@ -257,7 +267,7 @@ export default function Devedores() {
 													const restante = isPartial ? Number(item.valor) - payInfo.valor_pago : 0;
 
 													return (
-														<div key={item.id} className={`flex justify-between items-center p-4 rounded-2xl ${item.terceiro_pago ? 'bg-emerald-50/50' : isPartial ? 'bg-amber-50/50 border border-amber-100' : 'bg-slate-50'}`}>
+														<div key={item.id} className={`flex flex-col sm:flex-row sm:justify-between sm:items-center p-4 rounded-2xl gap-3 ${item.terceiro_pago ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : isPartial ? 'bg-amber-50/50 dark:bg-amber-955/10 border border-amber-100 dark:border-amber-900/30' : 'bg-slate-50 dark:bg-slate-850/40'}`}>
 															<div>
 																<div className="flex items-center flex-wrap gap-2">
 																	<p className={`font-bold ${item.terceiro_pago ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
@@ -293,27 +303,27 @@ export default function Devedores() {
 																	</p>
 																)}
 															</div>
-															<div className="flex items-center gap-4">
-																<p className={`font-black ${item.terceiro_pago ? 'text-slate-400' : 'text-slate-700'}`}>
+															<div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100 dark:border-slate-800">
+																<p className={`font-black ${item.terceiro_pago ? 'text-slate-400 dark:text-slate-600' : 'text-slate-700 dark:text-slate-200'}`}>
 																	R$ {Number(item.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 																</p>
 																<div className="flex gap-2">
 																	{(item.terceiro_pago || isPartial) && (
 																		<button
 																			onClick={() => handleDesfazerPagamento(item.id)}
-																			className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"
+																			className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-xl transition-colors cursor-pointer"
 																			title="Desfazer Pagamento"
 																		>
-																			<RotateCcw size={20} />
+																			<RotateCcw size={18} />
 																		</button>
 																	)}
 																	{!item.terceiro_pago && (
 																		<button
 																			onClick={() => handleOpenPaymentModal(item)}
-																			className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-xl transition-colors tooltip-trigger"
+																			className="p-2 text-slate-400 dark:text-slate-500 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 rounded-xl transition-colors tooltip-trigger cursor-pointer"
 																			title={isPartial ? "Registrar pagamento do restante" : "Registrar Pagamento"}
 																		>
-																			<CheckCircle2 size={24} />
+																			<CheckCircle2 size={20} />
 																		</button>
 																	)}
 																</div>

@@ -28,6 +28,7 @@ import {
 	RefreshCw,
 	Users,
 	HandCoins,
+	ChevronDown,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../../../packages/services/auth.service";
@@ -36,6 +37,21 @@ import { ExportExcelButton } from "./components/ExportExcelButton";
 import { motion } from "framer-motion";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import toast from "react-hot-toast";
+
+const NOME_MESES = [
+	"Janeiro",
+	"Fevereiro",
+	"Março",
+	"Abril",
+	"Maio",
+	"Junho",
+	"Julho",
+	"Agosto",
+	"Setembro",
+	"Outubro",
+	"Novembro",
+	"Dezembro",
+];
 
 export default function HomeWeb() {
 	const navigate = useNavigate();
@@ -54,10 +70,11 @@ export default function HomeWeb() {
 	// NOVOS ESTADOS
 	const [rawFaturasNaoPagas, setRawFaturasNaoPagas] = useState<any[]>([]);
 	const [devedores, setDevedores] = useState<any[]>([]);
+	const [cartoes, setCartoes] = useState<any[]>([]);
 	const [loadingFaturas, setLoadingFaturas] = useState(false);
 
-	// IA INSIGHTS
-	const [aiInsights, setAiInsights] = useState<any[]>([]);
+	// IA REPORT
+	const [aiReport, setAiReport] = useState<string>("");
 	const [loadingAI, setLoadingAI] = useState(false);
 
 	// FILTROS
@@ -75,14 +92,15 @@ export default function HomeWeb() {
 		const startOfYear = `${filterYear}-01-01`;
 		const endOfYear = `${filterYear}-12-31`;
 
-		const [saldoAtual, resEntradas, resGastos, resFaturas, resInv, resDiv, resDevedores] = await Promise.all([
+		const [saldoAtual, resEntradas, resGastos, resFaturas, resInv, resDiv, resDevedores, resCartoes] = await Promise.all([
 			financeService.getGlobalBalance(user.id),
 			supabase.from("entradas").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
 			supabase.from("gastos").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
 			supabase.from("pagamentos_faturas").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
 			supabase.from("investimentos").select("*").eq("usuario_id", user.id),
 			supabase.from("dividas").select("*").eq("usuario_id", user.id).gte("vencimento_parcela", startOfYear).lte("vencimento_parcela", endOfYear),
-			financeService.getDevedores(user.id)
+			financeService.getDevedores(user.id),
+			financeService.getCartoes(user.id)
 		]);
 
 		setStats(prev => ({ ...prev, saldoTotal: saldoAtual }));
@@ -92,6 +110,7 @@ export default function HomeWeb() {
 		setRawInvestimentos(resInv.data || []);
 		setRawDividas(resDiv.data || []);
 		setDevedores(resDevedores || []);
+		setCartoes(resCartoes || []);
 
 		// Buscar faturas não pagas dos últimos 3 meses
 		setLoadingFaturas(true);
@@ -133,15 +152,11 @@ export default function HomeWeb() {
 
 	// Carregar cache de insights de IA
 	useEffect(() => {
-		const cached = localStorage.getItem(`finance_ai_insights_${filterYear}`);
+		const cached = localStorage.getItem(`finance_ai_report_${filterYear}`);
 		if (cached) {
-			try {
-				setAiInsights(JSON.parse(cached));
-			} catch (e) {
-				console.error(e);
-			}
+			setAiReport(cached);
 		} else {
-			setAiInsights([]);
+			setAiReport("");
 		}
 	}, [filterYear]);
 
@@ -169,25 +184,21 @@ export default function HomeWeb() {
 
 			const genAI = new GoogleGenerativeAI(apiKey);
 
-			const prompt = `Você é um consultor financeiro de inteligência artificial extremamente prático e amigável. Analise o seguinte resumo das finanças do usuário para o ano ${filterYear}:
-- Saldo Atual da Conta: R$ ${stats.saldoTotal}
+			const prompt = `Você é um consultor financeiro pessoal especialista em finanças pessoais e investimentos.
+Analise os seguintes dados financeiros do usuário para o ano ${filterYear}:
+- Saldo Global Consolidado Atual: R$ ${stats.saldoTotal}
 - Entradas Totais do Ano: R$ ${rawEntradas.reduce((acc, cur) => acc + Number(cur.valor), 0)}
-- Despesas Totais do Ano: R$ ${rawGastos.reduce((acc, cur) => acc + Number(cur.valor), 0)}
+- Despesas Totais do Ano (incluindo faturas pagas): R$ ${rawGastos.reduce((acc, cur) => acc + Number(cur.valor), 0) + rawFaturas.reduce((acc, cur) => acc + Number(cur.valor), 0)}
 - Dívidas Ativas: R$ ${rawDividas.reduce((acc, cur) => acc + Number(cur.valor), 0)}
-- Principais categorias de despesas: ${JSON.stringify(topCategories)}
-- Faturas de cartão não pagas: ${rawFaturasNaoPagas.length} faturas abertas, totalizando R$ ${rawFaturasNaoPagas.reduce((acc, cur) => acc + Number(cur.pendente), 0)}
-- Devedores pendentes (dinheiro a receber): ${devedores.length} pessoas devem ao usuário, totalizando R$ ${devedores.reduce((acc, cur) => acc + Number(cur.total_devido), 0)}
+- Distribuição de Gastos por Categoria: ${JSON.stringify(topCategories)}
+- Faturas Pendentes nos últimos 3 meses: ${rawFaturasNaoPagas.length} faturas, somando R$ ${rawFaturasNaoPagas.reduce((acc, cur) => acc + Number(cur.pendente), 0)} em aberto
+- Devedores ativos (dinheiro que o usuário emprestou e tem a receber): R$ ${devedores.reduce((acc, cur) => acc + Number(cur.total_devido), 0)}
 
-Com base nestes dados, gere exatamente 3 insights financeiros muito curtos, práticos e acionáveis em português brasileiro (com emoji correspondente na frente de cada título, máximo 2 frases por insight). 
-Seja encorajador, identifique pontos de atenção, oportunidades de economia ou investimentos.
-Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação markdown (sem \`\`\`json ou semelhantes), contendo apenas o objeto JSON estruturado:
-{
-  "insights": [
-    { "titulo": "Título Curto 1", "texto": "Insight 1" },
-    { "titulo": "Título Curto 2", "texto": "Insight 2" },
-    { "titulo": "Título Curto 3", "texto": "Insight 3" }
-  ]
-}`;
+Com base nesses dados completos, elabore um relatório consultivo estruturado em português do Brasil:
+1. Resumo Geral da Situação Atual: Faça um diagnóstico sincero e direto sobre a relação entre receitas, gastos e o saldo atual.
+2. Dicas e Recomendações: Forneça pelo menos 3 dicas práticas de economia, amortização de dívidas ou direcionamento de investimentos adequados para esse cenário.
+
+Escreva o texto final formatado com títulos em negrito, tópicos claros com emojis e parágrafos curtos. Não use markdown de bloco (como \`\`\`), apenas negritos e quebras de linha para a leitura ficar muito agradável.`;
 
 			const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
 			let result;
@@ -221,111 +232,17 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 			if (!result) {
 				throw lastError || new Error("Todos os modelos de IA falharam.");
 			}
-			const text = result.response.text();
-			const cleanText = text.replace(/```json/gi, "").replace(/```/g, "").trim();
-			const json = JSON.parse(cleanText);
-			if (json.insights && Array.isArray(json.insights)) {
-				setAiInsights(json.insights);
-				localStorage.setItem(`finance_ai_insights_${filterYear}`, JSON.stringify(json.insights));
-				toast.success("Insights gerados com IA!");
-			}
+			const text = result.response.text().trim();
+			setAiReport(text);
+			localStorage.setItem(`finance_ai_report_${filterYear}`, text);
+			toast.success("Análise de IA concluída!");
 		} catch (error) {
 			console.error("Erro ao gerar insights com IA:", error);
-			toast.error("Erro na leitura da IA. Usando regras locais.");
+			toast.error("Erro na leitura da IA.");
 		} finally {
 			setLoadingAI(false);
 		}
 	};
-
-	// Fallback de Insights Locais
-	const computedInsights = useMemo(() => {
-		if (aiInsights && aiInsights.length > 0) {
-			return aiInsights;
-		}
-
-		const list = [];
-		const totalEntradas = rawEntradas.reduce((acc, cur) => acc + Number(cur.valor), 0);
-		const totalGastos = rawGastos.reduce((acc, cur) => acc + Number(cur.valor), 0);
-		const totalDividas = rawDividas.reduce((acc, cur) => acc + Number(cur.valor), 0);
-		const totalFaturasPendente = rawFaturasNaoPagas.reduce((acc, cur) => acc + Number(cur.pendente), 0);
-		const totalDevedores = devedores.reduce((acc, cur) => acc + Number(cur.total_devido), 0);
-
-		const saldoPeriodo = totalEntradas - totalGastos;
-		if (totalEntradas > 0) {
-			const percentSavings = (saldoPeriodo / totalEntradas) * 100;
-			if (percentSavings > 25) {
-				list.push({
-					titulo: "Excelente Economia! 💰",
-					texto: `Você poupou ${percentSavings.toFixed(0)}% de suas entradas este ano. Que tal direcionar parte disso para novos investimentos?`
-				});
-			} else if (percentSavings > 0) {
-				list.push({
-					titulo: "Balanço Positivo 📈",
-					texto: `Você poupou ${percentSavings.toFixed(0)}% da sua renda. Tente alcançar a meta de 20% para acelerar sua independência financeira.`
-				});
-			} else {
-				list.push({
-					titulo: "Atenção ao Balanço ⚠️",
-					texto: `Suas despesas superaram suas receitas em R$ ${Math.abs(saldoPeriodo).toLocaleString("pt-BR")}. Revise seus gastos supérfluos.`
-				});
-			}
-		} else {
-			list.push({
-				titulo: "Comece seu Planejamento 📋",
-				texto: "Lance suas receitas recorrentes e crie um orçamento anual para acompanhar a saúde financeira do seu ano."
-			});
-		}
-
-		const faturasAtrasadasList = rawFaturasNaoPagas.filter((f: any) => {
-			const [ano, mes] = f.mesReferencia.split("-").map(Number);
-			const vencimentoDia = f.cartao.vencimento_dia;
-			const ultimoDiaMes = new Date(ano, mes, 0).getDate();
-			const diaReal = Math.min(vencimentoDia, ultimoDiaMes);
-			const dataVencimento = new Date(ano, mes - 1, diaReal, 23, 59, 59);
-			return new Date() > dataVencimento;
-		});
-
-		const totalFaturasAtrasadas = faturasAtrasadasList.reduce((acc, cur) => acc + Number(cur.pendente), 0);
-		const totalFaturasAbertas = rawFaturasNaoPagas
-			.filter((f: any) => !faturasAtrasadasList.includes(f))
-			.reduce((acc, cur) => acc + Number(cur.pendente), 0);
-
-		if (totalFaturasAtrasadas > 0) {
-			list.push({
-				titulo: "Faturas em Atraso ⚠️",
-				texto: `Você tem R$ ${totalFaturasAtrasadas.toLocaleString("pt-BR")} em faturas de cartão em atraso. Por favor, regularize o quanto antes.`
-			});
-		} else if (totalFaturasAbertas > 0) {
-			list.push({
-				titulo: "Faturas em Aberto 💳",
-				texto: `Você tem R$ ${totalFaturasAbertas.toLocaleString("pt-BR")} pendente em faturas de cartão. Lembre-se de pagar até o vencimento.`
-			});
-		} else if (totalDividas > 0) {
-			list.push({
-				titulo: "Foco nas Dívidas 📉",
-				texto: `Há R$ ${totalDividas.toLocaleString("pt-BR")} em dívidas cadastradas. Considere quitá-las antes de comprometer nova renda.`
-			});
-		} else {
-			list.push({
-				titulo: "Zero Dívidas 🎉",
-				texto: "Parabéns! Você está livre de dívidas ativas. Uma ótima oportunidade para focar no acúmulo de patrimônio."
-			});
-		}
-
-		if (totalDevedores > 0) {
-			list.push({
-				titulo: "Dinheiro a Receber 🤝",
-				texto: `Você tem R$ ${totalDevedores.toLocaleString("pt-BR")} emprestados para terceiros. Lembre-se de usar a cobrança via WhatsApp.`
-			});
-		} else {
-			list.push({
-				titulo: "Reserva de Emergência 🛡️",
-				texto: "Dica: Mantenha de 3 a 6 meses de seus custos mensais investidos em ativos de liquidez diária para proteção."
-			});
-		}
-
-		return list;
-	}, [aiInsights, rawEntradas, rawGastos, rawDividas, rawFaturasNaoPagas, devedores]);
 
 	const handleCobrarWhatsApp = (devedor: any) => {
 		const telefone = devedor.contato?.telefone?.replace(/\D/g, "");
@@ -439,6 +356,42 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 		};
 	}, [rawEntradas, rawGastos, rawFaturas, rawInvestimentos, rawDividas, filterYear, filterMonth]);
 
+	const cartoesResumo = useMemo(() => {
+		if (cartoes.length === 0) return [];
+		
+		const activeMonthStr = filterMonth !== "all" 
+			? `${filterYear}-${String(filterMonth).padStart(2, '0')}`
+			: `${filterYear}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+
+		return cartoes.map((c: any) => {
+			const gastosCartao = rawGastos.filter(g => 
+				g.cartao_id === c.id && 
+				g.data.startsWith(activeMonthStr)
+			);
+			const totalFatura = gastosCartao.reduce((sum, item) => sum + Number(item.valor), 0);
+
+			const pagamentosFatura = rawFaturas.filter(p => 
+				p.cartao_id === c.id && 
+				p.mes_referencia === activeMonthStr
+			);
+			const totalPago = pagamentosFatura.reduce((sum, item) => sum + Number(item.valor), 0);
+
+			const pendente = Math.max(0, totalFatura - totalPago);
+			const limiteDisponivel = Math.max(0, Number(c.limite) - totalFatura);
+			const percentualUso = Number(c.limite) > 0 ? (totalFatura / Number(c.limite)) * 100 : 0;
+
+			return {
+				cartao: c,
+				totalFatura,
+				totalPago,
+				pendente,
+				limiteDisponivel,
+				percentualUso,
+				mesStr: activeMonthStr
+			};
+		});
+	}, [cartoes, rawGastos, rawFaturas, filterMonth, filterYear]);
+
 	const entradaPieData = useMemo(() => {
 		let filtered = rawEntradas;
 		if (filterMonth !== "all") {
@@ -466,6 +419,18 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 		}, {});
 		return Object.keys(grouped).map(name => ({ name, value: grouped[name] }));
 	}, [rawGastos, filterYear, filterMonth]);
+
+	const totalEntradasPie = useMemo(() => {
+		return entradaPieData.reduce((acc, cur) => acc + Number(cur.value), 0);
+	}, [entradaPieData]);
+
+	const totalGastosPie = useMemo(() => {
+		return gastoPieData.reduce((acc, cur) => acc + Number(cur.value), 0);
+	}, [gastoPieData]);
+
+	const saldoFiltrado = useMemo(() => {
+		return dashboardData.totaisMes.entradas - dashboardData.totaisMes.gastos;
+	}, [dashboardData]);
 
 	const COLORS_ENTRADAS = ["#10B981", "#34D399", "#059669", "#6EE7B7", "#047857"];
 	const COLORS_GASTOS = ["#F43F5E", "#FB7185", "#E11D48", "#FDA4AF", "#BE123C", "#F87171", "#EF4444"];
@@ -495,142 +460,250 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 
 	const containerVariants = {
 		hidden: { opacity: 0 },
-		visible: { opacity: 1, transition: { staggerChildren: 0.1 } }
+		visible: { opacity: 1, transition: { staggerChildren: 0.05 } }
 	};
 
 	const itemVariants = {
-		hidden: { y: 20, opacity: 0 },
-		visible: { y: 0, opacity: 1, transition: { type: "spring", stiffness: 300, damping: 24 } }
+		hidden: { y: 15, opacity: 0 },
+		visible: { y: 0, opacity: 1, transition: { type: "spring", stiffness: 260, damping: 22 } }
 	};
 
 	return (
 		<motion.div 
-			className="max-w-7xl mx-auto space-y-8 pb-20 p-6 sm:p-10"
+			className="space-y-6 sm:space-y-8 pb-20"
 			variants={containerVariants}
 			initial="hidden"
 			animate="visible"
 		>
-			{/* CABEÇALHO E FILTROS */}
-			<motion.div variants={itemVariants} className="flex flex-col xl:flex-row xl:justify-between xl:items-end gap-6 bg-white p-6 rounded-[32px] shadow-sm border border-slate-100">
+			{/* 1. GREETING HEADER & QUICK ACTIONS */}
+			<motion.div 
+				variants={itemVariants} 
+				className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[36px] border border-slate-100 dark:border-slate-800 shadow-sm transition-colors"
+			>
 				<div className="space-y-1">
-					<h2 className="text-3xl font-black text-slate-800 tracking-tight">Olá, {nome}! 👋</h2>
-					<p className="text-slate-500 font-medium text-sm">Acompanhe seu fluxo em {filterYear}.</p>
+					<h2 className="text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
+						Olá, {nome}! <span className="animate-bounce">👋</span>
+					</h2>
+					<p className="text-slate-400 dark:text-slate-500 font-bold text-xs uppercase tracking-wider">Painel de controle financeiro pessoal</p>
 				</div>
-				<div className="flex flex-wrap items-center gap-3">
-					<select
-						value={filterYear}
-						onChange={(e) => setFilterYear(Number(e.target.value))}
-						className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-indigo-500 hover:bg-white transition-colors cursor-pointer"
+				
+				<div className="flex flex-wrap gap-3">
+					<button 
+						onClick={() => navigate("/gastos?add=true")}
+						className="flex items-center gap-2 px-5 py-3 bg-rose-500 hover:bg-rose-600 text-white rounded-2xl font-bold text-xs shadow-md shadow-rose-100 dark:shadow-none transition-all active:scale-95 cursor-pointer"
 					>
-						{[hoje.getFullYear() - 1, hoje.getFullYear(), hoje.getFullYear() + 1].map(y => (
-							<option key={y} value={y}>{y}</option>
-						))}
-					</select>
-
-					<select
-						value={filterMonth}
-						onChange={(e) => setFilterMonth(e.target.value === "all" ? "all" : Number(e.target.value))}
-						className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-indigo-500 hover:bg-white transition-colors cursor-pointer"
+						<TrendingDown size={14} /> Novo Gasto
+					</button>
+					<button 
+						onClick={() => navigate("/entradas?add=true")}
+						className="flex items-center gap-2 px-5 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-bold text-xs shadow-md shadow-emerald-100 dark:shadow-none transition-all active:scale-95 cursor-pointer"
 					>
-						<option value="all">Ano Todo</option>
-						{["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"].map((m, i) => (
-							<option key={i} value={i + 1}>{m}</option>
-						))}
-					</select>
-
-					<select
-						value={filterCategory}
-						onChange={(e) => setFilterCategory(e.target.value)}
-						className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-indigo-500 max-w-[180px] hover:bg-white transition-colors cursor-pointer truncate"
+						<TrendingUp size={14} /> Nova Entrada
+					</button>
+					<button 
+						onClick={() => navigate("/dividas?add=true")}
+						className="flex items-center gap-2 px-5 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-2xl font-bold text-xs shadow-md shadow-purple-100 dark:shadow-none transition-all active:scale-95 cursor-pointer"
 					>
-						<option value="all">Visão Geral</option>
-						<option value="entradas">Só Entradas</option>
-						<option value="gastos">Só Gastos</option>
-						<option value="cartoes">Só Cartões</option>
-						<option value="investimentos">Só Investimentos</option>
-						<option value="dividas">Só Dívidas</option>
-					</select>
+						<HandCoins size={14} /> Nova Dívida
+					</button>
+				</div>
+			</motion.div>
 
-					<div className="h-8 w-px bg-slate-200 hidden sm:block mx-1"></div>
+			{/* 3. FILTROS (ABAIXO DE AÇÕES RÁPIDAS) */}
+			<motion.div 
+				variants={itemVariants} 
+				className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-3xl sm:rounded-[28px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:justify-between md:items-center gap-4 transition-colors"
+			>
+				<div className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
+					<Sparkles size={16} className="text-indigo-500" />
+					<p className="text-xs font-black uppercase tracking-widest">Filtrar Período</p>
+				</div>
+				
+				<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+					{/* Select: Ano */}
+					<div className="relative w-full sm:w-auto">
+						<select
+							value={filterYear}
+							onChange={(e) => setFilterYear(Number(e.target.value))}
+							className="appearance-none w-full pr-8 pl-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-350 outline-none focus:border-indigo-500 hover:bg-white dark:hover:bg-slate-750 transition-all cursor-pointer"
+						>
+							{[hoje.getFullYear() - 1, hoje.getFullYear(), hoje.getFullYear() + 1].map(y => (
+								<option key={y} value={y}>{y}</option>
+							))}
+						</select>
+						<div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400">
+							<ChevronDown size={12} />
+						</div>
+					</div>
+
+					{/* Select: Mês */}
+					<div className="relative w-full sm:w-auto">
+						<select
+							value={filterMonth}
+							onChange={(e) => setFilterMonth(e.target.value === "all" ? "all" : Number(e.target.value))}
+							className="appearance-none w-full pr-8 pl-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-350 outline-none focus:border-indigo-500 hover:bg-white dark:hover:bg-slate-750 transition-all cursor-pointer"
+						>
+							<option value="all">Ano Todo</option>
+							{NOME_MESES.map((m, i) => (
+								<option key={i} value={i + 1}>{m}</option>
+							))}
+						</select>
+						<div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400">
+							<ChevronDown size={12} />
+						</div>
+					</div>
+
+					{/* Select: Categoria */}
+					<div className="relative w-full sm:w-auto">
+						<select
+							value={filterCategory}
+							onChange={(e) => setFilterCategory(e.target.value)}
+							className="appearance-none w-full pr-8 pl-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-350 outline-none focus:border-indigo-500 hover:bg-white dark:hover:bg-slate-750 transition-all cursor-pointer truncate"
+						>
+							<option value="all">Visão Geral</option>
+							<option value="entradas">Só Entradas</option>
+							<option value="gastos">Só Gastos</option>
+							<option value="cartoes">Só Cartões</option>
+							<option value="investimentos">Só Investimentos</option>
+							<option value="dividas">Só Dívidas</option>
+						</select>
+						<div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400">
+							<ChevronDown size={12} />
+						</div>
+					</div>
+
+					<div className="h-8 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block mx-1"></div>
 					<ExportExcelButton />
 				</div>
 			</motion.div>
 
-			{/* BOTÕES RÁPIDOS */}
-			<motion.div variants={itemVariants} className="flex justify-center sm:justify-start gap-4">
-				<button 
-					onClick={() => navigate("/gastos?add=true")}
-					className="w-10 h-10 bg-rose-500 hover:bg-rose-600 text-white rounded-full flex items-center justify-center transition-all hover:scale-110 shadow-lg shadow-rose-200 cursor-pointer"
-					title="Lançar Gasto"
-				>
-					<TrendingDown size={18} />
-				</button>
-				<button 
-					onClick={() => navigate("/entradas?add=true")}
-					className="w-10 h-10 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full flex items-center justify-center transition-all hover:scale-110 shadow-lg shadow-emerald-200 cursor-pointer"
-					title="Lançar Entrada"
-				>
-					<TrendingUp size={18} />
-				</button>
-				<button 
-					onClick={() => navigate("/dividas?add=true")}
-					className="w-10 h-10 bg-purple-500 hover:bg-purple-600 text-white rounded-full flex items-center justify-center transition-all hover:scale-110 shadow-lg shadow-purple-200 cursor-pointer"
-					title="Lançar Dívida"
-				>
-					<HandCoins size={18} />
-				</button>
-			</motion.div>
-
 			{/* CARDS DE RESUMO */}
-			<motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-3 gap-6">
+			<motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+				{/* 4. CARD SALDO CONSOLIDADO FILTRADO */}
 				<motion.div 
 					whileHover={{ y: -4, boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1)" }}
-					className="bg-gradient-to-br from-slate-800 to-slate-900 p-8 rounded-[32px] shadow-xl text-white relative overflow-hidden"
+					className={`bg-gradient-to-br ${
+						saldoFiltrado >= 0 
+							? "from-indigo-900 via-slate-900 to-indigo-950" 
+							: "from-rose-950 via-slate-900 to-rose-900"
+					} p-5 sm:p-8 rounded-3xl sm:rounded-[32px] shadow-xl text-white relative overflow-hidden flex flex-col justify-between transition-all duration-300 md:col-span-2 lg:col-span-1`}
 				>
-					<div className="absolute top-0 right-0 p-6 opacity-10">
-						<Wallet size={80} />
+					<div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
+						<Wallet size={120} />
 					</div>
-					<p className="text-slate-300 font-semibold uppercase tracking-wider text-xs mb-2">Saldo Atual da Conta</p>
-					<h3 className="text-4xl font-black mb-1">
-						<span className="text-slate-400 text-2xl mr-1">R$</span>
-						{stats.saldoTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-					</h3>
+					<div className="absolute -left-10 -bottom-10 w-40 h-40 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+					
+					<div>
+						<p className="text-indigo-300 dark:text-indigo-400 font-bold uppercase tracking-wider text-[10px] mb-2">
+							{filterMonth === "all" ? "Saldo Anual Consolidado" : "Saldo do Período"}
+						</p>
+						<h3 className="text-4xl font-black mb-1 flex items-baseline">
+							<span className="text-indigo-455 text-xl font-bold mr-1">R$</span>
+							{saldoFiltrado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+						</h3>
+					</div>
+					
+					<div className="mt-4 pt-4 border-t border-indigo-850/40 flex justify-between items-center text-[10px] text-indigo-300 font-semibold">
+						<span>Filtro: {filterMonth === "all" ? `${filterYear}` : `${NOME_MESES[filterMonth - 1]} / ${filterYear}`}</span>
+						<span className={`px-2.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider ${
+							saldoFiltrado >= 0 ? "bg-emerald-500/20 text-emerald-350" : "bg-rose-500/20 text-rose-350"
+						}`}>
+							{saldoFiltrado >= 0 ? "Positivo" : "Negativo"}
+						</span>
+					</div>
 				</motion.div>
 
 				{(filterCategory === "all" || filterCategory === "entradas") && (
-					<MetricCard title="Entradas (Mês)" value={dashboardData.totaisMes.entradas} icon={<TrendingUp size={20} className="text-emerald-600" />} bgClass="bg-emerald-100" hoverClass="hover:shadow-[0_10px_25px_-5px_rgba(16,185,129,0.1)]" />
+					<MetricCard 
+						title="Entradas (Mês)" 
+						value={dashboardData.totaisMes.entradas} 
+						icon={<TrendingUp size={20} className="text-emerald-600 dark:text-emerald-400" />} 
+						bgClass="bg-emerald-50 dark:bg-emerald-950/30" 
+						colorClass="text-emerald-600 dark:text-emerald-455" 
+						borderClass="bg-emerald-500" 
+					/>
 				)}
 				
 				{(filterCategory === "all" || filterCategory === "gastos") && (
-					<MetricCard title="Gastos (Mês)" value={dashboardData.totaisMes.gastos} icon={<TrendingDown size={20} className="text-rose-600" />} bgClass="bg-rose-100" hoverClass="hover:shadow-[0_10px_25px_-5px_rgba(244,63,94,0.1)]" />
+					<MetricCard 
+						title="Gastos (Mês)" 
+						value={dashboardData.totaisMes.gastos} 
+						icon={<TrendingDown size={20} className="text-rose-600 dark:text-rose-400" />} 
+						bgClass="bg-rose-50 dark:bg-rose-950/30" 
+						colorClass="text-rose-600 dark:text-rose-455" 
+						borderClass="bg-rose-500" 
+					/>
 				)}
 
 				{filterCategory === "cartoes" && (
-					<MetricCard title="Faturas (Mês)" value={dashboardData.totaisMes.faturas} icon={<TrendingDown size={20} className="text-purple-600" />} bgClass="bg-purple-100" hoverClass="hover:shadow-[0_10px_25px_-5px_rgba(168,85,247,0.1)]" />
+					<MetricCard 
+						title="Faturas (Mês)" 
+						value={dashboardData.totaisMes.faturas} 
+						icon={<CreditCard size={20} className="text-purple-600 dark:text-purple-400" />} 
+						bgClass="bg-purple-50 dark:bg-purple-950/30" 
+						colorClass="text-purple-600 dark:text-purple-450" 
+						borderClass="bg-purple-500" 
+					/>
 				)}
 
 				{filterCategory === "investimentos" && (
-					<MetricCard title="Investimentos (Mês)" value={dashboardData.totaisMes.investimentos} icon={<TrendingUp size={20} className="text-blue-600" />} bgClass="bg-blue-100" hoverClass="hover:shadow-[0_10px_25px_-5px_rgba(59,130,246,0.1)]" />
+					<MetricCard 
+						title="Investimentos (Mês)" 
+						value={dashboardData.totaisMes.investimentos} 
+						icon={<TrendingUp size={20} className="text-blue-600 dark:text-blue-400" />} 
+						bgClass="bg-blue-50 dark:bg-blue-950/30" 
+						colorClass="text-blue-600 dark:text-blue-450" 
+						borderClass="bg-blue-500" 
+					/>
 				)}
 
 				{filterCategory === "dividas" && (
-					<MetricCard title="Dívidas (Mês)" value={dashboardData.totaisMes.dividas} icon={<TrendingDown size={20} className="text-orange-600" />} bgClass="bg-orange-100" hoverClass="hover:shadow-[0_10px_25px_-5px_rgba(249,115,22,0.1)]" />
+					<MetricCard 
+						title="Dívidas (Mês)" 
+						value={dashboardData.totaisMes.dividas} 
+						icon={<HandCoins size={20} className="text-orange-600 dark:text-orange-400" />} 
+						bgClass="bg-orange-50 dark:bg-orange-950/30" 
+						colorClass="text-orange-600 dark:text-orange-450" 
+						borderClass="bg-orange-500" 
+					/>
 				)}
 			</motion.div>
 
 			{/* GRÁFICO DINÂMICO & INSIGHTS DE IA */}
 			<div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 				{/* Gráfico */}
-				<motion.div variants={itemVariants} className="lg:col-span-2 bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between">
+				<motion.div variants={itemVariants} className="lg:col-span-2 bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-between transition-colors">
 					<div className="flex justify-between items-center mb-8">
-						<h3 className="text-xl font-black text-slate-800 tracking-tight">Evolução de {filterYear}</h3>
+						<h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Evolução Anual</h3>
 					</div>
 					<div className="h-80 w-full">
 						<ResponsiveContainer width="100%" height="100%">
 							<BarChart data={dashboardData.dadosGrafico} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-								<CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-								<XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontWeight: 600, fontSize: 13 }} dy={10} />
-								<YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} />
+								<defs>
+									<linearGradient id="colorEntradas" x1="0" y1="0" x2="0" y2="1">
+										<stop offset="5%" stopColor="#10B981" stopOpacity={0.85}/>
+										<stop offset="95%" stopColor="#10B981" stopOpacity={0.15}/>
+									</linearGradient>
+									<linearGradient id="colorGastos" x1="0" y1="0" x2="0" y2="1">
+										<stop offset="5%" stopColor="#F43F5E" stopOpacity={0.85}/>
+										<stop offset="95%" stopColor="#F43F5E" stopOpacity={0.15}/>
+									</linearGradient>
+									<linearGradient id="colorCartoes" x1="0" y1="0" x2="0" y2="1">
+										<stop offset="5%" stopColor="#A855F7" stopOpacity={0.85}/>
+										<stop offset="95%" stopColor="#A855F7" stopOpacity={0.15}/>
+									</linearGradient>
+									<linearGradient id="colorInvestimentos" x1="0" y1="0" x2="0" y2="1">
+										<stop offset="5%" stopColor="#3B82F6" stopOpacity={0.85}/>
+										<stop offset="95%" stopColor="#3B82F6" stopOpacity={0.15}/>
+									</linearGradient>
+									<linearGradient id="colorDividas" x1="0" y1="0" x2="0" y2="1">
+										<stop offset="5%" stopColor="#F97316" stopOpacity={0.85}/>
+										<stop offset="95%" stopColor="#F97316" stopOpacity={0.15}/>
+									</linearGradient>
+								</defs>
+								<CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
+								<XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontWeight: 600, fontSize: 12 }} dy={10} />
+								<YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
 								<Tooltip
 									cursor={{ fill: "#f8fafc" }}
 									contentStyle={{ borderRadius: "16px", border: "none", boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)", fontWeight: 600, padding: "12px 20px" }}
@@ -638,55 +711,62 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 								/>
 								<Legend iconType="circle" wrapperStyle={{ paddingTop: "20px" }} />
 								
-								{(filterCategory === "all" || filterCategory === "entradas") && <Bar dataKey="entradas" name="Entradas" fill="#10b981" radius={[6, 6, 0, 0]} barSize={24} />}
-								{(filterCategory === "all" || filterCategory === "gastos") && <Bar dataKey="gastos" name="Saídas/Gastos" fill="#f43f5e" radius={[6, 6, 0, 0]} barSize={24} />}
-								{filterCategory === "cartoes" && <Bar dataKey="cartoes" name="Faturas" fill="#a855f7" radius={[6, 6, 0, 0]} barSize={24} />}
-								{filterCategory === "investimentos" && <Bar dataKey="investimentos" name="Investimentos" fill="#3b82f6" radius={[6, 6, 0, 0]} barSize={24} />}
-								{filterCategory === "dividas" && <Bar dataKey="dividas" name="Dívidas" fill="#f97316" radius={[6, 6, 0, 0]} barSize={24} />}
+								{(filterCategory === "all" || filterCategory === "entradas") && <Bar dataKey="entradas" name="Entradas" fill="url(#colorEntradas)" radius={[6, 6, 0, 0]} barSize={20} />}
+								{(filterCategory === "all" || filterCategory === "gastos") && <Bar dataKey="gastos" name="Saídas/Gastos" fill="url(#colorGastos)" radius={[6, 6, 0, 0]} barSize={20} />}
+								{filterCategory === "cartoes" && <Bar dataKey="cartoes" name="Faturas" fill="url(#colorCartoes)" radius={[6, 6, 0, 0]} barSize={20} />}
+								{filterCategory === "investimentos" && <Bar dataKey="investimentos" name="Investimentos" fill="url(#colorInvestimentos)" radius={[6, 6, 0, 0]} barSize={20} />}
+								{filterCategory === "dividas" && <Bar dataKey="dividas" name="Dívidas" fill="url(#colorDividas)" radius={[6, 6, 0, 0]} barSize={20} />}
 							</BarChart>
 						</ResponsiveContainer>
 					</div>
 				</motion.div>
 
 				{/* Insights */}
-				<motion.div variants={itemVariants} className="lg:col-span-1 bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between">
-					<div className="space-y-6">
-						<div className="flex justify-between items-center">
-							<h3 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-								<Sparkles className="text-pink-500" size={20} />
-								Insights Finanças
+				<motion.div 
+					variants={itemVariants} 
+					className="lg:col-span-1 bg-gradient-to-tr from-pink-500/5 via-white to-indigo-500/5 dark:from-pink-950/10 dark:via-slate-900 dark:to-indigo-950/10 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-pink-100/40 dark:border-pink-950/20 shadow-sm flex flex-col justify-between transition-colors"
+				>
+					<div className="space-y-6 flex-1 flex flex-col">
+						<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+							<h3 className="text-lg font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
+								<Sparkles className="text-pink-500 animate-pulse" size={20} />
+								Insights de IA
 							</h3>
 							<button
 								onClick={generateAIInsights}
 								disabled={loadingAI}
-								className="p-2 bg-pink-50 hover:bg-pink-100 text-pink-600 rounded-xl transition-all disabled:opacity-50 flex items-center gap-1.5 font-bold text-xs shadow-sm hover:shadow active:scale-95"
-								title="Gerar insights com Inteligência Artificial"
+								className="px-3.5 py-1.5 bg-pink-50 hover:bg-pink-100/80 dark:bg-pink-950/30 dark:hover:bg-pink-900/40 text-pink-600 dark:text-pink-400 rounded-xl transition-all disabled:opacity-50 flex items-center gap-1.5 font-black text-[10px] uppercase shadow-sm cursor-pointer active:scale-95 shrink-0"
+								title="Gerar análise completa com IA"
 							>
 								{loadingAI ? (
-									<div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-pink-600"></div>
+									<div className="animate-spin rounded-full h-3 w-3 border-b-2 border-pink-600"></div>
 								) : (
-									<RefreshCw size={14} />
+									<RefreshCw size={12} />
 								)}
-								IA ✨
+								Analisar
 							</button>
 						</div>
 
-						<div className="space-y-4">
-							{computedInsights.map((insight, idx) => (
-								<div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex gap-3 hover:bg-pink-50/20 hover:border-pink-100/50 transition-all">
-									<div className="text-lg">💡</div>
-									<div className="space-y-1">
-										<h4 className="font-bold text-slate-800 text-sm">{insight.titulo}</h4>
-										<p className="text-xs text-slate-500 font-medium leading-relaxed">{insight.texto}</p>
-									</div>
+						<div className="mt-4 flex-1 overflow-y-auto no-scrollbar scroll-smooth max-h-[300px]">
+							{aiReport ? (
+								<div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium leading-relaxed whitespace-pre-line bg-white/40 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-100 dark:border-slate-800/60 shadow-inner">
+									{aiReport}
 								</div>
-							))}
+							) : (
+								<div className="p-5 bg-white/70 dark:bg-slate-900/60 rounded-2xl border border-slate-100 dark:border-slate-800/85 text-center space-y-3">
+									<div className="text-2xl select-none">✨</div>
+									<h4 className="font-bold text-slate-800 dark:text-slate-200 text-xs">Análise de IA Pendente</h4>
+									<p className="text-[11px] text-slate-450 dark:text-slate-500 font-medium leading-relaxed">
+										Clique no botão **Analisar** acima para que o consultor financeiro de Inteligência Artificial elabore um diagnóstico detalhado da sua saúde financeira atual e monte recomendações personalizadas.
+									</p>
+								</div>
+							)}
 						</div>
 					</div>
 
-					<div className="mt-6 pt-4 border-t border-slate-100 text-center">
-						<span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-							{aiInsights.length > 0 ? "Gerado por Gemini AI" : "Análise Baseada em Regras"}
+					<div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 text-center shrink-0">
+						<span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
+							{aiReport ? "Gerado por Gemini AI" : "Resumo Geral"}
 						</span>
 					</div>
 				</motion.div>
@@ -695,63 +775,79 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 			{/* GRÁFICOS DE PIZZA DE CATEGORIAS */}
 			<motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 				{/* Entradas */}
-				<div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col items-center">
-					<h3 className="text-lg font-black text-slate-800 tracking-tight mb-4 self-start flex items-center gap-2">
+				<div className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col items-center relative transition-colors">
+					<h3 className="text-lg font-black text-slate-800 dark:text-slate-100 tracking-tight mb-4 self-start flex items-center gap-2">
 						<TrendingUp className="text-emerald-500" size={20} /> Origem das Entradas
 					</h3>
-					<div className="h-64 w-full flex justify-center items-center">
+					<div className="relative h-64 w-full flex justify-center items-center">
 						{entradaPieData.length > 0 ? (
-							<ResponsiveContainer width="100%" height="100%">
-								<PieChart>
-									<Pie
-										data={entradaPieData}
-										innerRadius={60}
-										outerRadius={80}
-										paddingAngle={5}
-										dataKey="value"
-										stroke="none"
-									>
-										{entradaPieData.map((_, index) => (
-											<Cell key={`cell-${index}`} fill={COLORS_ENTRADAS[index % COLORS_ENTRADAS.length]} />
-										))}
-									</Pie>
-									<Tooltip formatter={(value: number) => `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} />
-									<Legend verticalAlign="bottom" height={36} iconType="circle" />
-								</PieChart>
-							</ResponsiveContainer>
+							<>
+								<ResponsiveContainer width="100%" height="100%">
+									<PieChart>
+										<Pie
+											data={entradaPieData}
+											innerRadius={70}
+											outerRadius={90}
+											paddingAngle={4}
+											dataKey="value"
+											stroke="none"
+										>
+											{entradaPieData.map((_, index) => (
+												<Cell key={`cell-${index}`} fill={COLORS_ENTRADAS[index % COLORS_ENTRADAS.length]} />
+											))}
+										</Pie>
+										<Tooltip formatter={(value: number) => `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} />
+										<Legend verticalAlign="bottom" height={36} iconType="circle" />
+									</PieChart>
+								</ResponsiveContainer>
+								<div className="absolute flex flex-col items-center justify-center pointer-events-none pb-9">
+									<span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total</span>
+									<span className="text-lg font-black text-slate-800 dark:text-slate-100">
+										R$ {totalEntradasPie.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}
+									</span>
+								</div>
+							</>
 						) : (
-							<p className="text-slate-300 italic text-sm">Sem entradas cadastradas neste período</p>
+							<p className="text-slate-300 dark:text-slate-700 italic text-sm">Sem entradas cadastradas neste período</p>
 						)}
 					</div>
 				</div>
 
 				{/* Gastos */}
-				<div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col items-center">
-					<h3 className="text-lg font-black text-slate-800 tracking-tight mb-4 self-start flex items-center gap-2">
+				<div className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col items-center relative transition-colors">
+					<h3 className="text-lg font-black text-slate-800 dark:text-slate-100 tracking-tight mb-4 self-start flex items-center gap-2">
 						<TrendingDown className="text-rose-500" size={20} /> Destino dos Gastos
 					</h3>
-					<div className="h-64 w-full flex justify-center items-center">
+					<div className="relative h-64 w-full flex justify-center items-center">
 						{gastoPieData.length > 0 ? (
-							<ResponsiveContainer width="100%" height="100%">
-								<PieChart>
-									<Pie
-										data={gastoPieData}
-										innerRadius={60}
-										outerRadius={80}
-										paddingAngle={5}
-										dataKey="value"
-										stroke="none"
-									>
-										{gastoPieData.map((_, index) => (
-											<Cell key={`cell-${index}`} fill={COLORS_GASTOS[index % COLORS_GASTOS.length]} />
-										))}
-									</Pie>
-									<Tooltip formatter={(value: number) => `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} />
-									<Legend verticalAlign="bottom" height={36} iconType="circle" />
-								</PieChart>
-							</ResponsiveContainer>
+							<>
+								<ResponsiveContainer width="100%" height="100%">
+									<PieChart>
+										<Pie
+											data={gastoPieData}
+											innerRadius={70}
+											outerRadius={90}
+											paddingAngle={4}
+											dataKey="value"
+											stroke="none"
+										>
+											{gastoPieData.map((_, index) => (
+												<Cell key={`cell-${index}`} fill={COLORS_GASTOS[index % COLORS_GASTOS.length]} />
+											))}
+										</Pie>
+										<Tooltip formatter={(value: number) => `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} />
+										<Legend verticalAlign="bottom" height={36} iconType="circle" />
+									</PieChart>
+								</ResponsiveContainer>
+								<div className="absolute flex flex-col items-center justify-center pointer-events-none pb-9">
+									<span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total</span>
+									<span className="text-lg font-black text-slate-800 dark:text-slate-100">
+										R$ {totalGastosPie.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}
+									</span>
+								</div>
+							</>
 						) : (
-							<p className="text-slate-300 italic text-sm">Sem gastos cadastrados neste período</p>
+							<p className="text-slate-300 dark:text-slate-700 italic text-sm">Sem gastos cadastrados neste período</p>
 						)}
 					</div>
 				</div>
@@ -759,79 +855,89 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 
 			{/* FATURAS PENDENTES E DEVEDORES ATIVOS */}
 			<motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-				{/* Faturas Pendentes */}
-				<div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col h-full">
-					<div className="flex justify-between items-center mb-6">
-						<h3 className="font-black text-slate-800 text-xl tracking-tight flex items-center gap-2">
+				{/* Resumo de Faturas por Período */}
+				<div className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col h-full transition-colors">
+					<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+						<h3 className="font-black text-slate-800 dark:text-slate-100 text-xl tracking-tight flex items-center gap-2">
 							<CreditCard className="text-pink-500" size={22} />
-							Faturas Pendentes
+							Faturas dos Cartões
 						</h3>
 						<button 
 							onClick={() => navigate("/cartoes")} 
-							className="text-xs font-bold text-indigo-500 hover:text-indigo-600 bg-indigo-50 hover:bg-indigo-100/60 px-3 py-1.5 rounded-full transition-all"
+							className="text-xs font-bold text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 bg-indigo-50 hover:bg-indigo-100/60 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/30 px-3.5 py-1.5 rounded-full transition-all cursor-pointer w-full sm:w-auto text-center"
 						>
-							Ir para Cartões
+							Ver Todos
 						</button>
 					</div>
 
 					<div className="space-y-4 flex-1">
-						{loadingFaturas ? (
-							<div className="flex justify-center items-center h-48">
-								<div className="animate-spin rounded-full h-6 w-6 border-b-2 border-pink-500"></div>
-							</div>
-						) : rawFaturasNaoPagas.length === 0 ? (
+						{cartoesResumo.length === 0 ? (
 							<div className="flex flex-col items-center justify-center h-48 text-center text-slate-400 dark:text-slate-500">
-								<AlertCircle size={32} className="text-emerald-400 mb-2" />
-								<p className="font-bold text-sm">Tudo pago por aqui!</p>
-								<p className="text-xs">Não há faturas pendentes nos últimos 3 meses.</p>
+								<AlertCircle size={32} className="text-slate-300 mb-2" />
+								<p className="font-bold text-sm">Nenhum cartão cadastrado</p>
+								<p className="text-xs">Cadastre seus cartões na tela de Cartões.</p>
 							</div>
 						) : (
-							rawFaturasNaoPagas.map((f: any) => {
-								const [ano, mes] = f.mesReferencia.split("-").map(Number);
-								const vencimentoDia = f.cartao.vencimento_dia;
-								const ultimoDiaMes = new Date(ano, mes, 0).getDate();
-								const diaReal = Math.min(vencimentoDia, ultimoDiaMes);
-								const dataVencimento = new Date(ano, mes - 1, diaReal, 23, 59, 59);
-								const isAtrasada = new Date() > dataVencimento;
-
+							cartoesResumo.map((res: any) => {
 								return (
 									<div 
-										key={`${f.cartao.id}-${f.mesReferencia}`}
-										className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-850 hover:bg-pink-50/10 dark:hover:bg-pink-950/10 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all"
+										key={res.cartao.id}
+										className="flex flex-col p-4 bg-slate-50 dark:bg-slate-850/40 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all space-y-3"
 									>
-										<div className="flex items-center gap-3">
-											<span 
-												className="w-3.5 h-3.5 rounded-full border border-white dark:border-slate-900 shadow-sm" 
-												style={{ backgroundColor: f.cartao.cor_hex || "#F472B6" }}
-											/>
+										<div className="flex items-center justify-between">
+											<div className="flex items-center gap-2.5">
+												<span 
+													className="w-3.5 h-3.5 rounded-full border border-white dark:border-slate-900 shadow-sm" 
+													style={{ backgroundColor: res.cartao.cor_hex || "#6366f1" }}
+												/>
+												<p className="font-bold text-slate-800 dark:text-slate-100 text-sm">{res.cartao.nome}</p>
+											</div>
+											<button 
+												onClick={() => navigate(`/faturas/${res.cartao.id}`)}
+												className="text-xs font-black text-indigo-500 hover:text-indigo-600 dark:text-indigo-455 hover:underline cursor-pointer"
+											>
+												Detalhes
+											</button>
+										</div>
+
+										<div className="grid grid-cols-3 gap-2 text-left pt-1">
 											<div>
-												<div className="flex items-center gap-2">
-													<p className="font-bold text-slate-800 dark:text-slate-100 text-sm">{f.cartao.nome}</p>
-													<span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${isAtrasada ? 'bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 animate-pulse' : 'bg-orange-100 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400'}`}>
-														{isAtrasada ? 'Atrasada' : 'Aberta'}
-													</span>
-												</div>
-												<p className="text-xs text-slate-400 dark:text-slate-500 font-medium mt-0.5">
-													Vence: Dia {f.cartao.vencimento_dia} • {formatMonthReference(f.mesReferencia)}
+												<span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Fatura</span>
+												<p className="font-black text-slate-700 dark:text-slate-200 text-xs">
+													R$ {res.totalFatura.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+												</p>
+											</div>
+											<div>
+												<span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Pago</span>
+												<p className="font-black text-emerald-600 dark:text-emerald-400 text-xs">
+													R$ {res.totalPago.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+												</p>
+											</div>
+											<div>
+												<span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Pendente</span>
+												<p className="font-black text-rose-500 dark:text-rose-455 text-xs">
+													R$ {res.pendente.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 												</p>
 											</div>
 										</div>
 
-										<div className="flex items-center gap-4">
-											<div className="text-right">
-												<p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase">A pagar</p>
-												<p className="font-black text-rose-500 dark:text-rose-455 text-sm">
-													R$ {f.pendente.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-												</p>
+										{Number(res.cartao.limite) > 0 && (
+											<div className="space-y-1.5 pt-1">
+												<div className="flex justify-between items-center text-[9px] text-slate-400 dark:text-slate-550 font-black uppercase tracking-wider">
+													<span>Uso: {res.percentualUso.toFixed(0)}%</span>
+													<span>Disp: R$ {res.limiteDisponivel.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} / R$ {Number(res.cartao.limite).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}</span>
+												</div>
+												<div className="w-full bg-slate-150 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+													<div 
+														className="h-full rounded-full transition-all duration-500"
+														style={{ 
+															width: `${Math.min(res.percentualUso, 100)}%`,
+															backgroundColor: res.cartao.cor_hex || "#6366f1"
+														}}
+													/>
+												</div>
 											</div>
-											<button 
-												onClick={() => navigate(`/faturas/${f.cartao.id}`)}
-												className="p-2 text-slate-400 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-xl transition-all"
-												title="Visualizar Detalhes"
-											>
-												<ExternalLink size={16} />
-											</button>
-										</div>
+										)}
 									</div>
 								);
 							})
@@ -840,15 +946,15 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 				</div>
 
 				{/* Devedores Ativos */}
-				<div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col h-full">
-					<div className="flex justify-between items-center mb-6">
-						<h3 className="font-black text-slate-800 text-xl tracking-tight flex items-center gap-2">
+				<div className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col h-full transition-colors">
+					<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+						<h3 className="font-black text-slate-800 dark:text-slate-100 text-xl tracking-tight flex items-center gap-2">
 							<Users className="text-pink-500" size={22} />
 							Devedores Ativos
 						</h3>
 						<button 
 							onClick={() => navigate("/devedores")} 
-							className="text-xs font-bold text-indigo-500 hover:text-indigo-600 bg-indigo-50 hover:bg-indigo-100/60 px-3 py-1.5 rounded-full transition-all"
+							className="text-xs font-bold text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 bg-indigo-50 hover:bg-indigo-100/60 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/30 px-3.5 py-1.5 rounded-full transition-all cursor-pointer w-full sm:w-auto text-center"
 						>
 							Ir para Devedores
 						</button>
@@ -856,7 +962,7 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 
 					<div className="space-y-4 flex-1">
 						{devedores.filter(d => d.total_devido > 0).length === 0 ? (
-							<div className="flex flex-col items-center justify-center h-48 text-center text-slate-400">
+							<div className="flex flex-col items-center justify-center h-48 text-center text-slate-400 dark:text-slate-500">
 								<AlertCircle size={32} className="text-emerald-400 mb-2" />
 								<p className="font-bold text-sm">Ninguém deve nada!</p>
 								<p className="text-xs">Não há valores a receber de terceiros pendentes.</p>
@@ -867,17 +973,17 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 								.map((devedor: any) => (
 									<div 
 										key={devedor.contato.id}
-										className="flex items-center justify-between p-4 bg-slate-50 hover:bg-pink-50/10 rounded-2xl border border-slate-100 hover:border-pink-100/30 transition-all"
+										className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-850/40 hover:bg-pink-50/10 dark:hover:bg-pink-950/10 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all"
 									>
 										<div className="flex items-center gap-3">
-											<div className="w-9 h-9 bg-pink-100 rounded-full flex justify-center items-center">
-												<span className="text-pink-600 font-black text-sm">
+											<div className="w-9 h-9 bg-pink-100 dark:bg-pink-950/60 rounded-full flex justify-center items-center">
+												<span className="text-pink-600 dark:text-pink-400 font-black text-sm">
 													{devedor.contato.nome.charAt(0).toUpperCase()}
 												</span>
 											</div>
 											<div>
-												<p className="font-bold text-slate-800 text-sm">{devedor.contato.nome}</p>
-												<p className="text-xs text-slate-400 font-medium mt-0.5">
+												<p className="font-bold text-slate-800 dark:text-slate-100 text-sm">{devedor.contato.nome}</p>
+												<p className="text-xs text-slate-400 dark:text-slate-500 font-medium mt-0.5">
 													{devedor.contato.telefone || "Sem Telefone"}
 												</p>
 											</div>
@@ -885,14 +991,14 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 
 										<div className="flex items-center gap-4">
 											<div className="text-right">
-												<p className="text-[10px] text-slate-400 font-bold uppercase">Total devido</p>
-												<p className="font-black text-rose-500 text-sm">
+												<p className="text-[10px] text-slate-400 dark:text-slate-550 font-bold uppercase">Total devido</p>
+												<p className="font-black text-rose-500 dark:text-rose-455 text-sm">
 													R$ {devedor.total_devido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 												</p>
 											</div>
 											<button 
 												onClick={() => handleCobrarWhatsApp(devedor)}
-												className="p-2 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-xl transition-all shadow-sm shadow-emerald-100"
+												className="p-2 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-xl transition-all shadow-sm shadow-emerald-100 dark:shadow-none cursor-pointer"
 												title="Cobrar via WhatsApp"
 											>
 												<Phone size={16} />
@@ -908,55 +1014,61 @@ Retorne a resposta EXATAMENTE no seguinte formato JSON estrito, sem formatação
 			{/* ÚLTIMOS LANÇAMENTOS DINÂMICOS */}
 			<motion.div variants={itemVariants} className={`grid grid-cols-1 ${filterCategory === "all" ? "lg:grid-cols-2" : "lg:grid-cols-1"} gap-8`}>
 				{(filterCategory === "all" || filterCategory === "entradas") && (
-					<RecentSection title="Últimas Entradas" items={dashboardData.recentes.entradas} colorClass="text-emerald-500" bgIconClass="bg-emerald-50 text-emerald-600" icon={<ArrowUpRight size={18} />} onMore={() => navigate("/entradas")} dateField="data" />
+					<RecentSection title="Últimas Entradas" items={dashboardData.recentes.entradas} colorClass="text-emerald-500" bgIconClass="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400" icon={<ArrowUpRight size={18} />} onMore={() => navigate("/entradas")} dateField="data" />
 				)}
 				{(filterCategory === "all" || filterCategory === "gastos") && (
-					<RecentSection title="Últimos Gastos" items={dashboardData.recentes.gastos} colorClass="text-rose-500" bgIconClass="bg-rose-50 text-rose-600" icon={<ArrowDownRight size={18} />} onMore={() => navigate("/gastos")} dateField="data" />
+					<RecentSection title="Últimos Gastos" items={dashboardData.recentes.gastos} colorClass="text-rose-500" bgIconClass="bg-rose-50 text-rose-600 dark:bg-rose-950/20 dark:text-rose-450" icon={<ArrowDownRight size={18} />} onMore={() => navigate("/gastos")} dateField="data" />
 				)}
 				{filterCategory === "cartoes" && (
-					<RecentSection title="Últimos Pagtos Fatura" items={dashboardData.recentes.cartoes} colorClass="text-purple-500" bgIconClass="bg-purple-50 text-purple-600" icon={<ArrowDownRight size={18} />} onMore={() => navigate("/cartoes")} dateField="data" />
+					<RecentSection title="Últimos Pagtos Fatura" items={dashboardData.recentes.cartoes} colorClass="text-purple-500" bgIconClass="bg-purple-50 text-purple-600 dark:bg-purple-950/20 dark:text-purple-400" icon={<ArrowDownRight size={18} />} onMore={() => navigate("/cartoes")} dateField="data" />
 				)}
 				{filterCategory === "investimentos" && (
-					<RecentSection title="Últimos Investimentos" items={dashboardData.recentes.investimentos} colorClass="text-blue-500" bgIconClass="bg-blue-50 text-blue-600" icon={<TrendingUp size={18} />} onMore={() => navigate("/investimentos")} titleField="titulo" dateField={null} />
+					<RecentSection title="Últimos Investimentos" items={dashboardData.recentes.investimentos} colorClass="text-blue-500" bgIconClass="bg-blue-50 text-blue-600 dark:bg-blue-950/20 dark:text-blue-400" icon={<TrendingUp size={18} />} onMore={() => navigate("/investimentos")} titleField="titulo" dateField={null} />
 				)}
 				{filterCategory === "dividas" && (
-					<RecentSection title="Últimas Dívidas" items={dashboardData.recentes.dividas} colorClass="text-orange-500" bgIconClass="bg-orange-50 text-orange-600" icon={<TrendingDown size={18} />} onMore={() => navigate("/dividas")} dateField="vencimento_parcela" />
+					<RecentSection title="Últimas Dívidas" items={dashboardData.recentes.dividas} colorClass="text-orange-500" bgIconClass="bg-orange-50 text-orange-600 dark:bg-orange-950/20 dark:text-orange-400" icon={<TrendingDown size={18} />} onMore={() => navigate("/dividas")} dateField="vencimento_parcela" />
 				)}
 			</motion.div>
 		</motion.div>
 	);
 }
 
-function MetricCard({ title, value, icon, bgClass, hoverClass }: any) {
+function MetricCard({ title, value, icon, bgClass, colorClass, borderClass }: any) {
 	return (
 		<motion.div 
 			whileHover={{ y: -4 }}
-			className={`bg-white dark:bg-slate-900 p-8 rounded-[32px] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col justify-center ${hoverClass} transition-all`}
+			className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[32px] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col justify-between transition-all hover:border-slate-200 dark:hover:border-slate-700/80"
 		>
-			<div className="flex items-center gap-3 mb-3">
-				<div className={`${bgClass} p-2.5 rounded-full dark:bg-opacity-20`}>
-					{icon}
+			<div>
+				<div className="flex items-center gap-3 mb-4">
+					<div className={`p-2.5 rounded-2xl ${bgClass} ${colorClass}`}>
+						{icon}
+					</div>
+					<p className="text-slate-450 dark:text-slate-500 font-bold uppercase tracking-wider text-[10px]">{title}</p>
 				</div>
-				<p className="text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider text-xs">{title}</p>
+				<h3 className="text-3xl font-black text-slate-855 dark:text-slate-100 flex items-baseline">
+					<span className="text-slate-400 dark:text-slate-655 text-xl font-bold mr-1">R$</span>
+					{value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+				</h3>
 			</div>
-			<h3 className="text-3xl font-black text-slate-800 dark:text-slate-100">
-				<span className="text-slate-400 dark:text-slate-550 text-xl mr-1">R$</span>
-				{value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-			</h3>
+			
+			<div className="h-1.5 w-full bg-slate-50 dark:bg-slate-850 rounded-full mt-5 overflow-hidden">
+				<div className={`h-full ${borderClass} rounded-full`} style={{ width: "40%" }} />
+			</div>
 		</motion.div>
 	);
 }
 
 function RecentSection({ title, items, colorClass, bgIconClass, icon, onMore, titleField = "descricao", dateField = "data" }: any) {
 	return (
-		<div className="bg-white dark:bg-slate-900 p-8 rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col h-full transition-colors">
-			<div className="flex justify-between items-center mb-6">
+		<div className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col h-full transition-colors">
+			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
 				<h3 className="font-black text-slate-800 dark:text-slate-100 text-xl tracking-tight">{title}</h3>
 				<button
 					onClick={onMore}
-					className="text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-305 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 px-3 py-1.5 rounded-full transition-colors flex items-center text-sm font-bold"
+					className="text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-305 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 px-3.5 py-1.5 rounded-full transition-colors flex items-center justify-center text-xs font-bold cursor-pointer w-full sm:w-auto"
 				>
-					Ver mais <ChevronRight size={16} className="ml-1" />
+					Ver mais <ChevronRight size={14} className="ml-1" />
 				</button>
 			</div>
 			
@@ -973,19 +1085,19 @@ function RecentSection({ title, items, colorClass, bgIconClass, icon, onMore, ti
 							className="flex justify-between items-center group cursor-default"
 						>
 							<div className="flex items-center gap-4">
-								<div className={`p-3 rounded-2xl ${bgIconClass} dark:bg-opacity-20`}>
+								<div className={`p-3 rounded-2xl ${bgIconClass}`}>
 									{icon}
 								</div>
 								<div>
-									<p className="font-bold text-slate-700 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-slate-100 transition-colors">{item[titleField] || item.descricao}</p>
+									<p className="font-bold text-slate-700 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-slate-100 transition-colors text-sm">{item[titleField] || item.descricao}</p>
 									{dateField && item[dateField] && (
-										<p className="text-xs text-slate-400 dark:text-slate-550 font-medium mt-0.5">
+										<p className="text-[11px] text-slate-400 dark:text-slate-550 font-semibold mt-0.5">
 											{new Date(item[dateField] + "T12:00:00").toLocaleDateString("pt-BR")}
 										</p>
 									)}
 								</div>
 							</div>
-							<p className={`font-black tracking-tight ${colorClass}`}>
+							<p className={`font-black tracking-tight text-sm ${colorClass}`}>
 								<span className="text-[10px] mr-1 opacity-70">R$</span>
 								{Number(item.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 							</p>

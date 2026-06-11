@@ -63,54 +63,54 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 	];
 
 	return (
-		<div className="fixed inset-0 bg-[#5D4037]/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-			<div className="bg-white p-10 md:p-14 rounded-[50px] shadow-2xl w-full max-w-md border border-gray-100 relative animate-in fade-in zoom-in duration-200">
+		<div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto" role="dialog" aria-modal="true">
+			<div className="bg-white dark:bg-slate-900 p-6 sm:p-10 rounded-3xl sm:rounded-[40px] shadow-2xl w-full max-w-md border border-slate-100 dark:border-slate-800 relative animate-in fade-in zoom-in duration-200 flex flex-col max-h-[95vh] sm:max-h-[90vh]">
 				<button
 					type="button"
 					onClick={onClose}
-					className="absolute top-8 right-8 text-gray-400 hover:text-gray-600 transition-colors bg-gray-50 p-2 rounded-full"
+					className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors bg-slate-50 dark:bg-slate-800 p-2 rounded-full cursor-pointer"
 				>
-					<X size={24} />
+					<X size={20} />
 				</button>
 
-				<div className="text-center mb-10">
-					<div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
-						<CreditCard size={32} />
+				<div className="text-center mb-8 shrink-0">
+					<div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-3">
+						<CreditCard size={28} />
 					</div>
-					<h2 className="text-3xl font-black text-slate-800 tracking-tight">Novo Cartão</h2>
-					<p className="text-slate-500 mt-1 font-medium">Cadastre um novo cartão de crédito</p>
+					<h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Novo Cartão</h2>
+					<p className="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm">Cadastre um novo cartão de crédito</p>
 				</div>
 
-				<form onSubmit={handleSubmit} className="space-y-6">
-					<div className="space-y-1">
-						<label className="text-sm font-bold text-slate-600 ml-2">Nome do Cartão</label>
+				<form onSubmit={handleSubmit} className="space-y-5 overflow-y-auto flex-1 pr-1 scrollbar-thin">
+					<div className="space-y-1.5">
+						<label className="text-xs font-bold text-slate-600 dark:text-slate-350 ml-2">Nome do Cartão</label>
 						<input
 							type="text"
 							required
 							value={form.nome}
 							onChange={e => setForm({...form, nome: e.target.value})}
-							className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-sm"
 							placeholder="Ex: Nubank, Itaú..."
 						/>
 					</div>
 
-					<div className="space-y-1">
-						<label className="text-sm font-bold text-slate-600 ml-2">Limite (R$)</label>
+					<div className="space-y-1.5">
+						<label className="text-xs font-bold text-slate-600 dark:text-slate-350 ml-2">Limite (R$)</label>
 						<input
 							type="number"
 							required
 							step="0.01"
 							value={form.limite}
 							onChange={e => setForm({...form, limite: e.target.value})}
-							className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-sm"
 							placeholder="5000.00"
 						/>
 					</div>
 
 					<div className="grid grid-cols-2 gap-4">
-						<div className="space-y-1">
-							<label className="text-sm font-bold text-slate-600 ml-2 flex items-center gap-1">
-								<Calendar size={14} /> Vencimento
+						<div className="space-y-1.5">
+							<label className="text-xs font-bold text-slate-600 dark:text-slate-350 ml-2 flex items-center gap-1">
+								<Calendar size={12} /> Vencimento
 							</label>
 							<input
 								type="number"
@@ -119,12 +119,12 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 								max="31"
 								value={form.vencimento_dia}
 								onChange={e => setForm({...form, vencimento_dia: Number(e.target.value)})}
-								className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 text-center"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-center text-sm"
 							/>
 						</div>
-						<div className="space-y-1">
-							<label className="text-sm font-bold text-slate-600 ml-2 flex items-center gap-1">
-								<Calendar size={14} /> Fechamento
+						<div className="space-y-1.5">
+							<label className="text-xs font-bold text-slate-600 dark:text-slate-350 ml-2 flex items-center gap-1">
+								<Calendar size={12} /> Fechamento
 							</label>
 							<input
 								type="number"
@@ -133,22 +133,22 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 								max="31"
 								value={form.fechamento_dia}
 								onChange={e => setForm({...form, fechamento_dia: Number(e.target.value)})}
-								className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 text-center"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-center text-sm"
 							/>
 						</div>
 					</div>
 
 					<div className="space-y-2">
-						<label className="text-sm font-bold text-slate-600 ml-2 flex items-center gap-1">
-							<Palette size={14} /> Cor do Cartão
+						<label className="text-xs font-bold text-slate-600 dark:text-slate-350 ml-2 flex items-center gap-1">
+							<Palette size={12} /> Cor do Cartão
 						</label>
-						<div className="flex flex-wrap gap-3 p-2">
+						<div className="flex flex-wrap gap-2.5 p-1.5 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-100 dark:border-slate-800">
 							{PREDEFINED_COLORS.map(color => (
 								<button
 									key={color}
 									type="button"
 									onClick={() => setForm({...form, cor_hex: color})}
-									className={`w-10 h-10 rounded-full shadow-sm border-2 transition-transform ${form.cor_hex === color ? 'border-slate-800 scale-110' : 'border-transparent hover:scale-105'}`}
+									className={`w-8 h-8 rounded-full shadow-sm border-2 transition-transform cursor-pointer ${form.cor_hex === color ? 'border-slate-800 dark:border-white scale-110' : 'border-transparent hover:scale-105'}`}
 									style={{ backgroundColor: color }}
 								/>
 							))}
@@ -157,7 +157,7 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 
 					<button
 						disabled={loading}
-						className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-5 rounded-3xl font-black mt-8 transition-all transform hover:scale-[1.02] shadow-lg shadow-indigo-200"
+						className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-4.5 rounded-2xl font-black mt-4 transition-all transform hover:scale-[1.01] shadow-lg shadow-indigo-150 dark:shadow-none cursor-pointer text-sm uppercase shrink-0"
 					>
 						{loading ? "SALVANDO..." : "CADASTRAR CARTÃO"}
 					</button>

@@ -12,7 +12,8 @@ import {
 	ChevronRight, 
 	FileText, 
 	X, 
-	AlertTriangle 
+	AlertTriangle,
+	ExternalLink
 } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -25,6 +26,7 @@ export default function Faturas() {
 	const [loading, setLoading] = useState(true);
 	const [filtroBusca, setFiltroBusca] = useState("");
 	const [filtroAba, setFiltroAba] = useState<'Todas' | 'Minhas' | 'Terceiros' | 'Pagas' | 'Pendentes'>('Todas');
+	const [contatos, setContatos] = useState<any[]>([]);
 	
 	// Modal de Pagamento
 	const [isPayModalOpen, setIsPayModalOpen] = useState(false);
@@ -74,6 +76,43 @@ export default function Faturas() {
 			toast.error("Erro ao atualizar pagamento: " + error.message);
 		}
 	};
+
+	const handleAlterarDevedor = async (itemId: string, value: string) => {
+		try {
+			const isTerceiro = value !== "MEU_GASTO";
+			const contatoId = isTerceiro ? value : null;
+
+			const { error } = await supabase
+				.from("gastos")
+				.update({
+					terceiro: isTerceiro,
+					contato_id: contatoId,
+					...(!isTerceiro ? { terceiro_pago: false, observacao: null } : {})
+				})
+				.eq("id", itemId);
+
+			if (error) throw error;
+			toast.success("Devedor atualizado com sucesso!");
+			loadFatura(mesSelecionado);
+		} catch (error: any) {
+			toast.error("Erro ao atualizar devedor: " + error.message);
+		}
+	};
+
+	useEffect(() => {
+		const loadContatos = async () => {
+			try {
+				const user = await authService.getCurrentUser();
+				if (user) {
+					const data = await financeService.getContatos(user.id);
+					setContatos(data || []);
+				}
+			} catch (e) {
+				console.error(e);
+			}
+		};
+		loadContatos();
+	}, []);
 
 	const handleAbrirModalPagamento = () => {
 		if (!fatura) return;
@@ -238,13 +277,13 @@ export default function Faturas() {
 
 	return (
 		<motion.div 
-			className="max-w-5xl mx-auto space-y-8 pb-20 p-6 sm:p-10"
+			className="space-y-6 sm:space-y-8 pb-20 text-slate-800 dark:text-slate-100"
 			variants={containerVariants}
 			initial="hidden"
 			animate="visible"
 		>
 			{/* HEADER */}
-			<motion.div variants={itemVariants} className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+			<motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 				<div>
 					<button onClick={() => navigate("/cartoes")} className="text-indigo-600 dark:text-indigo-400 font-bold flex items-center gap-1 mb-2 hover:underline">
 						<ChevronLeft size={16} /> Voltar para Cartões
@@ -354,8 +393,8 @@ export default function Faturas() {
 
 			{/* TRANSACTIONS LIST */}
 			{fatura && (
-				<motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 rounded-[32px] border border-slate-100 dark:border-slate-800/80 shadow-sm overflow-hidden transition-colors">
-					<div className="p-8 border-b border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+				<motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800/80 shadow-sm overflow-hidden transition-colors">
+					<div className="p-5 sm:p-8 border-b border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
 						<div className="flex flex-col sm:flex-row sm:items-center gap-4 flex-1">
 							<h3 className="font-black text-slate-800 dark:text-slate-100 text-xl tracking-tight shrink-0">Lançamentos da Fatura</h3>
 							
@@ -424,15 +463,29 @@ export default function Faturas() {
 																Parcela {item.parcela_atual}/{item.total_parcelas}
 															</span>
 														)}
-														{item.terceiro && (
-															<span 
-																className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-																	item.terceiro_pago ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400' : 'bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400'
-																}`}
+														<div className="flex items-center gap-1.5 shrink-0 bg-slate-50/50 dark:bg-slate-800/40 px-2 py-0.5 rounded-xl border border-slate-100/50 dark:border-slate-800/60">
+															<span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wide">Devedor:</span>
+															<select
+																value={item.terceiro ? item.contato_id || "" : "MEU_GASTO"}
+																onChange={(e) => handleAlterarDevedor(item.id, e.target.value)}
+																className="bg-transparent text-slate-700 dark:text-slate-300 border-none rounded-xl py-0.5 font-bold text-[10px] outline-none cursor-pointer"
 															>
-																Terceiro: {item.contatos?.nome || "Não informado"} {item.terceiro_pago ? "(Pago)" : "(Pendente)"}
-															</span>
-														)}
+																<option value="MEU_GASTO">👤 Meu Gasto</option>
+																{contatos.map((c: any) => (
+																	<option key={c.id} value={c.id}>👥 {c.nome}</option>
+																))}
+															</select>
+															{item.terceiro && item.terceiro_pago && (
+																<span className="px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400">
+																	Pago
+																</span>
+															)}
+															{item.terceiro && !item.terceiro_pago && (
+																<span className="px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 animate-pulse">
+																	Pendente
+																</span>
+															)}
+														</div>
 													</div>
 												</div>
 											</div>

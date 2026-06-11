@@ -97,21 +97,21 @@ export function EditEntradaWeb({
 	if (!isOpen) return null;
 
 	return (
-		<div className="fixed inset-0 bg-[#5D4037]/60 backdrop-blur-md z-[100] flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-			<div className="bg-white w-full max-w-5xl rounded-[32px] sm:rounded-[50px] shadow-2xl flex flex-col md:flex-row overflow-hidden animate-in zoom-in duration-300 h-[95vh] md:h-[650px] max-h-[95vh] md:max-h-[650px]">
+		<div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-2 sm:p-4 overflow-y-auto" role="dialog" aria-modal="true">
+			<div className="bg-white dark:bg-slate-900 w-full max-w-5xl rounded-3xl sm:rounded-[40px] shadow-2xl flex flex-col md:flex-row overflow-hidden animate-in zoom-in duration-300 h-[95vh] md:h-[650px] max-h-[95vh] md:max-h-[650px] border border-slate-105 dark:border-slate-850 transition-colors duration-200">
 				{/* BUSCA */}
-				<div className="w-full md:w-2/5 bg-[#FCF8F8] p-6 md:p-10 border-b md:border-b-0 md:border-r border-gray-100 flex flex-col h-[40%] md:h-full shrink-0 overflow-hidden">
-					<h3 className="text-2xl font-black text-[#5D4037] mb-8 flex items-center gap-2">
-						<Search size={24} className="text-[#4CAF50]" /> Localizar
+				<div className="w-full md:w-2/5 bg-slate-50 dark:bg-slate-950 p-6 md:p-10 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 flex flex-col h-[45%] md:h-full shrink-0 overflow-hidden">
+					<h3 className="text-xl md:text-2xl font-black text-slate-850 dark:text-slate-100 mb-4 md:mb-8 flex items-center gap-2">
+						<Search size={20} className="text-emerald-500" /> Localizar
 					</h3>
 
-					<div className="space-y-6 flex-1 flex flex-col overflow-hidden">
+					<div className="space-y-4 md:space-y-6 flex-1 flex flex-col overflow-hidden">
 						<div>
-							<label className="text-[10px] font-black uppercase text-gray-400 ml-2">
+							<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 block">
 								1. Escolha a Categoria
 							</label>
 							<select
-								className="w-full mt-2 p-5 bg-white rounded-3xl border-none shadow-sm font-bold text-[#5D4037] outline-none"
+								className="w-full mt-2 p-3.5 bg-white dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-200 outline-none text-sm cursor-pointer"
 								value={filtroDesc}
 								onChange={(e) => {
 									setFiltroDesc(e.target.value);
@@ -127,17 +127,17 @@ export function EditEntradaWeb({
 							</select>
 
 							{filtroDesc && (
-								<div className="mt-4 flex gap-2 animate-in slide-in-from-top-2 duration-300">
+								<div className="mt-3 flex gap-2 animate-in slide-in-from-top-2 duration-300">
 									<input
 										type="text"
-										className="flex-1 p-4 bg-white rounded-2xl font-bold text-[#5D4037] outline-none shadow-sm border border-slate-100 text-sm"
+										className="flex-1 p-3 bg-white dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 text-sm"
 										value={novoNomeCategoria}
 										onChange={(e) => setNovoNomeCategoria(e.target.value)}
-										placeholder="Novo nome da categoria..."
+										placeholder="Novo nome..."
 									/>
 									<button
 										onClick={handleRenomearCategoria}
-										className="px-5 py-2.5 bg-[#4CAF50] hover:bg-[#43a047] text-white rounded-2xl font-bold text-xs shadow-sm hover:shadow transition-all"
+										className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold text-xs cursor-pointer transition-colors"
 									>
 										Renomear
 									</button>
@@ -146,19 +146,19 @@ export function EditEntradaWeb({
 						</div>
 
 						<div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-							<label className="text-[10px] font-black uppercase text-gray-400 ml-2">
+							<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 block">
 								2. Selecione o Lançamento
 							</label>
 							{ocorrencias.map((item: any) => (
 								<button
 									key={item.id}
 									onClick={() => selecionarRegistro(item)}
-									className={`w-full p-5 rounded-3xl flex justify-between items-center transition-all border-2 ${itemSelecionado?.id === item.id ? "border-[#4CAF50] bg-white shadow-md" : "border-transparent hover:bg-white/50"}`}>
+									className={`w-full p-4 rounded-2xl flex justify-between items-center transition-all border-2 cursor-pointer ${itemSelecionado?.id === item.id ? "border-emerald-500 bg-white dark:bg-slate-800 shadow-md" : "border-transparent bg-white/40 dark:bg-slate-900/40 hover:bg-white/80 dark:hover:bg-slate-800/80"}`}>
 									<div className="text-left">
-										<p className="font-black text-[#5D4037]">
-											R$ {Number(item.valor).toLocaleString()}
+										<p className="font-black text-slate-800 dark:text-slate-200 text-sm">
+											R$ {Number(item.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 										</p>
-										<p className="text-[10px] text-gray-400 flex items-center gap-1 font-bold">
+										<p className="text-[10px] text-slate-400 dark:text-slate-550 flex items-center gap-1 font-bold mt-0.5">
 											<Calendar size={10} />{" "}
 											{new Date(item.data + "T12:00:00").toLocaleDateString(
 												"pt-BR",
@@ -172,40 +172,40 @@ export function EditEntradaWeb({
 				</div>
 
 				{/* FORMULÁRIO */}
-				<div className="w-full md:w-3/5 p-6 md:p-12 relative flex flex-col justify-center bg-white overflow-y-auto h-[60%] md:h-full">
+				<div className="w-full md:w-3/5 p-6 md:p-12 relative flex flex-col justify-center bg-white dark:bg-slate-900 overflow-y-auto h-[55%] md:h-full">
 					<button
 						onClick={onClose}
-						className="absolute top-10 right-10 text-gray-300 hover:text-gray-500 transition-colors">
-						<X size={28} />
+						className="absolute top-6 right-6 text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 transition-colors cursor-pointer">
+						<X size={20} />
 					</button>
 
 					{!itemSelecionado ? (
 						<div className="text-center space-y-4 opacity-20">
-							<Edit3 size={80} className="mx-auto" />
-							<p className="font-black text-xl">
+							<Edit3 size={60} className="mx-auto text-slate-400" />
+							<p className="font-black text-lg text-slate-500">
 								Selecione um item para editar
 							</p>
 						</div>
 					) : (
-						<div className="animate-in fade-in slide-in-from-right-8 space-y-8">
+						<div className="animate-in fade-in slide-in-from-right-8 space-y-6">
 							<div>
-								<span className="bg-[#4CAF50] text-white text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest">
+								<span className="bg-emerald-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
 									Registro Ativo
 								</span>
-								<h2 className="text-4xl font-black text-[#5D4037] mt-3">
+								<h2 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 mt-2.5">
 									{itemSelecionado.descricao}
 								</h2>
 							</div>
 
-							<div className="space-y-6">
-								<div className="space-y-2">
-									<label className="text-[10px] font-black uppercase text-gray-400 ml-2">
+							<div className="space-y-4">
+								<div className="space-y-1.5">
+									<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">
 										Categoria
 									</label>
 									<input
 										list="edit-entradas-categorias-list"
 										type="text"
-										className="w-full p-6 bg-[#FCF8F8] rounded-[30px] border border-gray-100 font-black text-[#5D4037] outline-none"
+										className="w-full p-4 bg-slate-50 dark:bg-slate-850 border border-slate-205 dark:border-slate-700 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none text-sm focus:border-emerald-500 transition-colors"
 										value={descEdit}
 										onChange={(e) => setDescEdit(e.target.value)}
 										placeholder="Digite ou selecione a categoria..."
@@ -217,45 +217,46 @@ export function EditEntradaWeb({
 									</datalist>
 								</div>
 
-								<div className="space-y-2">
-									<label className="text-[10px] font-black uppercase text-gray-400 ml-2">
+								<div className="space-y-1.5">
+									<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">
 										Novo Valor
 									</label>
-									<div className="flex items-center gap-4 bg-[#FCF8F8] p-6 rounded-[30px] border border-gray-100">
-										<span className="text-3xl font-black text-[#5D4037]">
+									<div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-205 dark:border-slate-700">
+										<span className="text-xl font-black text-slate-500 dark:text-slate-400">
 											R$
 										</span>
 										<input
 											type="number"
-											className="bg-transparent w-full text-4xl font-black text-[#4CAF50] outline-none"
+											step="0.01"
+											className="bg-transparent w-full text-3xl font-black text-emerald-600 dark:text-emerald-450 outline-none"
 											value={valorEdit}
 											onChange={(e) => setValorEdit(e.target.value)}
 										/>
 									</div>
 								</div>
 
-								<div className="space-y-2">
-									<label className="text-[10px] font-black uppercase text-gray-400 ml-2">
+								<div className="space-y-1.5">
+									<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">
 										Data do Lançamento
 									</label>
 									<input
 										type="date"
-										className="w-full p-6 bg-[#FCF8F8] rounded-[30px] border border-gray-100 font-black text-[#5D4037] outline-none"
+										className="w-full p-4 bg-slate-50 dark:bg-slate-850 border border-slate-205 dark:border-slate-700 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none text-sm focus:border-emerald-500 transition-colors"
 										value={dataEdit}
 										onChange={(e) => setDataEdit(e.target.value)}
 									/>
 								</div>
 
-								<div className="flex gap-4 pt-6">
+								<div className="flex gap-3 pt-4 shrink-0">
 									<button
 										onClick={handleUpdate}
-										className="flex-1 bg-[#5D4037] text-white py-6 rounded-[30px] font-black text-xl hover:scale-[1.02] transition-all shadow-xl shadow-brown-100 flex items-center justify-center gap-3">
-										<Save size={24} /> ATUALIZAR
+										className="flex-1 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white py-4.5 rounded-2xl font-black text-sm hover:scale-[1.01] transition-all flex items-center justify-center gap-2 cursor-pointer uppercase">
+										<Save size={18} /> ATUALIZAR
 									</button>
 									<button
 										onClick={handleDelete}
-										className="bg-pink-50 text-[#FF80AB] px-10 rounded-[30px] hover:bg-pink-100 transition-all border border-pink-100">
-										<Trash2 size={28} />
+										className="bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-900/35 text-rose-500 dark:text-rose-455 px-6 rounded-2xl transition-colors border border-rose-100 dark:border-rose-900/50 cursor-pointer">
+										<Trash2 size={20} />
 									</button>
 								</div>
 							</div>

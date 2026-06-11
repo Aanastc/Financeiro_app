@@ -178,39 +178,39 @@ Retorne o conselho em formato markdown limpo, com títulos curtos, linguagem ami
 	}, [simulacao]);
 
 	return (
-		<div className="p-4 md:p-8 space-y-8 bg-[#FDFCFB] min-h-screen">
-			<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white p-8 rounded-[40px] shadow-sm border border-purple-50 relative overflow-hidden">
+		<div className="space-y-6 sm:space-y-8 pb-20">
+			<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] shadow-sm border border-purple-50 dark:border-slate-800 relative overflow-hidden transition-colors">
 				<div className="absolute top-0 right-0 w-64 h-64 bg-purple-100 rounded-full blur-3xl opacity-50 -translate-y-1/2 translate-x-1/4 pointer-events-none" />
 				
 				<div className="space-y-1 relative z-10">
 					<div className="flex items-center gap-3">
-						<div className="bg-purple-100 p-2 rounded-xl text-purple-600">
+						<div className="bg-purple-100 dark:bg-purple-950/40 p-2 rounded-xl text-purple-600 dark:text-purple-400">
 							<HandCoins size={24} />
 						</div>
-						<h1 className="text-3xl font-black text-slate-800">Dívidas e Empréstimos</h1>
+						<h1 className="text-3xl font-black text-slate-800 dark:text-slate-100">Dívidas e Empréstimos</h1>
 					</div>
-					<p className="text-gray-400 font-medium text-sm ml-12">Gestão de compromissos, empréstimos e parcelamentos pesados</p>
+					<p className="text-gray-400 dark:text-slate-500 font-medium text-sm ml-12">Gestão de compromissos, empréstimos e parcelamentos pesados</p>
 				</div>
 
 				<button 
 					onClick={() => setIsAddDividaOpen(true)}
-					className="px-8 py-4 bg-purple-600 text-white rounded-[25px] font-black flex items-center gap-2 hover:bg-purple-700 transition-all shadow-xl shadow-purple-200 relative z-10">
+					className="px-8 py-4 bg-purple-600 text-white rounded-[25px] font-black flex items-center gap-2 hover:bg-purple-700 transition-all shadow-xl shadow-purple-200 dark:shadow-none relative z-10 w-full lg:w-auto justify-center cursor-pointer">
 					<Plus size={20} /> NOVA DÍVIDA
 				</button>
 			</div>
 
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-				<div className="bg-white p-8 rounded-[35px] border border-gray-100 shadow-sm relative overflow-hidden group hover:border-purple-200 transition-colors">
-					<div className="absolute top-0 right-0 w-32 h-32 bg-rose-50 rounded-bl-full -z-10 group-hover:scale-110 transition-transform" />
-					<p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Total em Dívidas</p>
-					<h2 className="text-3xl font-black text-rose-500">R$ {stats.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h2>
+			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+				<div className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[35px] border border-gray-100 dark:border-slate-800 shadow-sm relative overflow-hidden group hover:border-purple-200 dark:hover:border-purple-800 transition-colors">
+					<div className="absolute top-0 right-0 w-32 h-32 bg-rose-50 dark:bg-rose-955/10 rounded-bl-full -z-10 group-hover:scale-110 transition-transform" />
+					<p className="text-[10px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest mb-2">Total em Dívidas</p>
+					<h2 className="text-3xl font-black text-rose-500 dark:text-rose-400">R$ {stats.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h2>
 				</div>
-				<div className="bg-white p-8 rounded-[35px] border border-gray-100 shadow-sm relative overflow-hidden group hover:border-purple-200 transition-colors">
-					<div className="absolute top-0 right-0 w-32 h-32 bg-amber-50 rounded-bl-full -z-10 group-hover:scale-110 transition-transform" />
-					<p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Parcelas Pendentes</p>
+				<div className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[35px] border border-gray-100 dark:border-slate-800 shadow-sm relative overflow-hidden group hover:border-purple-200 dark:hover:border-purple-800 transition-colors">
+					<div className="absolute top-0 right-0 w-32 h-32 bg-amber-50 dark:bg-amber-955/10 rounded-bl-full -z-10 group-hover:scale-110 transition-transform" />
+					<p className="text-[10px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest mb-2">Parcelas Pendentes</p>
 					<h2 className="text-3xl font-black text-amber-500">{stats.pendentes} itens ativos</h2>
 				</div>
-				<div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-8 rounded-[35px] shadow-lg shadow-purple-200 text-white relative overflow-hidden">
+				<div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-5 sm:p-8 rounded-3xl sm:rounded-[35px] shadow-lg shadow-purple-200 dark:shadow-none text-white relative overflow-hidden">
 					<div className="absolute bottom-0 right-0 w-40 h-40 bg-white/10 rounded-tl-full blur-xl" />
 					<p className="text-[10px] font-black text-purple-200 uppercase tracking-widest mb-2">Previsão Próxima</p>
 					<div className="flex items-center gap-3">
@@ -221,16 +221,16 @@ Retorne o conselho em formato markdown limpo, com títulos curtos, linguagem ami
 			</div>
 
 			<div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-				<div className="lg:col-span-8 bg-white rounded-[40px] shadow-sm border border-gray-100 overflow-hidden flex flex-col">
-					<div className="p-8 border-b border-gray-50 flex justify-between items-center">
-						<h3 className="font-black text-slate-800 flex items-center gap-2 uppercase text-sm tracking-tight">
+				<div className="lg:col-span-8 bg-white dark:bg-slate-900 rounded-3xl sm:rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col transition-colors">
+					<div className="p-5 sm:p-8 border-b border-gray-50 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+						<h3 className="font-black text-slate-800 dark:text-slate-100 flex items-center gap-2 uppercase text-sm tracking-tight">
 							<AlertTriangle className="text-purple-500" size={18} /> Cronograma de Pagamentos
 						</h3>
 					</div>
 					<div className="overflow-x-auto flex-1">
 						<table className="w-full text-left">
 							<thead>
-								<tr className="bg-slate-50/50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+								<tr className="bg-slate-50/50 dark:bg-slate-800/30 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
 									<th className="p-6">Descrição</th>
 									<th className="p-6 text-center">Parcelas</th>
 									<th className="p-6 text-center">Juros</th>
@@ -243,12 +243,12 @@ Retorne o conselho em formato markdown limpo, com títulos curtos, linguagem ami
 							<tbody className="divide-y divide-gray-50">
 								{dividas.length > 0 ? (
 									dividas.map((d) => (
-										<tr key={d.id} className="hover:bg-slate-50/50 transition-colors group">
+										<tr key={d.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors group">
 											<td className="p-6">
-												<div className="font-black text-slate-700">{d.descricao}</div>
-												<div className="text-[10px] font-bold text-slate-400 mt-1 flex flex-wrap gap-2">
-													{d.banco && <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{d.banco}</span>}
-													{d.tipo_divida && <span className="bg-purple-50 text-purple-600 px-2 py-0.5 rounded">{d.tipo_divida}</span>}
+												<div className="font-black text-slate-700 dark:text-slate-205">{d.descricao}</div>
+												<div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mt-1 flex flex-wrap gap-2">
+													{d.banco && <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-350 px-2 py-0.5 rounded">{d.banco}</span>}
+													{d.tipo_divida && <span className="bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded">{d.tipo_divida}</span>}
 												</div>
 											</td>
 											<td className="p-6 text-center">
@@ -256,18 +256,18 @@ Retorne o conselho em formato markdown limpo, com títulos curtos, linguagem ami
 													{d.parcela_atual}/{d.parcelas}
 												</span>
 											</td>
-											<td className="p-6 text-center font-bold text-rose-500 text-xs">{d.juros}%</td>
+											<td className="p-6 text-center font-bold text-rose-500 dark:text-rose-400 text-xs">{d.juros}%</td>
 											<td className="p-6 text-center text-xs">
-												<div className="font-medium text-slate-400">De {new Date(d.data_inicio + "T12:00:00").toLocaleDateString('pt-BR')}</div>
-												<div className="font-bold text-slate-600">Até {new Date(d.vencimento_total + "T12:00:00").toLocaleDateString('pt-BR')}</div>
-												<div className="font-black text-purple-600 text-[9px] mt-1">Próx: {new Date(d.vencimento_parcela + "T12:00:00").toLocaleDateString('pt-BR')}</div>
+												<div className="font-medium text-slate-450 dark:text-slate-400">De {new Date(d.data_inicio + "T12:00:00").toLocaleDateString('pt-BR')}</div>
+												<div className="font-bold text-slate-600 dark:text-slate-300">Até {new Date(d.vencimento_total + "T12:00:00").toLocaleDateString('pt-BR')}</div>
+												<div className="font-black text-purple-600 dark:text-purple-400 text-[9px] mt-1">Próx: {new Date(d.vencimento_parcela + "T12:00:00").toLocaleDateString('pt-BR')}</div>
 											</td>
-											<td className="p-6 text-right font-black text-slate-800">
+											<td className="p-6 text-right font-black text-slate-800 dark:text-slate-100">
 												R$ {Number(d.valor_total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 											</td>
 											<td className="p-6 text-center">
 												<span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase ${
-													d.status === "quitada" || d.status === "pago" ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"
+													d.status === "quitada" || d.status === "pago" ? "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-455" : "bg-amber-100 dark:bg-amber-955/40 text-amber-600 dark:text-amber-455"
 												}`}>
 													{d.status}
 												</span>
