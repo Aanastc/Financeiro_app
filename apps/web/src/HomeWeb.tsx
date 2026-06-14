@@ -189,7 +189,7 @@ Analise os seguintes dados financeiros do usuário para o ano ${filterYear}:
 - Saldo Global Consolidado Atual: R$ ${stats.saldoTotal}
 - Entradas Totais do Ano: R$ ${rawEntradas.reduce((acc, cur) => acc + Number(cur.valor), 0)}
 - Despesas Totais do Ano (incluindo faturas pagas): R$ ${rawGastos.reduce((acc, cur) => acc + Number(cur.valor), 0) + rawFaturas.reduce((acc, cur) => acc + Number(cur.valor), 0)}
-- Dívidas Ativas: R$ ${rawDividas.reduce((acc, cur) => acc + Number(cur.valor), 0)}
+- Dívidas Ativas: R$ ${rawDividas.reduce((acc, cur) => acc + Number(cur.valor_total), 0)}
 - Distribuição de Gastos por Categoria: ${JSON.stringify(topCategories)}
 - Faturas Pendentes nos últimos 3 meses: ${rawFaturasNaoPagas.length} faturas, somando R$ ${rawFaturasNaoPagas.reduce((acc, cur) => acc + Number(cur.pendente), 0)} em aberto
 - Devedores ativos (dinheiro que o usuário emprestou e tem a receber): R$ ${devedores.reduce((acc, cur) => acc + Number(cur.total_devido), 0)}
@@ -312,7 +312,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 			gastos: filteredGastos.reduce((acc, cur) => acc + Number(cur.valor), 0) + filteredFaturas.reduce((acc, cur) => acc + Number(cur.valor), 0),
 			faturas: filteredFaturas.reduce((acc, cur) => acc + Number(cur.valor), 0),
 			investimentos: filteredInvestimentos.reduce((acc, cur) => acc + Number(cur.valor_investido), 0),
-			dividas: filteredDividas.reduce((acc, cur) => acc + Number(cur.valor), 0),
+			dividas: filteredDividas.reduce((acc, cur) => acc + Number(cur.valor_total), 0),
 		};
 
 		const mesesNomes = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -324,7 +324,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 			const gas = rawGastos.filter(g => g.considerar_soma === true && g.data.startsWith(prefix)).reduce((a, c) => a + Number(c.valor), 0);
 			const fat = rawFaturas.filter(e => e.data.startsWith(prefix)).reduce((a, c) => a + Number(c.valor), 0);
 			const inv = rawInvestimentos.reduce((a, c) => a + Number(c.valor_investido), 0) / 12;
-			const div = rawDividas.filter(e => (e.vencimento_parcela?.startsWith(prefix) || e.data?.startsWith(prefix))).reduce((a, c) => a + Number(c.valor), 0);
+			const div = rawDividas.filter(e => (e.vencimento_parcela?.startsWith(prefix) || e.data?.startsWith(prefix))).reduce((a, c) => a + Number(c.valor_total), 0);
 
 			dadosGrafico.push({
 				mes: mesesNomes[i],
