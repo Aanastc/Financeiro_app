@@ -363,20 +363,20 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 
 	const cartoesResumo = useMemo(() => {
 		if (cartoes.length === 0) return [];
-		
-		const activeMonthStr = filterMonth !== "all" 
+
+		const activeMonthStr = filterMonth !== "all"
 			? `${filterYear}-${String(filterMonth).padStart(2, '0')}`
 			: `${filterYear}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
 
 		return cartoes.map((c: any) => {
-			const gastosCartao = rawGastos.filter(g => 
-				g.cartao_id === c.id && 
+			const gastosCartao = rawGastos.filter(g =>
+				g.cartao_id === c.id &&
 				g.data.startsWith(activeMonthStr)
 			);
 			const totalFatura = gastosCartao.reduce((sum, item) => sum + Number(item.valor), 0);
 
-			const pagamentosFatura = rawFaturas.filter(p => 
-				p.cartao_id === c.id && 
+			const pagamentosFatura = rawFaturas.filter(p =>
+				p.cartao_id === c.id &&
 				p.mes_referencia === activeMonthStr
 			);
 			const totalPago = pagamentosFatura.reduce((sum, item) => sum + Number(item.valor), 0);
@@ -474,15 +474,15 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 	};
 
 	return (
-		<motion.div 
+		<motion.div
 			className="space-y-6 sm:space-y-8 pb-20"
 			variants={containerVariants}
 			initial="hidden"
 			animate="visible"
 		>
 			{/* 1. GREETING HEADER & QUICK ACTIONS */}
-			<motion.div 
-				variants={itemVariants} 
+			<motion.div
+				variants={itemVariants}
 				className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[36px] border border-slate-100 dark:border-slate-800 shadow-sm transition-colors"
 			>
 				<div className="space-y-1">
@@ -491,21 +491,21 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 					</h2>
 					<p className="text-slate-400 dark:text-slate-500 font-bold text-xs uppercase tracking-wider">Painel de controle financeiro pessoal</p>
 				</div>
-				
+
 				<div className="flex flex-wrap gap-3">
-					<button 
+					<button
 						onClick={() => navigate("/gastos?add=true")}
 						className="flex items-center gap-2 px-5 py-3 bg-rose-500 hover:bg-rose-600 text-white rounded-2xl font-bold text-xs shadow-md shadow-rose-100 dark:shadow-none transition-all active:scale-95 cursor-pointer"
 					>
 						<TrendingDown size={14} /> Novo Gasto
 					</button>
-					<button 
+					<button
 						onClick={() => navigate("/entradas?add=true")}
 						className="flex items-center gap-2 px-5 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-bold text-xs shadow-md shadow-emerald-100 dark:shadow-none transition-all active:scale-95 cursor-pointer"
 					>
 						<TrendingUp size={14} /> Nova Entrada
 					</button>
-					<button 
+					<button
 						onClick={() => navigate("/dividas?add=true")}
 						className="flex items-center gap-2 px-5 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-2xl font-bold text-xs shadow-md shadow-purple-100 dark:shadow-none transition-all active:scale-95 cursor-pointer"
 					>
@@ -515,15 +515,15 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 			</motion.div>
 
 			{/* 3. FILTROS (ABAIXO DE AÇÕES RÁPIDAS) */}
-			<motion.div 
-				variants={itemVariants} 
+			<motion.div
+				variants={itemVariants}
 				className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-3xl sm:rounded-[28px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:justify-between md:items-center gap-4 transition-colors"
 			>
 				<div className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
 					<Sparkles size={16} className="text-indigo-500" />
 					<p className="text-xs font-black uppercase tracking-widest">Filtrar Período</p>
 				</div>
-				
+
 				<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
 					{/* Select: Ano */}
 					<div className="relative w-full sm:w-auto">
@@ -585,19 +585,18 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 			{/* CARDS DE RESUMO */}
 			<motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 				{/* 4. CARD SALDO CONSOLIDADO FILTRADO */}
-				<motion.div 
+				<motion.div
 					whileHover={{ y: -4, boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1)" }}
-					className={`bg-gradient-to-br ${
-						saldoFiltrado >= 0 
-							? "from-indigo-900 via-slate-900 to-indigo-950" 
+					className={`bg-gradient-to-br ${saldoFiltrado >= 0
+							? "from-indigo-900 via-slate-900 to-indigo-950"
 							: "from-rose-950 via-slate-900 to-rose-900"
-					} p-5 sm:p-8 rounded-3xl sm:rounded-[32px] shadow-xl text-white relative overflow-hidden flex flex-col justify-between transition-all duration-300 md:col-span-2 lg:col-span-1`}
+						} p-5 sm:p-8 rounded-3xl sm:rounded-[32px] shadow-xl text-white relative overflow-hidden flex flex-col justify-between transition-all duration-300 md:col-span-2 lg:col-span-1`}
 				>
 					<div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
 						<Wallet size={120} />
 					</div>
 					<div className="absolute -left-10 -bottom-10 w-40 h-40 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
-					
+
 					<div>
 						<p className="text-indigo-300 dark:text-indigo-400 font-bold uppercase tracking-wider text-[10px] mb-2">
 							{filterMonth === "all" ? "Saldo Anual Consolidado" : "Saldo do Período"}
@@ -607,69 +606,68 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 							<span>{saldoFiltrado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
 						</h3>
 					</div>
-					
+
 					<div className="mt-4 pt-4 border-t border-indigo-850/40 flex justify-between items-center text-[10px] text-indigo-300 font-semibold">
 						<span>Filtro: {filterMonth === "all" ? `${filterYear}` : `${NOME_MESES[filterMonth - 1]} / ${filterYear}`}</span>
-						<span className={`px-2.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider ${
-							saldoFiltrado >= 0 ? "bg-emerald-500/20 text-emerald-350" : "bg-rose-500/20 text-rose-350"
-						}`}>
+						<span className={`px-2.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider ${saldoFiltrado >= 0 ? "bg-emerald-500/20 text-emerald-350" : "bg-rose-500/20 text-rose-350"
+							}`}>
 							{saldoFiltrado >= 0 ? "Positivo" : "Negativo"}
 						</span>
 					</div>
 				</motion.div>
 
 				{(filterCategory === "all" || filterCategory === "entradas") && (
-					<MetricCard 
-						title="Entradas (Mês)" 
-						value={dashboardData.totaisMes.entradas} 
-						icon={<TrendingUp size={20} className="text-emerald-600 dark:text-emerald-400" />} 
-						bgClass="bg-emerald-50 dark:bg-emerald-950/30" 
-						colorClass="text-emerald-600 dark:text-emerald-455" 
-						borderClass="bg-emerald-500" 
+					<MetricCard
+						title="Entradas (Mês)"
+						value={dashboardData.totaisMes.entradas}
+						icon={<TrendingUp size={20} className="text-emerald-600 dark:text-emerald-400" />}
+						bgClass="bg-emerald-50 dark:bg-emerald-950/30"
+						colorClass="text-emerald-600 dark:text-emerald-455"
+						borderClass="bg-emerald-500"
 					/>
 				)}
-				
+
 				{(filterCategory === "all" || filterCategory === "gastos") && (
-					<MetricCard 
-						title="Gastos (Mês)" 
-						value={dashboardData.totaisMes.gastos} 
-						icon={<TrendingDown size={20} className="text-rose-600 dark:text-rose-400" />} 
-						bgClass="bg-rose-50 dark:bg-rose-950/30" 
-						colorClass="text-rose-600 dark:text-rose-455" 
-						borderClass="bg-rose-500" 
+					<MetricCard
+						title="Gastos (Mês)"
+						value={dashboardData.totaisMes.gastos}
+						icon={<TrendingDown size={20} className="text-rose-600 dark:text-rose-400" />}
+						bgClass="bg-rose-50 dark:bg-rose-950/30"
+						colorClass="text-rose-600 dark:text-rose-455"
+						borderClass="bg-rose-500"
 					/>
 				)}
 
 				{filterCategory === "cartoes" && (
-					<MetricCard 
-						title="Faturas (Mês)" 
-						value={dashboardData.totaisMes.faturas} 
-						icon={<CreditCard size={20} className="text-purple-600 dark:text-purple-400" />} 
-						bgClass="bg-purple-50 dark:bg-purple-950/30" 
-						colorClass="text-purple-600 dark:text-purple-450" 
-						borderClass="bg-purple-500" 
+					<MetricCard
+						title="Faturas (Mês)"
+						value={dashboardData.totaisMes.faturas}
+						icon={<CreditCard size={20} className="text-purple-600 dark:text-purple-400" />}
+						bgClass="bg-purple-50 dark:bg-purple-950/30"
+						colorClass="text-purple-600 dark:text-purple-450"
+						borderClass="bg-purple-500"
 					/>
 				)}
 
 				{filterCategory === "investimentos" && (
-					<MetricCard 
-						title="Investimentos (Mês)" 
-						value={dashboardData.totaisMes.investimentos} 
-						icon={<TrendingUp size={20} className="text-blue-600 dark:text-blue-400" />} 
-						bgClass="bg-blue-50 dark:bg-blue-950/30" 
-						colorClass="text-blue-600 dark:text-blue-450" 
-						borderClass="bg-blue-500" 
+					<MetricCard
+						title="Investimentos (Mês)"
+						value={dashboardData.totaisMes.investimentos}
+						icon={<TrendingUp size={20} className="text-blue-600 dark:text-blue-400" />}
+						bgClass="bg-blue-50 dark:bg-blue-950/30"
+						colorClass="text-blue-600 dark:text-blue-450"
+						borderClass="bg-blue-500"
 					/>
 				)}
 
 				{filterCategory === "dividas" && (
-					<MetricCard 
-						title="Dívidas (Mês)" 
-						value={dashboardData.totaisMes.dividas} 
-						icon={<HandCoins size={20} className="text-orange-600 dark:text-orange-400" />} 
-						bgClass="bg-orange-50 dark:bg-orange-950/30" 
-						colorClass="text-orange-600 dark:text-orange-450" 
-						borderClass="bg-orange-500" 
+					<MetricCard
+						title="Dívidas (Mês)"
+						value={dashboardData.totaisMes.dividas}
+						icon={<HandCoins size={20} className="text-orange-600 dark:text-orange-400" />}
+						bgClass="bg-orange-50 dark:bg-orange-950/30"
+						colorClass="text-orange-600 dark:text-orange-450"
+						borderClass="bg-orange-500"
 					/>
 				)}
 			</motion.div>
@@ -687,24 +685,24 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 								<BarChart data={dashboardData.dadosGrafico} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
 									<defs>
 										<linearGradient id="colorEntradas" x1="0" y1="0" x2="0" y2="1">
-											<stop offset="5%" stopColor="#10B981" stopOpacity={0.85}/>
-											<stop offset="95%" stopColor="#10B981" stopOpacity={0.15}/>
+											<stop offset="5%" stopColor="#10B981" stopOpacity={0.85} />
+											<stop offset="95%" stopColor="#10B981" stopOpacity={0.15} />
 										</linearGradient>
 										<linearGradient id="colorGastos" x1="0" y1="0" x2="0" y2="1">
-											<stop offset="5%" stopColor="#F43F5E" stopOpacity={0.85}/>
-											<stop offset="95%" stopColor="#F43F5E" stopOpacity={0.15}/>
+											<stop offset="5%" stopColor="#F43F5E" stopOpacity={0.85} />
+											<stop offset="95%" stopColor="#F43F5E" stopOpacity={0.15} />
 										</linearGradient>
 										<linearGradient id="colorCartoes" x1="0" y1="0" x2="0" y2="1">
-											<stop offset="5%" stopColor="#A855F7" stopOpacity={0.85}/>
-											<stop offset="95%" stopColor="#A855F7" stopOpacity={0.15}/>
+											<stop offset="5%" stopColor="#A855F7" stopOpacity={0.85} />
+											<stop offset="95%" stopColor="#A855F7" stopOpacity={0.15} />
 										</linearGradient>
 										<linearGradient id="colorInvestimentos" x1="0" y1="0" x2="0" y2="1">
-											<stop offset="5%" stopColor="#3B82F6" stopOpacity={0.85}/>
-											<stop offset="95%" stopColor="#3B82F6" stopOpacity={0.15}/>
+											<stop offset="5%" stopColor="#3B82F6" stopOpacity={0.85} />
+											<stop offset="95%" stopColor="#3B82F6" stopOpacity={0.15} />
 										</linearGradient>
 										<linearGradient id="colorDividas" x1="0" y1="0" x2="0" y2="1">
-											<stop offset="5%" stopColor="#F97316" stopOpacity={0.85}/>
-											<stop offset="95%" stopColor="#F97316" stopOpacity={0.15}/>
+											<stop offset="5%" stopColor="#F97316" stopOpacity={0.85} />
+											<stop offset="95%" stopColor="#F97316" stopOpacity={0.15} />
 										</linearGradient>
 									</defs>
 									<CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
@@ -716,7 +714,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 										formatter={(value: number) => [`R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, ""]}
 									/>
 									<Legend iconType="circle" wrapperStyle={{ paddingTop: "20px" }} />
-									
+
 									{(filterCategory === "all" || filterCategory === "entradas") && <Bar dataKey="entradas" name="Entradas" fill="url(#colorEntradas)" radius={[6, 6, 0, 0]} barSize={20} />}
 									{(filterCategory === "all" || filterCategory === "gastos") && <Bar dataKey="gastos" name="Saídas/Gastos" fill="url(#colorGastos)" radius={[6, 6, 0, 0]} barSize={20} />}
 									{filterCategory === "cartoes" && <Bar dataKey="cartoes" name="Faturas" fill="url(#colorCartoes)" radius={[6, 6, 0, 0]} barSize={20} />}
@@ -729,8 +727,8 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 				</motion.div>
 
 				{/* Insights */}
-				<motion.div 
-					variants={itemVariants} 
+				<motion.div
+					variants={itemVariants}
 					className="lg:col-span-1 bg-gradient-to-tr from-pink-500/5 via-white to-indigo-500/5 dark:from-pink-950/10 dark:via-slate-900 dark:to-indigo-950/10 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-pink-100/40 dark:border-pink-950/20 shadow-sm flex flex-col justify-between transition-colors"
 				>
 					<div className="space-y-6 flex-1 flex flex-col">
@@ -873,8 +871,8 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 							<CreditCard className="text-pink-500" size={22} />
 							Faturas dos Cartões
 						</h3>
-						<button 
-							onClick={() => navigate("/cartoes")} 
+						<button
+							onClick={() => navigate("/cartoes")}
 							className="text-xs font-bold text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 bg-indigo-50 hover:bg-indigo-100/60 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/30 px-3.5 py-1.5 rounded-full transition-all cursor-pointer w-full sm:w-auto text-center"
 						>
 							Ver Todos
@@ -891,19 +889,19 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 						) : (
 							cartoesResumo.map((res: any) => {
 								return (
-									<div 
+									<div
 										key={res.cartao.id}
 										className="flex flex-col p-4 bg-slate-50 dark:bg-slate-850/40 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all space-y-3"
 									>
 										<div className="flex items-center justify-between">
 											<div className="flex items-center gap-2.5">
-												<span 
-													className="w-3.5 h-3.5 rounded-full border border-white dark:border-slate-900 shadow-sm" 
+												<span
+													className="w-3.5 h-3.5 rounded-full border border-white dark:border-slate-900 shadow-sm"
 													style={{ backgroundColor: res.cartao.cor_hex || "#6366f1" }}
 												/>
 												<p className="font-bold text-slate-800 dark:text-slate-100 text-sm">{res.cartao.nome}</p>
 											</div>
-											<button 
+											<button
 												onClick={() => navigate(`/faturas/${res.cartao.id}`)}
 												className="text-xs font-black text-indigo-500 hover:text-indigo-600 dark:text-indigo-455 hover:underline cursor-pointer"
 											>
@@ -939,9 +937,9 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 													<span>Disp: R$ {res.limiteDisponivel.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} / R$ {Number(res.cartao.limite).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}</span>
 												</div>
 												<div className="w-full bg-slate-150 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
-													<div 
+													<div
 														className="h-full rounded-full transition-all duration-500"
-														style={{ 
+														style={{
 															width: `${Math.min(res.percentualUso, 100)}%`,
 															backgroundColor: res.cartao.cor_hex || "#6366f1"
 														}}
@@ -963,8 +961,8 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 							<Users className="text-pink-500" size={22} />
 							Devedores Ativos
 						</h3>
-						<button 
-							onClick={() => navigate("/devedores")} 
+						<button
+							onClick={() => navigate("/devedores")}
 							className="text-xs font-bold text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 bg-indigo-50 hover:bg-indigo-100/60 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/30 px-3.5 py-1.5 rounded-full transition-all cursor-pointer w-full sm:w-auto text-center"
 						>
 							Ir para Devedores
@@ -982,7 +980,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 							devedores
 								.filter((d: any) => d.total_devido > 0)
 								.map((devedor: any) => (
-									<div 
+									<div
 										key={devedor.contato.id}
 										className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-850/40 hover:bg-pink-50/10 dark:hover:bg-pink-950/10 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all"
 									>
@@ -1007,7 +1005,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 													R$ {devedor.total_devido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 												</p>
 											</div>
-											<button 
+											<button
 												onClick={() => handleCobrarWhatsApp(devedor)}
 												className="p-2 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-xl transition-all shadow-sm shadow-emerald-100 dark:shadow-none cursor-pointer"
 												title="Cobrar via WhatsApp"
@@ -1046,7 +1044,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 
 function MetricCard({ title, value, icon, bgClass, colorClass, borderClass }: any) {
 	return (
-		<motion.div 
+		<motion.div
 			whileHover={{ y: -4 }}
 			className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[32px] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col justify-between transition-all hover:border-slate-200 dark:hover:border-slate-700/80"
 		>
@@ -1062,7 +1060,7 @@ function MetricCard({ title, value, icon, bgClass, colorClass, borderClass }: an
 					<span>{value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
 				</h3>
 			</div>
-			
+
 			<div className="h-1.5 w-full bg-slate-50 dark:bg-slate-850 rounded-full mt-5 overflow-hidden">
 				<div className={`h-full ${borderClass} rounded-full`} style={{ width: "40%" }} />
 			</div>
@@ -1082,7 +1080,7 @@ function RecentSection({ title, items, colorClass, bgIconClass, icon, onMore, ti
 					Ver mais <ChevronRight size={14} className="ml-1" />
 				</button>
 			</div>
-			
+
 			<div className="space-y-5 flex-1">
 				{items.length === 0 ? (
 					<div className="flex items-center justify-center h-full text-slate-400 dark:text-slate-500 italic text-sm">
@@ -1090,8 +1088,8 @@ function RecentSection({ title, items, colorClass, bgIconClass, icon, onMore, ti
 					</div>
 				) : (
 					items.map((item: any, i: number) => (
-						<motion.div 
-							key={i} 
+						<motion.div
+							key={i}
 							whileHover={{ x: 4 }}
 							className="flex justify-between items-center group cursor-default"
 						>
