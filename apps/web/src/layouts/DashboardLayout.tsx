@@ -246,7 +246,9 @@ export default function DashboardLayout() {
 
 				{/* Conteúdo Principal */}
 				<main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
-					<Outlet />
+					<div className="w-full h-full relative" id="main-outlet-wrapper">
+						<Outlet />
+					</div>
 				</main>
 
 				<EditProfileModal 

@@ -788,7 +788,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 					</h3>
 					<div className="relative h-64 w-full flex justify-center items-center">
 						{entradaPieData.length > 0 && isClient ? (
-							<>
+							<div className="w-full h-full relative flex items-center justify-center">
 								<ResponsiveContainer width="100%" height="100%">
 									<PieChart>
 										<Pie
@@ -813,7 +813,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 										R$ {totalEntradasPie.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}
 									</span>
 								</div>
-							</>
+							</div>
 						) : entradaPieData.length > 0 ? (
 							<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
 						) : (
@@ -829,7 +829,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 					</h3>
 					<div className="relative h-64 w-full flex justify-center items-center">
 						{gastoPieData.length > 0 && isClient ? (
-							<>
+							<div className="w-full h-full relative flex items-center justify-center">
 								<ResponsiveContainer width="100%" height="100%">
 									<PieChart>
 										<Pie
@@ -854,7 +854,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 										R$ {totalGastosPie.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}
 									</span>
 								</div>
-							</>
+							</div>
 						) : gastoPieData.length > 0 ? (
 							<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
 						) : (
