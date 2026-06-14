@@ -62,6 +62,7 @@ export default function HomeWeb() {
 	});
 	const [nome, setNome] = useState("");
 	const [isClient, setIsClient] = useState(false);
+	const [isFetchingData, setIsFetchingData] = useState(true);
 
 	useEffect(() => {
 		setIsClient(true);
@@ -441,8 +442,14 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 	const COLORS_GASTOS = ["#F43F5E", "#FB7185", "#E11D48", "#FDA4AF", "#BE123C", "#F87171", "#EF4444"];
 
 	useEffect(() => {
-		loadDashboardData();
-		authService.getCurrentUser().then((u) => u && setNome(u.nome.split(" ")[0]));
+		async function initData() {
+			await loadDashboardData();
+			const u = await authService.getCurrentUser();
+			if (u) setNome(u.nome.split(" ")[0]);
+			setIsFetchingData(false);
+		}
+		
+		initData();
 
 		let channelEntradas: any;
 		let channelGastos: any;
@@ -462,6 +469,15 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 			if (channelGastos) supabase.removeChannel(channelGastos);
 		};
 	}, [loadDashboardData]);
+
+	if (isFetchingData) {
+		return (
+			<div className="h-[80vh] flex flex-col items-center justify-center space-y-4">
+				<div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+				<p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Carregando painel...</p>
+			</div>
+		);
+	}
 
 	const containerVariants = {
 		hidden: { opacity: 0 },
@@ -487,7 +503,12 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 			>
 				<div className="space-y-1">
 					<h2 className="text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
-						<span>Olá, {nome}!</span> <span className="animate-bounce">👋</span>
+						<span>
+							<span>Olá, </span>
+							<span className="inline-block">{nome}</span>
+							<span>!</span>
+						</span>
+						<span className="animate-bounce">👋</span>
 					</h2>
 					<p className="text-slate-400 dark:text-slate-500 font-bold text-xs uppercase tracking-wider">Painel de controle financeiro pessoal</p>
 				</div>
