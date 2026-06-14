@@ -61,6 +61,11 @@ export default function HomeWeb() {
 		saldoTotal: 0,
 	});
 	const [nome, setNome] = useState("");
+	const [isClient, setIsClient] = useState(false);
+
+	useEffect(() => {
+		setIsClient(true);
+	}, []);
 	const [rawEntradas, setRawEntradas] = useState<any[]>([]);
 	const [rawGastos, setRawGastos] = useState<any[]>([]);
 	const [rawFaturas, setRawFaturas] = useState<any[]>([]);
@@ -677,47 +682,49 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 						<h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Evolução Anual</h3>
 					</div>
 					<div className="h-80 w-full">
-						<ResponsiveContainer width="100%" height="100%">
-							<BarChart data={dashboardData.dadosGrafico} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-								<defs>
-									<linearGradient id="colorEntradas" x1="0" y1="0" x2="0" y2="1">
-										<stop offset="5%" stopColor="#10B981" stopOpacity={0.85}/>
-										<stop offset="95%" stopColor="#10B981" stopOpacity={0.15}/>
-									</linearGradient>
-									<linearGradient id="colorGastos" x1="0" y1="0" x2="0" y2="1">
-										<stop offset="5%" stopColor="#F43F5E" stopOpacity={0.85}/>
-										<stop offset="95%" stopColor="#F43F5E" stopOpacity={0.15}/>
-									</linearGradient>
-									<linearGradient id="colorCartoes" x1="0" y1="0" x2="0" y2="1">
-										<stop offset="5%" stopColor="#A855F7" stopOpacity={0.85}/>
-										<stop offset="95%" stopColor="#A855F7" stopOpacity={0.15}/>
-									</linearGradient>
-									<linearGradient id="colorInvestimentos" x1="0" y1="0" x2="0" y2="1">
-										<stop offset="5%" stopColor="#3B82F6" stopOpacity={0.85}/>
-										<stop offset="95%" stopColor="#3B82F6" stopOpacity={0.15}/>
-									</linearGradient>
-									<linearGradient id="colorDividas" x1="0" y1="0" x2="0" y2="1">
-										<stop offset="5%" stopColor="#F97316" stopOpacity={0.85}/>
-										<stop offset="95%" stopColor="#F97316" stopOpacity={0.15}/>
-									</linearGradient>
-								</defs>
-								<CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
-								<XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontWeight: 600, fontSize: 12 }} dy={10} />
-								<YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
-								<Tooltip
-									cursor={{ fill: "#f8fafc" }}
-									contentStyle={{ borderRadius: "16px", border: "none", boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)", fontWeight: 600, padding: "12px 20px" }}
-									formatter={(value: number) => [`R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, ""]}
-								/>
-								<Legend iconType="circle" wrapperStyle={{ paddingTop: "20px" }} />
-								
-								{(filterCategory === "all" || filterCategory === "entradas") && <Bar dataKey="entradas" name="Entradas" fill="url(#colorEntradas)" radius={[6, 6, 0, 0]} barSize={20} />}
-								{(filterCategory === "all" || filterCategory === "gastos") && <Bar dataKey="gastos" name="Saídas/Gastos" fill="url(#colorGastos)" radius={[6, 6, 0, 0]} barSize={20} />}
-								{filterCategory === "cartoes" && <Bar dataKey="cartoes" name="Faturas" fill="url(#colorCartoes)" radius={[6, 6, 0, 0]} barSize={20} />}
-								{filterCategory === "investimentos" && <Bar dataKey="investimentos" name="Investimentos" fill="url(#colorInvestimentos)" radius={[6, 6, 0, 0]} barSize={20} />}
-								{filterCategory === "dividas" && <Bar dataKey="dividas" name="Dívidas" fill="url(#colorDividas)" radius={[6, 6, 0, 0]} barSize={20} />}
-							</BarChart>
-						</ResponsiveContainer>
+						{isClient && (
+							<ResponsiveContainer width="100%" height="100%">
+								<BarChart data={dashboardData.dadosGrafico} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+									<defs>
+										<linearGradient id="colorEntradas" x1="0" y1="0" x2="0" y2="1">
+											<stop offset="5%" stopColor="#10B981" stopOpacity={0.85}/>
+											<stop offset="95%" stopColor="#10B981" stopOpacity={0.15}/>
+										</linearGradient>
+										<linearGradient id="colorGastos" x1="0" y1="0" x2="0" y2="1">
+											<stop offset="5%" stopColor="#F43F5E" stopOpacity={0.85}/>
+											<stop offset="95%" stopColor="#F43F5E" stopOpacity={0.15}/>
+										</linearGradient>
+										<linearGradient id="colorCartoes" x1="0" y1="0" x2="0" y2="1">
+											<stop offset="5%" stopColor="#A855F7" stopOpacity={0.85}/>
+											<stop offset="95%" stopColor="#A855F7" stopOpacity={0.15}/>
+										</linearGradient>
+										<linearGradient id="colorInvestimentos" x1="0" y1="0" x2="0" y2="1">
+											<stop offset="5%" stopColor="#3B82F6" stopOpacity={0.85}/>
+											<stop offset="95%" stopColor="#3B82F6" stopOpacity={0.15}/>
+										</linearGradient>
+										<linearGradient id="colorDividas" x1="0" y1="0" x2="0" y2="1">
+											<stop offset="5%" stopColor="#F97316" stopOpacity={0.85}/>
+											<stop offset="95%" stopColor="#F97316" stopOpacity={0.15}/>
+										</linearGradient>
+									</defs>
+									<CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
+									<XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontWeight: 600, fontSize: 12 }} dy={10} />
+									<YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+									<Tooltip
+										cursor={{ fill: "#f8fafc" }}
+										contentStyle={{ borderRadius: "16px", border: "none", boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)", fontWeight: 600, padding: "12px 20px" }}
+										formatter={(value: number) => [`R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, ""]}
+									/>
+									<Legend iconType="circle" wrapperStyle={{ paddingTop: "20px" }} />
+									
+									{(filterCategory === "all" || filterCategory === "entradas") && <Bar dataKey="entradas" name="Entradas" fill="url(#colorEntradas)" radius={[6, 6, 0, 0]} barSize={20} />}
+									{(filterCategory === "all" || filterCategory === "gastos") && <Bar dataKey="gastos" name="Saídas/Gastos" fill="url(#colorGastos)" radius={[6, 6, 0, 0]} barSize={20} />}
+									{filterCategory === "cartoes" && <Bar dataKey="cartoes" name="Faturas" fill="url(#colorCartoes)" radius={[6, 6, 0, 0]} barSize={20} />}
+									{filterCategory === "investimentos" && <Bar dataKey="investimentos" name="Investimentos" fill="url(#colorInvestimentos)" radius={[6, 6, 0, 0]} barSize={20} />}
+									{filterCategory === "dividas" && <Bar dataKey="dividas" name="Dívidas" fill="url(#colorDividas)" radius={[6, 6, 0, 0]} barSize={20} />}
+								</BarChart>
+							</ResponsiveContainer>
+						)}
 					</div>
 				</motion.div>
 
@@ -780,7 +787,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 						<TrendingUp className="text-emerald-500" size={20} /> Origem das Entradas
 					</h3>
 					<div className="relative h-64 w-full flex justify-center items-center">
-						{entradaPieData.length > 0 ? (
+						{entradaPieData.length > 0 && isClient ? (
 							<>
 								<ResponsiveContainer width="100%" height="100%">
 									<PieChart>
@@ -807,6 +814,8 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 									</span>
 								</div>
 							</>
+						) : entradaPieData.length > 0 ? (
+							<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
 						) : (
 							<p className="text-slate-300 dark:text-slate-700 italic text-sm">Sem entradas cadastradas neste período</p>
 						)}
@@ -819,7 +828,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 						<TrendingDown className="text-rose-500" size={20} /> Destino dos Gastos
 					</h3>
 					<div className="relative h-64 w-full flex justify-center items-center">
-						{gastoPieData.length > 0 ? (
+						{gastoPieData.length > 0 && isClient ? (
 							<>
 								<ResponsiveContainer width="100%" height="100%">
 									<PieChart>
@@ -846,6 +855,8 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 									</span>
 								</div>
 							</>
+						) : gastoPieData.length > 0 ? (
+							<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
 						) : (
 							<p className="text-slate-300 dark:text-slate-700 italic text-sm">Sem gastos cadastrados neste período</p>
 						)}
