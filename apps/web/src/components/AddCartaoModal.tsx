@@ -15,12 +15,29 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 	const [form, setForm] = useState({
 		nome: "",
 		limite: "",
-		vencimento_dia: 10,
-		fechamento_dia: 3,
+		vencimento_dia: "10",
+		fechamento_dia: "3",
 		cor_hex: "#6366f1", // indigo-500
 	});
 
 	if (!isOpen) return null;
+
+	const formatCurrency = (v: string) => {
+		const n = v.replace(/\D/g, "");
+		const result = new Intl.NumberFormat("pt-BR", {
+			minimumFractionDigits: 2,
+		}).format(parseFloat(n || "0") / 100);
+		return result === "NaN" ? "" : result;
+	};
+
+    const handleDayChange = (field: "vencimento_dia" | "fechamento_dia", value: string) => {
+        let numericValue = value.replace(/\D/g, "");
+        if (numericValue !== "") {
+            const num = parseInt(numericValue, 10);
+            numericValue = num > 31 ? "31" : num.toString();
+        }
+        setForm(prev => ({ ...prev, [field]: numericValue }));
+    };
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -29,11 +46,13 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 			const { data: { user } } = await supabase.auth.getUser();
 			if (!user) throw new Error("Usuário não autenticado");
 
+			const limiteNumerico = parseFloat(form.limite.replace(/\./g, "").replace(",", "."));
+
 			await financeService.addCartao(user.id, {
 				nome: form.nome,
-				limite: Number(form.limite),
-				vencimento_dia: Number(form.vencimento_dia),
-				fechamento_dia: Number(form.fechamento_dia),
+				limite: limiteNumerico,
+				vencimento_dia: parseInt(form.vencimento_dia) || 1,
+				fechamento_dia: parseInt(form.fechamento_dia) || 1,
 				cor_hex: form.cor_hex
 			});
 
@@ -45,8 +64,8 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 			setForm({
 				nome: "",
 				limite: "",
-				vencimento_dia: 10,
-				fechamento_dia: 3,
+				vencimento_dia: "10",
+				fechamento_dia: "3",
 				cor_hex: "#6366f1",
 			});
 		} catch (error) {
@@ -95,22 +114,22 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 					</div>
 
 					<div className="space-y-1.5">
-						<label className="text-xs font-bold text-slate-600 dark:text-slate-350 ml-2">Limite (R$)</label>
+						<label className="text-xs font-bold text-slate-600 dark:text-slate-350 ml-2">Limite Total (R$)</label>
 						<input
-							type="number"
+							type="text"
+							inputMode="numeric"
 							required
-							step="0.01"
 							value={form.limite}
-							onChange={e => setForm({...form, limite: e.target.value})}
-							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-sm"
-							placeholder="5000.00"
+							onChange={e => setForm({...form, limite: formatCurrency(e.target.value)})}
+							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all font-bold text-emerald-600 dark:text-emerald-450 text-2xl"
+							placeholder="0,00"
 						/>
 					</div>
 
 					<div className="grid grid-cols-2 gap-4">
 						<div className="space-y-1.5">
 							<label className="text-xs font-bold text-slate-600 dark:text-slate-350 ml-2 flex items-center gap-1">
-								<Calendar size={12} /> Vencimento
+								<Calendar size={12} /> Dia Vencimento
 							</label>
 							<input
 								type="number"
@@ -118,13 +137,13 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 								min="1"
 								max="31"
 								value={form.vencimento_dia}
-								onChange={e => setForm({...form, vencimento_dia: Number(e.target.value)})}
+								onChange={e => handleDayChange("vencimento_dia", e.target.value)}
 								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-center text-sm"
 							/>
 						</div>
 						<div className="space-y-1.5">
 							<label className="text-xs font-bold text-slate-600 dark:text-slate-350 ml-2 flex items-center gap-1">
-								<Calendar size={12} /> Fechamento
+								<Calendar size={12} /> Dia Fechamento
 							</label>
 							<input
 								type="number"
@@ -132,7 +151,7 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 								min="1"
 								max="31"
 								value={form.fechamento_dia}
-								onChange={e => setForm({...form, fechamento_dia: Number(e.target.value)})}
+								onChange={e => handleDayChange("fechamento_dia", e.target.value)}
 								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-center text-sm"
 							/>
 						</div>
@@ -166,3 +185,4 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 		</div>
 	);
 }
+

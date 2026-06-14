@@ -21,6 +21,15 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 		return result === "NaN" ? "" : result;
 	};
 
+    const handleDayChange = (field: "vencimento_dia" | "fechamento_dia", value: string) => {
+        let numericValue = value.replace(/\D/g, "");
+        if (numericValue !== "") {
+            const num = parseInt(numericValue, 10);
+            numericValue = num > 31 ? "31" : num.toString();
+        }
+        setForm(prev => ({ ...prev, [field]: numericValue }));
+    };
+
 	const handleSave = async () => {
 		const {
 			data: { user },
@@ -40,8 +49,8 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 			await financeService.addCartao(user.id, {
 				nome: form.nome,
 				limite: limiteNumerico,
-				vencimento_dia: parseInt(form.vencimento_dia),
-				fechamento_dia: parseInt(form.fechamento_dia),
+				vencimento_dia: parseInt(form.vencimento_dia) || 1,
+				fechamento_dia: parseInt(form.fechamento_dia) || 1,
 			});
 
 			// Limpa o formulário após o sucesso
@@ -117,9 +126,7 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 								max="31"
 								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-750 focus:border-indigo-500 transition-colors text-sm text-center"
 								value={form.vencimento_dia}
-								onChange={(e) =>
-									setForm({ ...form, vencimento_dia: e.target.value })
-								}
+								onChange={(e) => handleDayChange("vencimento_dia", e.target.value)}
 							/>
 						</div>
 						<div className="space-y-1.5">
@@ -132,9 +139,7 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 								max="31"
 								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-750 focus:border-indigo-500 transition-colors text-sm text-center"
 								value={form.fechamento_dia}
-								onChange={(e) =>
-									setForm({ ...form, fechamento_dia: e.target.value })
-								}
+								onChange={(e) => handleDayChange("fechamento_dia", e.target.value)}
 							/>
 						</div>
 					</div>
