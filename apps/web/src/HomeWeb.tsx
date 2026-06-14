@@ -608,7 +608,10 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 					</div>
 
 					<div className="mt-4 pt-4 border-t border-indigo-850/40 flex justify-between items-center text-[10px] text-indigo-300 font-semibold">
-						<span>Filtro: {filterMonth === "all" ? `${filterYear}` : `${NOME_MESES[filterMonth - 1]} / ${filterYear}`}</span>
+						<span>
+							<span>Filtro: </span>
+							<span>{filterMonth === "all" ? `${filterYear}` : `${NOME_MESES[filterMonth - 1]} / ${filterYear}`}</span>
+						</span>
 						<span className={`px-2.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider ${saldoFiltrado >= 0 ? "bg-emerald-500/20 text-emerald-350" : "bg-rose-500/20 text-rose-350"
 							}`}>
 							{saldoFiltrado >= 0 ? "Positivo" : "Negativo"}
