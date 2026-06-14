@@ -482,7 +482,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 			>
 				<div className="space-y-1">
 					<h2 className="text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
-						Olá, {nome}! <span className="animate-bounce">👋</span>
+						<span>Olá, {nome}!</span> <span className="animate-bounce">👋</span>
 					</h2>
 					<p className="text-slate-400 dark:text-slate-500 font-bold text-xs uppercase tracking-wider">Painel de controle financeiro pessoal</p>
 				</div>

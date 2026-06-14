@@ -85,7 +85,7 @@ async register(email: string, password: string, nome: string) {
     // Atualiza na tabela pública 'usuarios'
     const { error: dbError } = await supabase
       .from("usuarios")
-      .update({ nome, avatar_url: avatarUrl })
+      .update({ nome })
       .eq("id", user.id);
 
     if (dbError) throw dbError;
@@ -106,7 +106,7 @@ async register(email: string, password: string, nome: string) {
 
     const { data, error } = await supabase
       .from("usuarios")
-      .select("id, nome, email, avatar_url")
+      .select("id, nome, email")
       .eq("id", user.id)
       .single();
 
@@ -120,7 +120,10 @@ async register(email: string, password: string, nome: string) {
       };
     }
     
-    return data;
+    return {
+      ...data,
+      avatar_url: user.user_metadata?.avatar_url || null
+    };
   },
 
   /**
