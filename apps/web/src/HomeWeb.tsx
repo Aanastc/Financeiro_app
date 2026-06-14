@@ -599,7 +599,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 						</p>
 						<h3 className="text-4xl font-black mb-1 flex items-baseline">
 							<span className="text-indigo-455 text-xl font-bold mr-1">R$</span>
-							{saldoFiltrado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+							<span>{saldoFiltrado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
 						</h3>
 					</div>
 					
@@ -1048,7 +1048,7 @@ function MetricCard({ title, value, icon, bgClass, colorClass, borderClass }: an
 				</div>
 				<h3 className="text-3xl font-black text-slate-855 dark:text-slate-100 flex items-baseline">
 					<span className="text-slate-400 dark:text-slate-655 text-xl font-bold mr-1">R$</span>
-					{value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+					<span>{value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
 				</h3>
 			</div>
 			
@@ -1099,7 +1099,7 @@ function RecentSection({ title, items, colorClass, bgIconClass, icon, onMore, ti
 							</div>
 							<p className={`font-black tracking-tight text-sm ${colorClass}`}>
 								<span className="text-[10px] mr-1 opacity-70">R$</span>
-								{Number(item.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+								<span>{Number(item.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
 							</p>
 						</motion.div>
 					))
