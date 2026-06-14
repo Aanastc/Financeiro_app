@@ -159,7 +159,7 @@ export default function DashboardLayout() {
 													className="flex w-full items-center gap-3 px-4 py-2.5 text-sm font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-all text-left cursor-pointer"
 												>
 													<LogOut size={16} />
-													Sair
+													<span>Sair</span>
 												</button>
 											</div>
 										</>
@@ -182,7 +182,7 @@ export default function DashboardLayout() {
 											: "text-slate-500 dark:text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-800 dark:hover:text-slate-200"
 									}`}>
 									<LayoutDashboard size={14} />
-									Dashboard
+									<span>Dashboard</span>
 								</Link>
 
 								{/* Select: Fluxo de Caixa */}
@@ -237,7 +237,7 @@ export default function DashboardLayout() {
 											: "text-slate-500 dark:text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-800 dark:hover:text-slate-200"
 									}`}>
 									<Upload size={14} />
-									Importar
+									<span>Importar</span>
 								</Link>
 							</nav>
 						</div>

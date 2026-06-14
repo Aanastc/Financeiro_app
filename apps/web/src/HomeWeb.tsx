@@ -497,19 +497,19 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 						onClick={() => navigate("/gastos?add=true")}
 						className="flex items-center gap-2 px-5 py-3 bg-rose-500 hover:bg-rose-600 text-white rounded-2xl font-bold text-xs shadow-md shadow-rose-100 dark:shadow-none transition-all active:scale-95 cursor-pointer"
 					>
-						<TrendingDown size={14} /> Novo Gasto
+						<TrendingDown size={14} /> <span>Novo Gasto</span>
 					</button>
 					<button
 						onClick={() => navigate("/entradas?add=true")}
 						className="flex items-center gap-2 px-5 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-bold text-xs shadow-md shadow-emerald-100 dark:shadow-none transition-all active:scale-95 cursor-pointer"
 					>
-						<TrendingUp size={14} /> Nova Entrada
+						<TrendingUp size={14} /> <span>Nova Entrada</span>
 					</button>
 					<button
 						onClick={() => navigate("/dividas?add=true")}
 						className="flex items-center gap-2 px-5 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-2xl font-bold text-xs shadow-md shadow-purple-100 dark:shadow-none transition-all active:scale-95 cursor-pointer"
 					>
-						<HandCoins size={14} /> Nova Dívida
+						<HandCoins size={14} /> <span>Nova Dívida</span>
 					</button>
 				</div>
 			</motion.div>
@@ -735,7 +735,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 						<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
 							<h3 className="text-lg font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
 								<Sparkles className="text-pink-500 animate-pulse" size={20} />
-								Insights de IA
+								<span>Insights de IA</span>
 							</h3>
 							<button
 								onClick={generateAIInsights}
@@ -748,7 +748,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 								) : (
 									<RefreshCw size={12} />
 								)}
-								Analisar
+								<span>Analisar</span>
 							</button>
 						</div>
 
@@ -782,7 +782,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 				{/* Entradas */}
 				<div className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col items-center relative transition-colors">
 					<h3 className="text-lg font-black text-slate-800 dark:text-slate-100 tracking-tight mb-4 self-start flex items-center gap-2">
-						<TrendingUp className="text-emerald-500" size={20} /> Origem das Entradas
+						<TrendingUp className="text-emerald-500" size={20} /> <span>Origem das Entradas</span>
 					</h3>
 					<div className="relative h-64 w-full flex justify-center items-center">
 						{entradaPieData.length > 0 && isClient ? (
@@ -823,7 +823,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 				{/* Gastos */}
 				<div className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col items-center relative transition-colors">
 					<h3 className="text-lg font-black text-slate-800 dark:text-slate-100 tracking-tight mb-4 self-start flex items-center gap-2">
-						<TrendingDown className="text-rose-500" size={20} /> Destino dos Gastos
+						<TrendingDown className="text-rose-500" size={20} /> <span>Destino dos Gastos</span>
 					</h3>
 					<div className="relative h-64 w-full flex justify-center items-center">
 						{gastoPieData.length > 0 && isClient ? (
@@ -869,7 +869,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 					<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
 						<h3 className="font-black text-slate-800 dark:text-slate-100 text-xl tracking-tight flex items-center gap-2">
 							<CreditCard className="text-pink-500" size={22} />
-							Faturas dos Cartões
+							<span>Faturas dos Cartões</span>
 						</h3>
 						<button
 							onClick={() => navigate("/cartoes")}
@@ -959,7 +959,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 					<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
 						<h3 className="font-black text-slate-800 dark:text-slate-100 text-xl tracking-tight flex items-center gap-2">
 							<Users className="text-pink-500" size={22} />
-							Devedores Ativos
+							<span>Devedores Ativos</span>
 						</h3>
 						<button
 							onClick={() => navigate("/devedores")}
@@ -1077,7 +1077,7 @@ function RecentSection({ title, items, colorClass, bgIconClass, icon, onMore, ti
 					onClick={onMore}
 					className="text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-305 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 px-3.5 py-1.5 rounded-full transition-colors flex items-center justify-center text-xs font-bold cursor-pointer w-full sm:w-auto"
 				>
-					Ver mais <ChevronRight size={14} className="ml-1" />
+					<span>Ver mais</span> <ChevronRight size={14} className="ml-1" />
 				</button>
 			</div>
 
