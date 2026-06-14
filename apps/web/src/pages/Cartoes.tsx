@@ -2,10 +2,11 @@ import { useState, useEffect } from "react";
 import { authService } from "../../../../packages/services/auth.service";
 import { financeService } from "../../../../packages/services/finance.service";
 import { motion } from "framer-motion";
-import { CreditCard as CreditCardIcon, Plus, Eye, ChevronRight, ShoppingBag } from "lucide-react";
+import { CreditCard as CreditCardIcon, Plus, Eye, ChevronRight, ShoppingBag, Edit3 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import AddCartaoModal from "../components/AddCartaoModal";
+import EditCartaoModal from "../components/EditCartaoModal";
 import { AddGastoWeb } from "../components/AddGastoWeb";
 
 const getCardBranding = (name: string) => {
@@ -69,6 +70,7 @@ export default function Cartoes() {
 	const [loading, setLoading] = useState(true);
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [cartaoParaGasto, setCartaoParaGasto] = useState<string | null>(null);
+	const [cartaoParaEditar, setCartaoParaEditar] = useState<any>(null);
 	
 	const loadCartoes = async () => {
 		setLoading(true);
@@ -168,7 +170,16 @@ export default function Cartoes() {
 									style={{ backgroundColor: cardBgColor }}
 								>
 									<div className="flex justify-between items-center">
-										<p className="font-black tracking-widest text-base uppercase opacity-90 truncate max-w-[150px]">{cartao.nome}</p>
+										<div className="flex items-center gap-2">
+											<p className="font-black tracking-widest text-base uppercase opacity-90 truncate max-w-[130px]">{cartao.nome}</p>
+											<button 
+												onClick={() => setCartaoParaEditar(cartao)} 
+												className="p-1 opacity-50 hover:opacity-100 hover:bg-white/20 rounded-full transition-all cursor-pointer"
+												title="Editar Cartão"
+											>
+												<Edit3 size={14} />
+											</button>
+										</div>
 										{cardLogo}
 									</div>
 									<div className="flex justify-between items-end">
@@ -245,6 +256,16 @@ export default function Cartoes() {
 				isOpen={isModalOpen} 
 				onClose={() => setIsModalOpen(false)} 
 				onSuccess={loadCartoes} 
+			/>
+
+			<EditCartaoModal 
+				isOpen={!!cartaoParaEditar} 
+				onClose={() => setCartaoParaEditar(null)} 
+				onSuccess={() => {
+					setCartaoParaEditar(null);
+					loadCartoes();
+				}} 
+				cartao={cartaoParaEditar}
 			/>
 
 			<AddGastoWeb

@@ -82,6 +82,17 @@ export const financeService = {
     return data;
   },
 
+  async updateCartao(usuario_id: string, cartao_id: string, dados: any) {
+    const { data, error } = await supabase
+      .from("cartoes")
+      .update(dados)
+      .eq("id", cartao_id)
+      .eq("usuario_id", usuario_id)
+      .select();
+    if (error) throw error;
+    return data;
+  },
+
   async getAllGastosCredito(usuario_id: string) {
     const { data, error } = await supabase.from("gastos").select("*").eq("usuario_id", usuario_id).eq("metodo_pagamento", "Crédito"); 
     if (error) throw error;
