@@ -206,7 +206,13 @@ Com base nesses dados completos, elabore um relatório consultivo estruturado em
 
 Escreva o texto final formatado com títulos em negrito, tópicos claros com emojis e parágrafos curtos. Não use markdown de bloco (como \`\`\`), apenas negritos e quebras de linha para a leitura ficar muito agradável.`;
 
-			const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+			const modelsToTry = [
+				"gemini-2.5-flash", 
+				"gemini-2.0-flash", 
+				"gemini-1.5-flash",
+				"gemini-1.5-flash-latest",
+				"gemini-1.5-pro"
+			];
 			let result;
 			let lastError;
 
@@ -227,16 +233,21 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 
 			for (const modelName of modelsToTry) {
 				try {
+					if (modelsToTry.indexOf(modelName) > 0) console.log(`Tentando modelo backup: ${modelName}`);
 					result = await callModelWithRetry(modelName);
 					break;
-				} catch (err) {
-					console.warn(`Falha no modelo ${modelName} no Dashboard:`, err);
+				} catch (err: any) {
+					console.warn(`Falha no modelo ${modelName}:`, err);
 					lastError = err;
 				}
 			}
 
 			if (!result) {
-				throw lastError || new Error("Todos os modelos de IA falharam.");
+				const errorMessage = lastError?.message || "";
+				if (errorMessage.includes("404")) {
+					throw new Error("Sua chave da API do Google não tem acesso aos modelos Gemini (Erro 404). Verifique no Google AI Studio se a chave está correta.");
+				}
+				throw lastError || new Error("Não foi possível conectar a Inteligência Artificial.");
 			}
 			const text = result.response.text().trim();
 			setAiReport(text);

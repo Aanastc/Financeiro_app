@@ -75,7 +75,13 @@ Com base nesses dados:
 2. Dê dicas práticas de amortização e como negociar para martelar/reduzir essa dívida.
 Retorne o conselho em formato markdown limpo, com títulos curtos, linguagem amigável, direto ao ponto e em português do Brasil.`;
 
-			const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+			const modelsToTry = [
+				"gemini-2.5-flash", 
+				"gemini-2.0-flash", 
+				"gemini-1.5-flash",
+				"gemini-1.5-flash-latest",
+				"gemini-1.5-pro"
+			];
 			let result;
 			let lastError;
 
@@ -105,6 +111,10 @@ Retorne o conselho em formato markdown limpo, com títulos curtos, linguagem ami
 			}
 
 			if (!result) {
+				const errorMessage = lastError?.message || "";
+				if (errorMessage.includes("404")) {
+					throw new Error("Sua chave da API do Google não tem acesso aos modelos Gemini (Erro 404). Verifique no Google AI Studio se a chave está correta.");
+				}
 				throw lastError || new Error("Todos os modelos de IA falharam.");
 			}
 			setInsights(result.response.text());

@@ -250,7 +250,13 @@ Regras Importantes de Análise:
 				}
 			};
 
-			const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+			const modelsToTry = [
+				"gemini-2.5-flash", 
+				"gemini-2.0-flash", 
+				"gemini-1.5-flash",
+				"gemini-1.5-flash-latest",
+				"gemini-1.5-pro"
+			];
 			let result;
 			let lastError;
 
@@ -274,6 +280,10 @@ Regras Importantes de Análise:
 			}
 
 			if (!result) {
+				const errorMessage = lastError?.message || "";
+				if (errorMessage.includes("404")) {
+					throw new Error("Sua chave da API do Google não tem acesso aos modelos Gemini (Erro 404). Verifique no Google AI Studio se a chave está correta e com permissão.");
+				}
 				throw lastError || new Error("Não foi possível obter resposta de nenhum modelo da Inteligência Artificial.");
 			}
 
