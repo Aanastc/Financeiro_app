@@ -22,6 +22,12 @@ export interface TransacaoPreview {
 	cartao_id?: string;
 	ignorar: boolean;
 	ignoredReason: string;
+	terceiro_pago?: boolean;
+	vinculo_id?: string;
+	nome_terceiro?: string;
+	observacao?: string;
+	metodo_pagamento?: string;
+	conta_id?: string;
 }
 
 export const CATEGORIAS_PADRAO = [
@@ -49,6 +55,7 @@ interface ImportarContextProps {
 	contatos: any[];
 	gastosExistentes: any[];
 	metas: any[];
+	contas: any[];
 	globalCartao: string;
 	globalMetodoPagamento: string;
 	dragActive: boolean;
@@ -79,7 +86,7 @@ const generateContentWithRetry = async (model: any, content: any[], retries = 1,
 		const isTransient = errorMessage.includes("503") || errorMessage.includes("experiencing high demand") || errorMessage.includes("429");
 		
 		if (retries > 0 && isTransient) {
-			toast.loading(`Servidor ocupado. Re-tentando em ${(delay / 1000).toFixed(1)}s...`, { id: "gemini-retry" });
+			toast.loading("Processando dados, aguarde...", { id: "gemini-retry" });
 			await new Promise(resolve => setTimeout(resolve, delay));
 			return generateContentWithRetry(model, content, retries - 1, delay * 2);
 		}
@@ -87,6 +94,110 @@ const generateContentWithRetry = async (model: any, content: any[], retries = 1,
 		throw error;
 	}
 };
+
+const isAutoConciliado = (obs?: string) => {
+	if (!obs) return false;
+	try {
+		if (obs.trim().startsWith("{")) {
+			const parsed = JSON.parse(obs);
+			return parsed && parsed.auto_conciliado === true;
+		}
+	} catch (e) {}
+	return false;
+};
+
+function executarConciliacao(itens: TransacaoPreview[], contatosList: any[]): TransacaoPreview[] {
+	const limpos = itens.map(item => ({
+		...item,
+		terceiro_pago: isAutoConciliado(item.observacao) ? false : item.terceiro_pago,
+		vinculo_id: undefined,
+		observacao: isAutoConciliado(item.observacao) ? undefined : item.observacao,
+		categoria: item.categoria === "Anulação de Gasto de Terceiro" ? "Outros" : item.categoria
+	}));
+
+	for (let i = 0; i < limpos.length; i++) {
+		const item = limpos[i];
+		if (item.tipo_transacao === "Gasto" && item.terceiro && item.contato_id && !item.terceiro_pago) {
+			const contato = contatosList.find(c => c.id === item.contato_id);
+			if (!contato) continue;
+
+			const contatoNome = contato.nome.toLowerCase();
+
+			const parceira = limpos.find(p => 
+				p.id !== item.id &&
+				p.tipo_transacao === "Entrada" &&
+				!p.vinculo_id &&
+				Math.abs(p.valor - item.valor) < 1.00 &&
+				(p.descricao.toLowerCase().includes(contatoNome) || 
+				 (p.nome_terceiro && p.nome_terceiro.toLowerCase().includes(contatoNome)))
+			);
+
+			if (parceira) {
+				item.terceiro_pago = true;
+				item.vinculo_id = parceira.id;
+				item.observacao = JSON.stringify({ 
+					auto_conciliado: true, 
+					vinculo_id: parceira.id,
+					descricao_parceira: parceira.descricao,
+					data_parceira: parceira.data
+				});
+
+				parceira.vinculo_id = item.id;
+				parceira.categoria = "Anulação de Gasto de Terceiro";
+				parceira.observacao = JSON.stringify({ 
+					auto_conciliado: true, 
+					vinculo_id: item.id,
+					descricao_parceira: item.descricao,
+					data_parceira: item.data
+				});
+			}
+		}
+	}
+
+	return limpos;
+}
+
+function parseRetryAfter(message: string): Date | null {
+	const regex = /retry (?:after|in) ([0-9.]+)\s*(s|m|h|seconds|minutes|hours)/i;
+	const match = message.match(regex);
+	if (!match) {
+		const regexTight = /retry (?:after|in) ([0-9.]+)(s|m|h)/i;
+		const matchTight = message.match(regexTight);
+		if (!matchTight) return null;
+		return calculateFutureTime(parseFloat(matchTight[1]), matchTight[2]);
+	}
+	return calculateFutureTime(parseFloat(match[1]), match[2]);
+}
+
+function calculateFutureTime(value: number, unit: string): Date {
+	const now = new Date();
+	let msToAdd = 0;
+	const unitLower = unit.toLowerCase();
+	if (unitLower.startsWith("s")) {
+		msToAdd = value * 1000;
+	} else if (unitLower.startsWith("m")) {
+		msToAdd = value * 60 * 1000;
+	} else if (unitLower.startsWith("h")) {
+		msToAdd = value * 60 * 60 * 1000;
+	}
+	return new Date(now.getTime() + msToAdd);
+}
+
+function formatFutureTime(date: Date): string {
+	const hours = String(date.getHours()).padStart(2, "0");
+	const minutes = String(date.getMinutes()).padStart(2, "0");
+	const seconds = String(date.getSeconds()).padStart(2, "0");
+	const timeStr = `${hours}:${minutes}:${seconds}`;
+
+	const now = new Date();
+	if (date.getDate() === now.getDate() && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()) {
+		return `hoje às ${timeStr}`;
+	} else {
+		const day = String(date.getDate()).padStart(2, "0");
+		const month = String(date.getMonth() + 1).padStart(2, "0");
+		return `no dia ${day}/${month} às ${timeStr}`;
+	}
+}
 
 export function ImportarProvider({ children }: { children: React.ReactNode }) {
 	const [dragActive, setDragActive] = useState(false);
@@ -98,9 +209,10 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 	const [contatos, setContatos] = useState<any[]>([]);
 	const [gastosExistentes, setGastosExistentes] = useState<any[]>([]);
 	const [metas, setMetas] = useState<any[]>([]);
+	const [contas, setContas] = useState<any[]>([]);
 	
 	const [globalCartao, setGlobalCartao] = useState("");
-	const [globalMetodoPagamento, setGlobalMetodoPagamento] = useState("Crédito");
+	const [globalMetodoPagamento, setGlobalMetodoPagamento] = useState("Débito");
 	const [isAddContatoOpen, setIsAddContatoOpen] = useState<string | null>(null);
 
 	const carregarDadosBase = useCallback(async () => {
@@ -121,6 +233,9 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 
 			const { data: dataMetas } = await supabase.from('metas').select('*').eq('usuario_id', user.id);
 			setMetas(dataMetas || []);
+
+			const { data: dataContas } = await supabase.from('contas_bancarias').select('*').eq('usuario_id', user.id);
+			setContas(dataContas || []);
 		}
 	}, []);
 
@@ -170,16 +285,19 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 Retorne APENAS um JSON estrito, sem blocos de código (markdown \`\`\`json), sem textos adicionais, apenas o objeto JSON.
 O JSON deve ter um array chamado "transacoes", e cada objeto deve ter:
 - "data": string (formato YYYY-MM-DD)
-- "descricao": string (nome limpo da transação. Remova quaisquer indicações ou sufixos de parcelas como "de - X/Y", "X/Y", "de Y", "parcela X", etc., deixando apenas o nome do estabelecimento ou operação base, por exemplo: se a transação for "Htm Operacao Codigo de - 1/12", a descrição deve ser apenas "Htm Operacao Codigo")
+- "descricao": string (nome limpo da transação. Para transações que representam Pix (enviados ou recebidos) ou transferências, mantenha obrigatoriamente o nome da pessoa destinatária ou remetente na descrição conforme aparece no extrato original, sem abreviar ou deletar, ex: "PIX ENVIADO - JHULIANA MARIA SILVA" ou "PIX RECEBIDO - PEDRO SOUZA". Para outras compras normais de cartão, limpe e remova indicações de parcelas como "de - X/Y", "X/Y", "de Y", "parcela X", etc., deixando apenas o nome do estabelecimento base.)
 - "valor": number (positivo, float)
-- "tipo_transacao": string (exatamente "Entrada", "Gasto", "Meta" ou "PagamentoFatura". Classifique como "Meta" se a descrição indicar transferência, depósito ou resgate de caixinha, cofrinho, investimentos de metas ou reserva de economia, como "retirado para caixinha", "guardado na caixinha", "cofrinho", etc. Classifique como "PagamentoFatura" se a descrição indicar explicitamente o pagamento ou liquidação da fatura de um cartão de crédito, por exemplo "Pagamento de fatura", "Pagamento Nubank", "Fatura paga", etc.)
+- "tipo_transacao": string (exatamente "Entrada", "Gasto", "Meta" ou "PagamentoFatura". Classifique como "Meta" se a descrição indicar transferência, depósito ou resgate de caixinha, cofrinho, investimentos de metas ou reserva de economia, como "retirado para caixinha", "guardado na caixinha", "cofrinho", etc. Classifique como "PagamentoFatura" se a descrição indicar explicitamente o pagamento, liquidação ou recebimento de crédito da fatura de um cartão de crédito, por exemplo "Pagamento de fatura", "Pagamento Nubank", "Pagamento recebido", "Pagamento efetuado", "Crédito por pagamento", etc.)
 - "categoria": string (adivinhe uma dessas: Moradia, Alimentação, Transporte, Saúde, Lazer, Educação, Assinaturas, Presente, Estetica e Comercio, Emprestimo, Salário, Serviços, Outros)
 - "parcela_atual": number (se for "1/10" ou "de - 1/12", coloque 1. Se não tiver parcela, 1)
 - "total_parcelas": number (se for "1/10" ou "de - 1/12", coloque 12 ou o número total de parcelas indicado. Se não tiver parcela, 1)
-- "terceiro": boolean (true se for pagamento para/por terceiro e não do próprio titular, ex: compra pra fulano)
+- "terceiro": boolean (true se for pagamento para/por terceiro e não do próprio titular, ex: compra pra fulano, OU se for uma entrada recebida de terceiros que represente reembolso/PIX de despesas divididas)
+- "nome_terceiro": string (se "terceiro" for true, o nome do terceiro identificado no extrato/compra/recebimento, por exemplo se for Gasto "VMT MAKUKE" para Jhulie ou Entrada "PIX Jhuliana Maria", retorne "Jhulie" ou "Jhuliana")
+- "metodo_pagamento": string (exatamente "Crédito" se for um gasto no cartão de crédito, mesmo que de 1x só sem parcelas, ou se o arquivo analisado for claramente uma fatura de cartão; "Débito" para extrato de conta corrente comum; ou "Pix" se for transferência instantânea Pix)
 
 Regras Importantes de Análise:
-1. Quando houver operações de crédito/antecipação ou empréstimo onde o valor do crédito entra como saldo na conta, mas há uma diferença de juros/taxas retida, identifique essa diferença e gere uma transação separada do tipo "Gasto" (categoria "Emprestimo" ou "Outros") com descrição apropriada (ex: "Juros de Antecipação" ou similar) representando esse gasto correspondente à diferença dos juros.`;
+1. Quando houver operações de crédito/antecipação ou empréstimo onde o valor do crédito entra como saldo na conta, mas há uma diferença de juros/taxas retida, identifique essa diferença e gere uma transação separada do tipo "Gasto" (categoria "Emprestimo" ou "Outros") com descrição apropriada (ex: "Juros de Antecipação" ou similar) representando esse gasto correspondente à diferença dos juros.
+2. Para transações do tipo PIX ou transferências, inclua na descrição o nome do destinatário ou remetente conforme consta no extrato (ex: 'Pix Enviado Jhuliana Silva' ou 'Pix Recebido Pedro Souza'). Não abrevie nem remova esses nomes.`;
 
 			let base64String = "";
 			let mimeType = "";
@@ -253,18 +371,18 @@ Regras Importantes de Análise:
 			const modelsToTry = [
 				"gemini-2.5-flash", 
 				"gemini-2.0-flash", 
-				"gemini-1.5-flash",
-				"gemini-1.5-flash-latest",
-				"gemini-1.5-pro"
+				"gemini-flash-latest",
+				"gemini-pro-latest"
 			];
 			let result;
 			let lastError;
+			const errorsMap: { [model: string]: string } = {};
 
 			for (let i = 0; i < modelsToTry.length; i++) {
 				const modelName = modelsToTry[i];
 				try {
 					if (i > 0) {
-						toast.loading(`Utilizando modelo de backup (${modelName})...`, { id: "gemini-fallback" });
+						toast.loading("Processando dados, aguarde...", { id: "gemini-fallback" });
 					}
 					const modelInstance = genAI.getGenerativeModel({ model: modelName });
 					result = await callGemini(modelInstance);
@@ -273,13 +391,40 @@ Regras Importantes de Análise:
 					break;
 				} catch (err: any) {
 					console.warn(`Falha no modelo ${modelName}:`, err);
+					errorsMap[modelName] = err?.message || String(err);
 					lastError = err;
 					toast.dismiss("gemini-fallback");
 					toast.dismiss("gemini-retry");
+
+					const errText = (err?.message || "").toLowerCase();
+					const isBadFile = errText.includes("no pages") || 
+					                  errText.includes("has no pages") || 
+					                  errText.includes("400") ||
+					                  errText.includes("invalid argument");
+					if (isBadFile) {
+						break;
+					}
 				}
 			}
 
 			if (!result) {
+				console.error("Erros detalhados por modelo:", errorsMap);
+				const primaryError = errorsMap["gemini-2.5-flash"] || "";
+				if (primaryError && !primaryError.includes("404")) {
+					const cleanErr = primaryError.toLowerCase();
+					if (cleanErr.includes("429") || cleanErr.includes("quota") || cleanErr.includes("limit")) {
+						const retryDate = parseRetryAfter(primaryError);
+						if (retryDate) {
+							throw new Error(`Limite de uso temporário da inteligência artificial excedido. Por favor, tente novamente ${formatFutureTime(retryDate)}.`);
+						} else {
+							throw new Error("Limite diário de uso da inteligência artificial excedido. Por favor, tente novamente amanhã a partir das 05:00 (horário de Brasília).");
+						}
+					}
+					if (cleanErr.includes("503") || cleanErr.includes("overloaded") || cleanErr.includes("unavailable")) {
+						throw new Error("O servidor de inteligência artificial está temporariamente ocupado. Por favor, tente novamente em alguns instantes.");
+					}
+					throw new Error(`Falha no processamento (Gemini 2.5): ${primaryError}`);
+				}
 				const errorMessage = lastError?.message || "";
 				if (errorMessage.includes("404")) {
 					throw new Error("Sua chave da API do Google não tem acesso aos modelos Gemini (Erro 404). Verifique no Google AI Studio se a chave está correta e com permissão.");
@@ -345,9 +490,13 @@ Regras Importantes de Análise:
 					}
 				}
 
-				const tipoTransacaoFinal = (t.tipo_transacao === "Entrada" || t.tipo_transacao === "Gasto" || t.tipo_transacao === "Meta" || t.tipo_transacao === "PagamentoFatura") 
+				let tipoTransacaoFinal = (t.tipo_transacao === "Entrada" || t.tipo_transacao === "Gasto" || t.tipo_transacao === "Meta" || t.tipo_transacao === "PagamentoFatura") 
 					? t.tipo_transacao 
 					: "Gasto";
+
+				if (tipoTransacaoFinal === "Meta" && metas.length === 0) {
+					tipoTransacaoFinal = "Entrada";
+				}
 
 				let matchedMetaId = "";
 				if (tipoTransacaoFinal === "Meta") {
@@ -372,6 +521,37 @@ Regras Importantes de Análise:
 					}
 				}
 
+				const isGasto = tipoTransacaoFinal === "Gasto";
+				const terceiroFinal = isGasto ? (t.terceiro || false) : false;
+
+				let matchedContatoId = "";
+				if (terceiroFinal && t.nome_terceiro) {
+					const cleanName = t.nome_terceiro.toLowerCase();
+					const foundContato = contatos.find(c => {
+						const cleanContatoName = c.nome.toLowerCase();
+						return cleanName.includes(cleanContatoName) || cleanContatoName.includes(cleanName) ||
+							cleanContatoName.split(" ").some(word => word.length > 3 && cleanName.includes(word));
+					});
+					if (foundContato) {
+						matchedContatoId = foundContato.id;
+					}
+				}
+
+				let defaultMetodo = t.metodo_pagamento || "Débito";
+				if (defaultMetodo !== "Crédito" && defaultMetodo !== "Pix") {
+					defaultMetodo = "Débito";
+				}
+
+				let defaultCartao = "";
+				if (tipoTransacaoFinal === "PagamentoFatura") {
+					defaultCartao = matchedCartaoId;
+				} else if (tipoTransacaoFinal === "Gasto" && (defaultMetodo === "Crédito" || (t.total_parcelas || 1) > 1)) {
+					defaultMetodo = "Crédito";
+					defaultCartao = cartoes[0]?.id || "";
+				}
+
+				const defaultConta = contas[0]?.id || "";
+
 				return {
 					id: Date.now() + index.toString(),
 					data: t.data || new Date().toISOString().split('T')[0],
@@ -381,10 +561,13 @@ Regras Importantes de Análise:
 					categoria: CATEGORIAS_PADRAO.includes(categoriaFinal) ? categoriaFinal : "Outros",
 					parcela_atual: t.parcela_atual || 1,
 					total_parcelas: t.total_parcelas || 1,
-					terceiro: t.terceiro || false,
-					contato_id: "",
+					terceiro: terceiroFinal,
+					contato_id: matchedContatoId,
+					nome_terceiro: t.nome_terceiro || "",
 					meta_id: matchedMetaId,
-					cartao_id: matchedCartaoId,
+					cartao_id: defaultCartao,
+					metodo_pagamento: defaultMetodo,
+					conta_id: defaultConta,
 					ignorar,
 					ignoredReason,
 					classificacao: "Variável",
@@ -392,9 +575,11 @@ Regras Importantes de Análise:
 				};
 			});
 			
+			const conciliados = executarConciliacao(processados, contatos);
+
 			clearInterval(interval);
 			setProgress(100);
-			setPreview(processados);
+			setPreview(conciliados);
 			toast.success("Arquivo analisado com sucesso!");
 		} catch (error: any) {
 			clearInterval(interval);
@@ -408,7 +593,10 @@ Regras Importantes de Análise:
 	};
 
 	const updateItem = (id: string, field: string, value: any) => {
-		setPreview(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
+		setPreview(prev => {
+			const updated = prev.map(p => p.id === id ? { ...p, [field]: value } : p);
+			return executarConciliacao(updated, contatos);
+		});
 	};
 
 	const removeItem = (id: string) => {
@@ -422,9 +610,9 @@ Regras Importantes de Análise:
 			return;
 		}
 
-		const hasGastosCredito = itemsToSave.some(i => i.tipo_transacao === "Gasto");
-		if (hasGastosCredito && globalMetodoPagamento === "Crédito" && !globalCartao) {
-			toast.error("Por favor, selecione o Cartão de Crédito global no topo da tela antes de salvar.");
+		const hasOrphanedCredito = itemsToSave.some(i => i.tipo_transacao === "Gasto" && i.metodo_pagamento === "Crédito" && !i.cartao_id);
+		if (hasOrphanedCredito) {
+			toast.error("Por favor, selecione o Cartão de Crédito para todos os gastos marcados como Crédito.");
 			return;
 		}
 
@@ -442,7 +630,8 @@ Regras Importantes de Análise:
 					descricao: i.descricao,
 					valor: i.valor,
 					data: i.data,
-					categoria: i.categoria
+					categoria: i.categoria,
+					conta_id: i.conta_id || null
 				}));
 
 			if (entradasParaSalvar.length > 0) {
@@ -451,7 +640,10 @@ Regras Importantes de Análise:
 				importados += entradasParaSalvar.length;
 			}
 
-			const gastos = itemsToSave.filter(i => i.tipo_transacao === "Gasto");
+			const gastos = itemsToSave.filter(i => 
+				i.tipo_transacao === "Gasto" && 
+				(i.categoria !== "Emprestimo" || i.metodo_pagamento === "Crédito")
+			);
 			for (const item of gastos) {
 				await financeService.addGasto(user.id, {
 					descricao: item.descricao,
@@ -460,16 +652,81 @@ Regras Importantes de Análise:
 					categoria: item.categoria,
 					classificacao: item.classificacao,
 					tipo: item.tipo,
-					metodo_pagamento: globalMetodoPagamento,
-					cartao_id: globalMetodoPagamento === "Crédito" ? globalCartao : null,
+					metodo_pagamento: item.metodo_pagamento || "Débito",
+					cartao_id: item.metodo_pagamento === "Crédito" ? (item.cartao_id || null) : null,
 					parcelas: item.total_parcelas.toString(),
 					parcela_atual: item.parcela_atual,
 					total_parcelas: item.total_parcelas,
 					terceiro: item.terceiro,
 					contato_id: item.contato_id || null,
-					valor_ja_dividido: true
+					terceiro_pago: item.terceiro_pago || false,
+					observacao: item.observacao || null,
+					valor_ja_dividido: true,
+					conta_id: item.conta_id || null
 				});
 				importados++;
+			}
+
+			const { data: activeDividas } = await supabase
+				.from("dividas")
+				.select("*")
+				.eq("usuario_id", user.id)
+				.eq("status", "pendente");
+
+			const salvarOuAtualizarDivida = async (item: any) => {
+				const cleanDesc = item.descricao.replace(/\(\d+\/\d+\)/g, "").replace(/\d+\/\d+/g, "").trim().toLowerCase();
+				
+				const matchedDivida = activeDividas?.find(d => {
+					const cleanDbDesc = d.descricao.replace(/\(\d+\/\d+\)/g, "").replace(/\d+\/\d+/g, "").trim().toLowerCase();
+					return cleanDesc.includes(cleanDbDesc) || cleanDbDesc.includes(cleanDesc);
+				});
+
+				if (matchedDivida) {
+					const novaParcela = Math.min(matchedDivida.parcelas, matchedDivida.parcela_atual + 1);
+					const novoStatus = novaParcela === matchedDivida.parcelas ? "quitada" : "pendente";
+
+					const { error: updateError } = await supabase
+						.from("dividas")
+						.update({
+							parcela_atual: novaParcela,
+							status: novoStatus,
+							vencimento_parcela: item.data
+						})
+						.eq("id", matchedDivida.id);
+					
+					if (updateError) throw updateError;
+				} else {
+					const date = new Date(item.data + "T12:00:00");
+					const totalParcelas = item.total_parcelas || 1;
+					const parcelaAtual = item.parcela_atual || 1;
+					date.setMonth(date.getMonth() + (totalParcelas - parcelaAtual));
+					const vencimentoTotalCalculado = date.toISOString().split("T")[0];
+
+					await financeService.addDivida(user.id, {
+						descricao: item.descricao,
+						valor_total: item.valor,
+						parcelas: totalParcelas,
+						parcela_atual: parcelaAtual,
+						juros: 0,
+						vencimento_parcela: item.data,
+						vencimento_total: vencimentoTotalCalculado,
+						status: "pendente",
+						banco: "Importado",
+						tipo_divida: "Empréstimo",
+						data_inicio: item.data
+					});
+				}
+			};
+
+			const emprestimosGastos = itemsToSave.filter(i => i.tipo_transacao === "Gasto" && i.categoria === "Emprestimo");
+			for (const item of emprestimosGastos) {
+				await salvarOuAtualizarDivida(item);
+				importados++;
+			}
+
+			const entradasEmprestimos = itemsToSave.filter(i => i.tipo_transacao === "Entrada" && i.categoria === "Emprestimo");
+			for (const item of entradasEmprestimos) {
+				await salvarOuAtualizarDivida(item);
 			}
 
 			const metasDepositos = itemsToSave.filter(i => i.tipo_transacao === "Meta");
@@ -536,6 +793,7 @@ Regras Importantes de Análise:
 				contatos,
 				gastosExistentes,
 				metas,
+				contas,
 				globalCartao,
 				globalMetodoPagamento,
 				dragActive,

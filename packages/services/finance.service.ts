@@ -169,6 +169,9 @@ export const financeService = {
           considerar_soma: false,
           terceiro: form.terceiro || false,
           contato_id: form.contato_id || null,
+          terceiro_pago: form.terceiro_pago || false,
+          observacao: form.observacao || null,
+          conta_id: form.conta_id || null,
         });
       }
 
@@ -190,13 +193,16 @@ export const financeService = {
         classificacao: form.classificacao || "Variável",
         tipo: form.tipo || "Essencial",
         metodo_pagamento: form.metodo_pagamento,
-        cartao_id: null,
+        cartao_id: form.cartao_id || null,
         total_parcelas: 1,
         parcela_atual: 1,
         identificador_parcelamento: null,
         considerar_soma: true,
         terceiro: form.terceiro || false,
         contato_id: form.contato_id || null,
+        terceiro_pago: form.terceiro_pago || false,
+        observacao: form.observacao || null,
+        conta_id: form.conta_id || null,
       },
     ]);
 

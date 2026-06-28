@@ -28,6 +28,7 @@ export default function ImportadorWeb() {
 		cartoes,
 		contatos,
 		metas,
+		contas,
 		globalCartao,
 		globalMetodoPagamento,
 		dragActive,
@@ -168,42 +169,7 @@ export default function ImportadorWeb() {
 						</div>
 					) : (
 						<div className="bg-white dark:bg-slate-900 rounded-3xl sm:rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden transition-colors animate-in fade-in duration-300">
-							<div className="p-5 sm:p-8 border-b border-gray-50 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-								<div className="flex flex-wrap items-center gap-6">
-									<div className="space-y-1">
-										<label className="text-[10px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest">Método Padrão</label>
-										<div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl gap-1">
-											{["Crédito", "Débito", "Pix"].map((method) => (
-												<button
-													key={method}
-													onClick={() => setGlobalMetodoPagamento(method)}
-													className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-														globalMetodoPagamento === method 
-															? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm" 
-															: "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-													}`}
-												>
-													{method.toUpperCase()}
-												</button>
-											))}
-										</div>
-									</div>
-
-									{globalMetodoPagamento === "Crédito" && (
-										<div className="space-y-1 min-w-[200px] animate-in slide-in-from-left-2 duration-300">
-											<label className="text-[10px] font-black text-gray-400 dark:text-slate-550 uppercase tracking-widest">Cartão de Crédito Global</label>
-											<select 
-												className="w-full bg-slate-50 dark:bg-slate-800 dark:text-slate-200 outline-none font-bold text-xs p-3 rounded-2xl border border-gray-100 dark:border-slate-800 focus:ring-2 focus:ring-indigo-300 cursor-pointer"
-												value={globalCartao}
-												onChange={(e) => setGlobalCartao(e.target.value)}
-											>
-												<option value="">Selecione o Cartão</option>
-												{cartoes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-											</select>
-										</div>
-									)}
-								</div>
-
+							<div className="p-5 sm:p-8 border-b border-gray-50 dark:border-slate-800 flex justify-end">
 								<button 
 									onClick={handleSaveAll}
 									className="px-6 py-3 bg-green-500 text-white rounded-xl font-black text-sm flex items-center gap-2 hover:bg-green-600 transition-all shadow-lg shadow-green-100 dark:shadow-none cursor-pointer"
@@ -299,12 +265,19 @@ export default function ImportadorWeb() {
 													{/* DESCRIÇÃO */}
 													<td className="p-4">
 														<div className="flex flex-col">
-															<input 
-																type="text" 
-																className="w-full bg-transparent border-none outline-none font-black text-sm text-slate-700 dark:text-slate-200 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 focus:bg-slate-100 dark:focus:bg-slate-800 transition-colors"
-																value={item.descricao}
-																onChange={(e) => updateItem(item.id, "descricao", e.target.value)}
-															/>
+															<div className="flex items-center">
+																<input 
+																	type="text" 
+																	className="w-full bg-transparent border-none outline-none font-black text-sm text-slate-700 dark:text-slate-200 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 focus:bg-slate-100 dark:focus:bg-slate-800 transition-colors"
+																	value={item.descricao}
+																	onChange={(e) => updateItem(item.id, "descricao", e.target.value)}
+																/>
+																{item.vinculo_id && (
+																	<span className="text-[9px] font-bold text-indigo-500 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded border border-indigo-100 dark:border-indigo-900/50 ml-2 whitespace-nowrap">
+																		🔗 Auto-Conciliado
+																	</span>
+																)}
+															</div>
 															{item.total_parcelas > 1 && (
 																<span className="text-[10px] font-bold text-slate-400 dark:text-slate-550 px-2 uppercase tracking-wide">
 																	Parcela {item.parcela_atual} de {item.total_parcelas}
@@ -353,20 +326,64 @@ export default function ImportadorWeb() {
 																{cartoes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
 															</select>
 														) : (
-															<select 
-																className="w-full bg-slate-50 dark:bg-slate-800 dark:text-slate-200 outline-none font-bold text-xs p-2 rounded-lg border border-gray-100 dark:border-slate-800 focus:ring-2 focus:ring-indigo-300 cursor-pointer"
-																value={item.categoria}
-																onChange={(e) => updateItem(item.id, "categoria", e.target.value)}
-															>
-																{CATEGORIAS_PADRAO.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-															</select>
+															<div className="flex flex-col gap-1.5">
+																<select 
+																	className="w-full bg-slate-50 dark:bg-slate-800 dark:text-slate-200 outline-none font-bold text-xs p-2 rounded-lg border border-gray-100 dark:border-slate-800 focus:ring-2 focus:ring-indigo-300 cursor-pointer"
+																	value={item.categoria}
+																	onChange={(e) => updateItem(item.id, "categoria", e.target.value)}
+																>
+																	{CATEGORIAS_PADRAO.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+																	{!CATEGORIAS_PADRAO.includes(item.categoria) && (
+																		<option value={item.categoria}>{item.categoria}</option>
+																	)}
+																</select>
+																
+																{item.tipo_transacao === "Gasto" && (
+																	<select 
+																		className="w-full bg-slate-50 dark:bg-slate-800 dark:text-slate-200 outline-none font-bold text-[10px] p-2 rounded-lg border border-gray-100 dark:border-slate-800 cursor-pointer"
+																		value={item.metodo_pagamento === "Crédito" ? `cartao-${item.cartao_id}` : item.metodo_pagamento}
+																		onChange={(e) => {
+																			const val = e.target.value;
+																			if (val.startsWith("cartao-")) {
+																				updateItem(item.id, "metodo_pagamento", "Crédito");
+																				updateItem(item.id, "cartao_id", val.replace("cartao-", ""));
+																			} else {
+																				updateItem(item.id, "metodo_pagamento", val);
+																				updateItem(item.id, "cartao_id", "");
+																			}
+																		}}
+																	>
+																		<option value="Débito">💵 Débito (Conta)</option>
+																		<option value="Pix">📱 Pix</option>
+																		<optgroup label="Cartões de Crédito">
+																			{cartoes.map(c => (
+																				<option key={c.id} value={`cartao-${c.id}`}>💳 {c.nome}</option>
+																			))}
+																		</optgroup>
+																	</select>
+																)}
+
+																{/* Seletor de Conta Bancária para receitas ou gastos com Débito/Pix */}
+																{((item.tipo_transacao === "Gasto" && item.metodo_pagamento !== "Crédito") || item.tipo_transacao === "Entrada") && contas.length > 0 && (
+																	<select 
+																		className="w-full bg-slate-50 dark:bg-slate-800 dark:text-slate-200 outline-none font-bold text-[10px] p-2 rounded-lg border border-gray-100 dark:border-slate-800 cursor-pointer"
+																		value={item.conta_id || ""}
+																		onChange={(e) => updateItem(item.id, "conta_id", e.target.value)}
+																	>
+																		<option value="">Selecionar Conta</option>
+																		{contas.map(c => (
+																			<option key={c.id} value={c.id}>🏦 {c.nome}</option>
+																		))}
+																	</select>
+																)}
+															</div>
 														)}
 													</td>
 
 													{/* TERCEIROS */}
 													<td className="p-4">
 														{item.tipo_transacao === "PagamentoFatura" ? (
-															<div className="text-xs font-bold text-slate-400 dark:text-slate-500 italic text-center">-</div>
+															<div className="text-xs font-bold text-slate-400 dark:text-slate-550 italic text-center">-</div>
 														) : (
 															<div className="flex flex-col gap-2">
 																<div className="flex items-center gap-2">
@@ -375,7 +392,10 @@ export default function ImportadorWeb() {
 																		className={`px-3 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-colors flex-1 cursor-pointer ${item.terceiro ? 'bg-amber-100 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-450 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
 																	>
 																		<Users size={14} /> 
-																		{item.terceiro ? "Para Terceiro" : "Meu Gasto"}
+																		{item.tipo_transacao === "Entrada" 
+																			? (item.terceiro ? "Recebido de Terceiro" : "Pessoal")
+																			: (item.terceiro ? "Para Terceiro" : "Meu Gasto")
+																		}
 																	</button>
 																	{item.terceiro && (
 																		<button
@@ -403,10 +423,21 @@ export default function ImportadorWeb() {
 																			}
 																		}}
 																	>
-																		<option value="">Selecione quem deve</option>
+																		<option value="">
+																			{item.tipo_transacao === "Entrada" 
+																				? "Selecione quem pagou" 
+																				: "Selecione quem deve"
+																			}
+																		</option>
 																		{contatos.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
 																		<option value="NOVO_DEVEDOR" className="font-black text-amber-600 dark:text-amber-400">+ Cadastrar Novo Devedor</option>
 																	</select>
+																)}
+
+																{item.terceiro && item.terceiro_pago && item.vinculo_id && (
+																	<div className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 px-2 py-1 rounded-lg text-center border border-emerald-100 dark:border-emerald-900/30 whitespace-nowrap mt-1">
+																		✓ Pago (Auto-Conciliado)
+																	</div>
 																)}
 															</div>
 														)}

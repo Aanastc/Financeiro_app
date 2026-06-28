@@ -160,7 +160,7 @@ export default function Cartoes() {
 						const branding = getCardBranding(cartao.nome);
 						const cardBgColor = branding ? branding.color : (cartao.cor_hex || "#ec4899");
 						const cardLogo = branding ? branding.logo : <CreditCardIcon opacity={0.5} size={28} />;
-						const melhorDia = cartao.fechamento_dia === 31 ? 1 : cartao.fechamento_dia + 1;
+						const melhorDia = cartao.fechamento_dia;
 
 						return (
 							<div key={cartao.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm p-5 sm:p-6 relative overflow-hidden flex flex-col h-full hover:shadow-md transition-shadow duration-300">

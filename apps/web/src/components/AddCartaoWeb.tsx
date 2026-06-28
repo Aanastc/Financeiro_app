@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, CreditCard, Save } from "lucide-react";
+import { X, CreditCard, Save, Info, Calendar } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { supabase } from "../../../../packages/services/supabase";
 
@@ -25,9 +25,23 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
         let numericValue = value.replace(/\D/g, "");
         if (numericValue !== "") {
             const num = parseInt(numericValue, 10);
-            numericValue = num > 31 ? "31" : num.toString();
+            numericValue = num > 31 ? "31" : (num < 1 ? "1" : num.toString());
         }
-        setForm(prev => ({ ...prev, [field]: numericValue }));
+        setForm(prev => {
+            const updated = { ...prev, [field]: numericValue };
+            
+            // Calcula o fechamento automaticamente (10 dias antes) ao mudar o vencimento
+            if (field === "vencimento_dia" && numericValue !== "") {
+                const vencNum = parseInt(numericValue, 10);
+                let fechNum = vencNum - 10;
+                if (fechNum <= 0) {
+                    fechNum += 30;
+                }
+                updated.fechamento_dia = fechNum.toString();
+            }
+            
+            return updated;
+        });
     };
 
 	const handleSave = async () => {
@@ -114,11 +128,10 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 						/>
 					</div>
 
-					{/* Datas */}
 					<div className="grid grid-cols-2 gap-4">
 						<div className="space-y-1.5">
-							<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-2 tracking-wider">
-								Dia Vencimento
+							<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-2 tracking-wider flex items-center gap-1">
+								<Calendar size={11} /> Vencimento (Dia)
 							</label>
 							<input
 								type="number"
@@ -130,17 +143,31 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 							/>
 						</div>
 						<div className="space-y-1.5">
-							<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-2 tracking-wider">
-								Dia Fechamento
+							<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-2 tracking-wider flex items-center gap-1">
+								<Calendar size={11} /> Fechamento (Automático)
 							</label>
 							<input
 								type="number"
-								min="1"
-								max="31"
-								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-750 focus:border-indigo-500 transition-colors text-sm text-center"
+								readOnly
 								value={form.fechamento_dia}
-								onChange={(e) => handleDayChange("fechamento_dia", e.target.value)}
+								className="w-full p-4 bg-slate-100 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-750 font-bold text-slate-400 dark:text-slate-500 text-center text-sm cursor-not-allowed outline-none"
 							/>
+						</div>
+					</div>
+
+					{/* Explicação de Fechamento vs Vencimento */}
+					<div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-300 space-y-3 leading-relaxed font-semibold transition-colors duration-200">
+						<div className="flex gap-2">
+							<Info size={14} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+							<p>
+								<strong className="text-slate-800 dark:text-slate-100">Fechamento:</strong> Dia em que a fatura fecha. Compras a partir desse dia entram na fatura do mês seguinte (calculado automaticamente como 10 dias antes do vencimento).
+							</p>
+						</div>
+						<div className="flex gap-2 border-t border-slate-200/50 dark:border-slate-700/40 pt-2.5">
+							<Info size={14} className="text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+							<p>
+								<strong className="text-slate-800 dark:text-slate-100">Vencimento:</strong> Dia limite para realizar o pagamento da fatura do mês.
+							</p>
 						</div>
 					</div>
 

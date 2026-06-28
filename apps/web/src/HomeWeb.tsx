@@ -29,6 +29,7 @@ import {
 	Users,
 	HandCoins,
 	ChevronDown,
+	Calendar,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../../../packages/services/auth.service";
@@ -75,6 +76,8 @@ export default function HomeWeb() {
 
 	// NOVOS ESTADOS
 	const [rawFaturasNaoPagas, setRawFaturasNaoPagas] = useState<any[]>([]);
+	const [lastLaunchDate, setLastLaunchDate] = useState<string | null>(null);
+	const [hasLaunchesThisMonth, setHasLaunchesThisMonth] = useState<boolean>(true);
 	const [devedores, setDevedores] = useState<any[]>([]);
 	const [cartoes, setCartoes] = useState<any[]>([]);
 	const [loadingFaturas, setLoadingFaturas] = useState(false);
@@ -98,7 +101,24 @@ export default function HomeWeb() {
 		const startOfYear = `${filterYear}-01-01`;
 		const endOfYear = `${filterYear}-12-31`;
 
-		const [saldoAtual, resEntradas, resGastos, resFaturas, resInv, resDiv, resDevedores, resCartoes] = await Promise.all([
+		const d = new Date();
+		const currentMonthStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+		const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+		const [
+			saldoAtual,
+			resEntradas,
+			resGastos,
+			resFaturas,
+			resInv,
+			resDiv,
+			resDevedores,
+			resCartoes,
+			resLastEntrada,
+			resLastGasto,
+			resCountEntradas,
+			resCountGastos
+		] = await Promise.all([
 			financeService.getGlobalBalance(user.id),
 			supabase.from("entradas").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
 			supabase.from("gastos").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
@@ -106,7 +126,11 @@ export default function HomeWeb() {
 			supabase.from("investimentos").select("*").eq("usuario_id", user.id),
 			supabase.from("dividas").select("*").eq("usuario_id", user.id).gte("vencimento_parcela", startOfYear).lte("vencimento_parcela", endOfYear),
 			financeService.getDevedores(user.id),
-			financeService.getCartoes(user.id)
+			financeService.getCartoes(user.id),
+			supabase.from("entradas").select("data").eq("usuario_id", user.id).lte("data", todayStr).order("data", { ascending: false }).limit(1),
+			supabase.from("gastos").select("data").eq("usuario_id", user.id).lte("data", todayStr).order("data", { ascending: false }).limit(1),
+			supabase.from("entradas").select("id", { count: "exact", head: true }).eq("usuario_id", user.id).gte("data", currentMonthStart),
+			supabase.from("gastos").select("id", { count: "exact", head: true }).eq("usuario_id", user.id).gte("data", currentMonthStart),
 		]);
 
 		setStats(prev => ({ ...prev, saldoTotal: saldoAtual }));
@@ -117,6 +141,19 @@ export default function HomeWeb() {
 		setRawDividas(resDiv.data || []);
 		setDevedores(resDevedores || []);
 		setCartoes(resCartoes || []);
+
+		const lastEntradaDate = resLastEntrada.data?.[0]?.data;
+		const lastGastoDate = resLastGasto.data?.[0]?.data;
+		let lastLaunch: string | null = null;
+		if (lastEntradaDate && lastGastoDate) {
+			lastLaunch = lastEntradaDate > lastGastoDate ? lastEntradaDate : lastGastoDate;
+		} else {
+			lastLaunch = lastEntradaDate || lastGastoDate || null;
+		}
+		setLastLaunchDate(lastLaunch);
+
+		const totalCountThisMonth = (resCountEntradas.count || 0) + (resCountGastos.count || 0);
+		setHasLaunchesThisMonth(totalCountThisMonth > 0);
 
 		// Buscar faturas não pagas dos últimos 3 meses
 		setLoadingFaturas(true);
@@ -209,12 +246,12 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 			const modelsToTry = [
 				"gemini-2.5-flash", 
 				"gemini-2.0-flash", 
-				"gemini-1.5-flash",
-				"gemini-1.5-flash-latest",
-				"gemini-1.5-pro"
+				"gemini-flash-latest",
+				"gemini-pro-latest"
 			];
 			let result;
 			let lastError;
+			const errorsMap: { [model: string]: string } = {};
 
 			const callModelWithRetry = async (modelName: string, retries = 1, delay = 1500): Promise<any> => {
 				const modelInstance = genAI.getGenerativeModel({ model: modelName });
@@ -222,7 +259,7 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 					return await modelInstance.generateContent(prompt);
 				} catch (error: any) {
 					const errorMessage = error?.message || "";
-					const isTransient = errorMessage.includes("503") || errorMessage.includes("experiencing high demand") || errorMessage.includes("429");
+					const isTransient = errorMessage.includes("503") || errorMessage.includes("experiencing demand") || errorMessage.includes("429");
 					if (retries > 0 && isTransient) {
 						await new Promise(resolve => setTimeout(resolve, delay));
 						return callModelWithRetry(modelName, retries - 1, delay * 2);
@@ -238,11 +275,17 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 					break;
 				} catch (err: any) {
 					console.warn(`Falha no modelo ${modelName}:`, err);
+					errorsMap[modelName] = err?.message || String(err);
 					lastError = err;
 				}
 			}
 
 			if (!result) {
+				console.error("Erros detalhados por modelo:", errorsMap);
+				const primaryError = errorsMap["gemini-2.5-flash"] || "";
+				if (primaryError && !primaryError.includes("404")) {
+					throw new Error(`Falha no modelo principal (Gemini 2.5): ${primaryError}`);
+				}
 				const errorMessage = lastError?.message || "";
 				if (errorMessage.includes("404")) {
 					throw new Error("Sua chave da API do Google não tem acesso aos modelos Gemini (Erro 404). Verifique no Google AI Studio se a chave está correta.");
@@ -546,6 +589,81 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 				</div>
 			</motion.div>
 
+			{/* ALERTA DE LANÇAMENTOS */}
+			{(!hasLaunchesThisMonth && hoje.getDate() >= 20) ? (
+				<motion.div
+					variants={itemVariants}
+					className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-3xl bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 shadow-sm transition-colors"
+				>
+					<div className="flex items-center gap-3.5">
+						<div className="p-3 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-2xl shrink-0">
+							<AlertCircle size={20} className="animate-pulse" />
+						</div>
+						<div className="space-y-1">
+							<p className="font-extrabold text-amber-900 dark:text-amber-300 text-sm">
+								Atenção: Nenhum lançamento realizado em {NOME_MESES[hoje.getMonth()]}!
+							</p>
+							<p className="text-amber-700/80 dark:text-amber-400/80 text-xs font-semibold">
+								Já estamos no final do mês e você ainda não cadastrou nenhuma receita ou despesa.
+								{lastLaunchDate && (
+									<span> O seu último lançamento foi em <strong className="text-amber-900 dark:text-amber-200">{lastLaunchDate.split("-").reverse().join("/")}</strong>.</span>
+								)}
+							</p>
+						</div>
+					</div>
+					<div className="flex gap-2.5 w-full sm:w-auto shrink-0">
+						<button
+							onClick={() => navigate("/gastos?add=true")}
+							className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer w-full sm:w-auto text-center"
+						>
+							Lançar Gasto
+						</button>
+						<button
+							onClick={() => navigate("/entradas?add=true")}
+							className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer w-full sm:w-auto text-center"
+						>
+							Lançar Entrada
+						</button>
+					</div>
+				</motion.div>
+			) : (
+				lastLaunchDate ? (
+					<motion.div
+						variants={itemVariants}
+						className="flex items-center gap-3.5 p-4 rounded-3xl bg-indigo-50/50 dark:bg-indigo-950/10 border border-indigo-100/60 dark:border-indigo-900/20 shadow-sm transition-colors"
+					>
+						<div className="p-2.5 bg-indigo-100/60 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-2xl shrink-0">
+							<Calendar size={18} />
+						</div>
+						<div>
+							<p className="text-xs font-bold text-slate-400 dark:text-slate-500">
+								Última atividade registrada
+							</p>
+							<p className="text-sm font-black text-slate-700 dark:text-slate-250 mt-0.5">
+								Seu último lançamento foi realizado em <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">{lastLaunchDate.split("-").reverse().join("/")}</span>.
+							</p>
+						</div>
+					</motion.div>
+				) : (
+					<motion.div
+						variants={itemVariants}
+						className="flex items-center gap-3.5 p-4 rounded-3xl bg-indigo-50/50 dark:bg-indigo-950/10 border border-indigo-100/60 dark:border-indigo-900/20 shadow-sm transition-colors"
+					>
+						<div className="p-2.5 bg-indigo-100/60 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-2xl shrink-0">
+							<Calendar size={18} />
+						</div>
+						<div>
+							<p className="text-xs font-bold text-slate-400 dark:text-slate-500">
+								Status dos lançamentos
+							</p>
+							<p className="text-sm font-black text-slate-700 dark:text-slate-200 mt-0.5">
+								Você ainda não possui nenhum lançamento cadastrado no sistema. Comece adicionando seus gastos ou entradas!
+							</p>
+						</div>
+					</motion.div>
+				)
+			)}
+
 			{/* 3. FILTROS (ABAIXO DE AÇÕES RÁPIDAS) */}
 			<motion.div
 				variants={itemVariants}
@@ -707,110 +825,60 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 				)}
 			</motion.div>
 
-			{/* GRÁFICO DINÂMICO & INSIGHTS DE IA */}
-			<div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-				{/* Gráfico */}
-				<motion.div variants={itemVariants} className="lg:col-span-2 bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-between transition-colors">
-					<div className="flex justify-between items-center mb-8">
-						<h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Evolução Anual</h3>
-					</div>
-					<div className="h-80 w-full">
-						{isClient && (
-							<ResponsiveContainer width="100%" height="100%">
-								<BarChart data={dashboardData.dadosGrafico} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-									<defs>
-										<linearGradient id="colorEntradas" x1="0" y1="0" x2="0" y2="1">
-											<stop offset="5%" stopColor="#10B981" stopOpacity={0.85} />
-											<stop offset="95%" stopColor="#10B981" stopOpacity={0.15} />
-										</linearGradient>
-										<linearGradient id="colorGastos" x1="0" y1="0" x2="0" y2="1">
-											<stop offset="5%" stopColor="#F43F5E" stopOpacity={0.85} />
-											<stop offset="95%" stopColor="#F43F5E" stopOpacity={0.15} />
-										</linearGradient>
-										<linearGradient id="colorCartoes" x1="0" y1="0" x2="0" y2="1">
-											<stop offset="5%" stopColor="#A855F7" stopOpacity={0.85} />
-											<stop offset="95%" stopColor="#A855F7" stopOpacity={0.15} />
-										</linearGradient>
-										<linearGradient id="colorInvestimentos" x1="0" y1="0" x2="0" y2="1">
-											<stop offset="5%" stopColor="#3B82F6" stopOpacity={0.85} />
-											<stop offset="95%" stopColor="#3B82F6" stopOpacity={0.15} />
-										</linearGradient>
-										<linearGradient id="colorDividas" x1="0" y1="0" x2="0" y2="1">
-											<stop offset="5%" stopColor="#F97316" stopOpacity={0.85} />
-											<stop offset="95%" stopColor="#F97316" stopOpacity={0.15} />
-										</linearGradient>
-									</defs>
-									<CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
-									<XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontWeight: 600, fontSize: 12 }} dy={10} />
-									<YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
-									<Tooltip
-										cursor={{ fill: "#f8fafc" }}
-										contentStyle={{ borderRadius: "16px", border: "none", boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)", fontWeight: 600, padding: "12px 20px" }}
-										formatter={(value: number) => [`R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, ""]}
-									/>
-									<Legend iconType="circle" wrapperStyle={{ paddingTop: "20px" }} />
+			{/* GRÁFICO DINÂMICO */}
+			<motion.div
+				variants={itemVariants}
+				className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-between transition-colors"
+			>
+				<div className="flex justify-between items-center mb-8">
+					<h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Evolução Anual</h3>
+				</div>
+				<div className="h-96 w-full">
+					{isClient && (
+						<ResponsiveContainer width="100%" height="100%">
+							<BarChart data={dashboardData.dadosGrafico} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+								<defs>
+									<linearGradient id="colorEntradas" x1="0" y1="0" x2="0" y2="1">
+										<stop offset="5%" stopColor="#10B981" stopOpacity={0.85} />
+										<stop offset="95%" stopColor="#10B981" stopOpacity={0.15} />
+									</linearGradient>
+									<linearGradient id="colorGastos" x1="0" y1="0" x2="0" y2="1">
+										<stop offset="5%" stopColor="#F43F5E" stopOpacity={0.85} />
+										<stop offset="95%" stopColor="#F43F5E" stopOpacity={0.15} />
+									</linearGradient>
+									<linearGradient id="colorCartoes" x1="0" y1="0" x2="0" y2="1">
+										<stop offset="5%" stopColor="#A855F7" stopOpacity={0.85} />
+										<stop offset="95%" stopColor="#A855F7" stopOpacity={0.15} />
+									</linearGradient>
+									<linearGradient id="colorInvestimentos" x1="0" y1="0" x2="0" y2="1">
+										<stop offset="5%" stopColor="#3B82F6" stopOpacity={0.85} />
+										<stop offset="95%" stopColor="#3B82F6" stopOpacity={0.15} />
+									</linearGradient>
+									<linearGradient id="colorDividas" x1="0" y1="0" x2="0" y2="1">
+										<stop offset="5%" stopColor="#F97316" stopOpacity={0.85} />
+										<stop offset="95%" stopColor="#F97316" stopOpacity={0.15} />
+									</linearGradient>
+								</defs>
+								<CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
+								<XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontWeight: 600, fontSize: 12 }} dy={10} />
+								<YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+								<Tooltip
+									cursor={{ fill: "#f8fafc" }}
+									contentStyle={{ borderRadius: "16px", border: "none", boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)", fontWeight: 600, padding: "12px 20px" }}
+									formatter={(value: number) => [`R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, ""]}
+								/>
+								<Legend iconType="circle" wrapperStyle={{ paddingTop: "20px" }} />
 
-									{(filterCategory === "all" || filterCategory === "entradas") && <Bar dataKey="entradas" name="Entradas" fill="url(#colorEntradas)" radius={[6, 6, 0, 0]} barSize={20} />}
-									{(filterCategory === "all" || filterCategory === "gastos") && <Bar dataKey="gastos" name="Saídas/Gastos" fill="url(#colorGastos)" radius={[6, 6, 0, 0]} barSize={20} />}
-									{filterCategory === "cartoes" && <Bar dataKey="cartoes" name="Faturas" fill="url(#colorCartoes)" radius={[6, 6, 0, 0]} barSize={20} />}
-									{filterCategory === "investimentos" && <Bar dataKey="investimentos" name="Investimentos" fill="url(#colorInvestimentos)" radius={[6, 6, 0, 0]} barSize={20} />}
-									{filterCategory === "dividas" && <Bar dataKey="dividas" name="Dívidas" fill="url(#colorDividas)" radius={[6, 6, 0, 0]} barSize={20} />}
-								</BarChart>
-							</ResponsiveContainer>
-						)}
-					</div>
-				</motion.div>
-
-				{/* Insights */}
-				<motion.div
-					variants={itemVariants}
-					className="lg:col-span-1 bg-gradient-to-tr from-pink-500/5 via-white to-indigo-500/5 dark:from-pink-950/10 dark:via-slate-900 dark:to-indigo-950/10 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-pink-100/40 dark:border-pink-950/20 shadow-sm flex flex-col justify-between transition-colors"
-				>
-					<div className="space-y-6 flex-1 flex flex-col">
-						<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
-							<h3 className="text-lg font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
-								<Sparkles className="text-pink-500 animate-pulse" size={20} />
-								<span>Insights de IA</span>
-							</h3>
-							<button
-								onClick={generateAIInsights}
-								disabled={loadingAI}
-								className="px-3.5 py-1.5 bg-pink-50 hover:bg-pink-100/80 dark:bg-pink-950/30 dark:hover:bg-pink-900/40 text-pink-600 dark:text-pink-400 rounded-xl transition-all disabled:opacity-50 flex items-center gap-1.5 font-black text-[10px] uppercase shadow-sm cursor-pointer active:scale-95 shrink-0"
-								title="Gerar análise completa com IA"
-							>
-								{loadingAI ? (
-									<div className="animate-spin rounded-full h-3 w-3 border-b-2 border-pink-600"></div>
-								) : (
-									<RefreshCw size={12} />
-								)}
-								<span>Analisar</span>
-							</button>
-						</div>
-
-						<div className="mt-4 flex-1 overflow-y-auto no-scrollbar scroll-smooth max-h-[300px]">
-							{aiReport ? (
-								<div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium leading-relaxed whitespace-pre-line bg-white/40 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-100 dark:border-slate-800/60 shadow-inner">
-									{aiReport}
-								</div>
-							) : (
-								<div className="p-5 bg-white/70 dark:bg-slate-900/60 rounded-2xl border border-slate-100 dark:border-slate-800/85 text-center space-y-3">
-									<div className="text-2xl select-none">✨</div>
-									<h4 className="font-bold text-slate-800 dark:text-slate-200 text-xs">Análise de IA Pendente</h4>
-									<p className="text-[11px] text-slate-450 dark:text-slate-500 font-medium leading-relaxed">
-										Clique no botão **Analisar** acima para que o consultor financeiro de Inteligência Artificial elabore um diagnóstico detalhado da sua saúde financeira atual e monte recomendações personalizadas.
-									</p>
-								</div>
-							)}
-						</div>
-					</div>
-
-					<div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 text-center shrink-0">
-						<span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
-							{aiReport ? "Gerado por Gemini AI" : "Resumo Geral"}
-						</span>
-					</div>
-				</motion.div>
-			</div>
+								{(filterCategory === "all" || filterCategory === "entradas") && <Bar dataKey="entradas" name="Entradas" fill="url(#colorEntradas)" radius={[6, 6, 0, 0]} barSize={20} />}
+								{(filterCategory === "all" || filterCategory === "gastos") && <Bar dataKey="gastos" name="Saídas/Gastos" fill="url(#colorGastos)" radius={[6, 6, 0, 0]} barSize={20} />}
+								{filterCategory === "cartoes" && <Bar dataKey="cartoes" name="Faturas" fill="url(#colorCartoes)" radius={[6, 6, 0, 0]} barSize={20} />}
+								{filterCategory === "investimentos" && <Bar dataKey="investimentos" name="Investimentos" fill="url(#colorInvestimentos)" radius={[6, 6, 0, 0]} barSize={20} />}
+								{filterCategory === "dividas" && <Bar dataKey="dividas" name="Dívidas" fill="url(#colorDividas)" radius={[6, 6, 0, 0]} barSize={20} />}
+							</BarChart>
+						</ResponsiveContainer>
+					)}
+				</div>
+			</motion.div>
 
 			{/* GRÁFICOS DE PIZZA DE CATEGORIAS */}
 			<motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -1072,6 +1140,58 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 				{filterCategory === "dividas" && (
 					<RecentSection title="Últimas Dívidas" items={dashboardData.recentes.dividas} colorClass="text-orange-500" bgIconClass="bg-orange-50 text-orange-600 dark:bg-orange-950/20 dark:text-orange-400" icon={<TrendingDown size={18} />} onMore={() => navigate("/dividas")} dateField="vencimento_parcela" />
 				)}
+			</motion.div>
+
+			{/* INSIGHTS DE IA (NO FINAL DA PÁGINA) */}
+			<motion.div
+				variants={itemVariants}
+				className="bg-gradient-to-tr from-pink-500/5 via-white to-indigo-500/5 dark:from-pink-950/10 dark:via-slate-900 dark:to-indigo-950/10 p-6 sm:p-10 rounded-3xl sm:rounded-[40px] border border-pink-100/40 dark:border-pink-950/20 shadow-sm flex flex-col gap-6 transition-colors"
+			>
+				<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+					<div className="space-y-1">
+						<h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
+							<Sparkles className="text-pink-500 animate-pulse" size={24} />
+							<span>Insights de IA</span>
+						</h3>
+						<p className="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">
+							Consultor financeiro pessoal especialista de inteligência artificial
+						</p>
+					</div>
+					<button
+						onClick={generateAIInsights}
+						disabled={loadingAI}
+						className="px-5 py-2.5 bg-pink-50 hover:bg-pink-100/80 dark:bg-pink-950/30 dark:hover:bg-pink-900/40 text-pink-600 dark:text-pink-400 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 font-black text-xs uppercase shadow-sm cursor-pointer active:scale-95 shrink-0 self-start sm:self-center font-extrabold"
+					>
+						{loadingAI ? (
+							<div className="animate-spin rounded-full h-4 w-4 border-b-2 border-pink-600"></div>
+						) : (
+							<RefreshCw size={14} />
+						)}
+						<span>Gerar Nova Análise</span>
+					</button>
+				</div>
+
+				<div className="mt-2">
+					{aiReport ? (
+						<div className="text-sm sm:text-base text-slate-700 dark:text-slate-200 font-medium leading-relaxed whitespace-pre-line bg-white/60 dark:bg-slate-900/60 p-6 sm:p-8 rounded-2xl border border-slate-100/80 dark:border-slate-800/80 shadow-inner">
+							{aiReport}
+						</div>
+					) : (
+						<div className="p-8 bg-white/70 dark:bg-slate-900/60 rounded-2xl border border-slate-100 dark:border-slate-800 text-center space-y-4 max-w-lg mx-auto">
+							<div className="text-4xl select-none">✨</div>
+							<h4 className="font-extrabold text-slate-800 dark:text-slate-100 text-base">Análise de IA Pendente</h4>
+							<p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
+								Clique no botão **Gerar Nova Análise** acima para que o consultor financeiro de Inteligência Artificial elabore um diagnóstico detalhado da sua saúde financeira atual e monte recomendações personalizadas.
+							</p>
+						</div>
+					)}
+				</div>
+
+				<div className="pt-4 border-t border-slate-150/40 dark:border-slate-800/40 text-center">
+					<span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+						{aiReport ? "Gerado por Gemini AI • Dados consolidados do ano" : "Resumo Geral IA"}
+					</span>
+				</div>
 			</motion.div>
 		</motion.div>
 	);
