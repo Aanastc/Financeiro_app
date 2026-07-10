@@ -127,6 +127,28 @@ async register(email: string, password: string, nome: string) {
   },
 
   /**
+   * RECUPERAÇÃO DE SENHA (ESQUECI MINHA SENHA)
+   * Envia um link de recuperação para o e-mail do usuário.
+   */
+  async resetPasswordForEmail(email: string) {
+    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * ATUALIZAR SENHA
+   * Atualiza a senha do usuário logado/em sessão de recuperação.
+   */
+  async updatePassword(password: string) {
+    const { data, error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+    return data;
+  },
+
+  /**
    * LOGOUT
    */
   async logout() {

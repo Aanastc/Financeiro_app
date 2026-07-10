@@ -67,6 +67,14 @@ export default function LoginWeb() {
 								{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
 							</button>
 						</div>
+						<div className="text-right px-2">
+							<Link
+								to="/forgot-password"
+								className="text-xs font-bold text-slate-450 dark:text-slate-500 hover:text-[#4CAF50] dark:hover:text-emerald-400 transition-colors"
+							>
+								Esqueceu a senha?
+							</Link>
+						</div>
 					</div>
 				</div>
 

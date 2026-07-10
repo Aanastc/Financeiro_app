@@ -4,6 +4,8 @@ import DashboardLayout from "./layouts/DashboardLayout";
 import HomeWeb from "./HomeWeb";
 import LoginWeb from "./pages/LoginWeb";
 import VerifyWeb from "./pages/VerifyWeb";
+import ForgotPasswordWeb from "./pages/ForgotPasswordWeb";
+import ResetPasswordWeb from "./pages/ResetPasswordWeb";
 import EntradasWeb from "./pages/Entradas";
 import GastosWeb from "./pages/Gastos";
 import RegisterWeb from "./pages/RegisterWeb";
@@ -42,6 +44,8 @@ export default function App() {
 				{/* Outras Rotas Públicas */}
 				<Route path="/login" element={<LoginWeb />} />
 				<Route path="/verify" element={<VerifyWeb />} />
+				<Route path="/forgot-password" element={<ForgotPasswordWeb />} />
+				<Route path="/reset-password" element={<ResetPasswordWeb />} />
 
 				{/* Rotas Protegidas (Dashboard) */}
 				<Route element={<DashboardLayout />}>
