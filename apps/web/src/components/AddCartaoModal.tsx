@@ -36,21 +36,7 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
             const num = parseInt(numericValue, 10);
             numericValue = num > 31 ? "31" : (num < 1 ? "1" : num.toString());
         }
-        setForm(prev => {
-            const updated = { ...prev, [field]: numericValue };
-            
-            // Calcula o fechamento automaticamente (10 dias antes) ao mudar o vencimento
-            if (field === "vencimento_dia" && numericValue !== "") {
-                const vencNum = parseInt(numericValue, 10);
-                let fechNum = vencNum - 10;
-                if (fechNum <= 0) {
-                    fechNum += 30;
-                }
-                updated.fechamento_dia = fechNum.toString();
-            }
-            
-            return updated;
-        });
+        setForm(prev => ({ ...prev, [field]: numericValue }));
     };
 
 	const handleSubmit = async (e: React.FormEvent) => {
@@ -157,13 +143,15 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 						</div>
 						<div className="space-y-1.5">
 							<label className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-2 flex items-center gap-1">
-								<Calendar size={12} /> Fechamento (Automático)
+								<Calendar size={12} /> Fechamento (Dia)
 							</label>
 							<input
 								type="number"
-								readOnly
+								min="1"
+								max="31"
 								value={form.fechamento_dia}
-								className="w-full p-4 bg-slate-100 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 font-bold text-slate-400 dark:text-slate-500 text-center text-sm cursor-not-allowed outline-none"
+								onChange={e => handleDayChange("fechamento_dia", e.target.value)}
+								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-200 text-center text-sm outline-none focus:border-indigo-500 transition-colors"
 							/>
 						</div>
 					</div>
@@ -173,7 +161,7 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 						<div className="flex gap-2">
 							<Info size={14} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
 							<p>
-								<strong className="text-slate-800 dark:text-slate-100">Fechamento:</strong> Dia em que a fatura fecha. Compras a partir desse dia entram na fatura do mês seguinte (calculado automaticamente como 10 dias antes do vencimento).
+								<strong className="text-slate-800 dark:text-slate-100">Fechamento:</strong> Dia em que a fatura fecha. Compras a partir desse dia entram na fatura do mês seguinte.
 							</p>
 						</div>
 						<div className="flex gap-2 border-t border-slate-200/50 dark:border-slate-700/40 pt-2.5">

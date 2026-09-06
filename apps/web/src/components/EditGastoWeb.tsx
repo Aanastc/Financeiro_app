@@ -34,6 +34,7 @@ interface EditGastoWebProps {
 	onClose: () => void;
 	onSuccess: () => void;
 	dataSnapshot: any[];
+	initialSearchTerm?: string;
 }
 
 export function EditGastoWeb({
@@ -41,12 +42,14 @@ export function EditGastoWeb({
 	onClose,
 	onSuccess,
 	dataSnapshot,
+	initialSearchTerm,
 }: EditGastoWebProps) {
 	const [searchTerm, setSearchTerm] = useState("");
 	const [itemSelecionado, setItemSelecionado] = useState<any>(null);
 	const [isDeleting, setIsDeleting] = useState(false);
 
 	const [cartoes, setCartoes] = useState<any[]>([]);
+	const [contas, setContas] = useState<any[]>([]);
 
 	// Estados do formulário
 	const [formEdit, setFormEdit] = useState({
@@ -58,27 +61,41 @@ export function EditGastoWeb({
 		tipo: "Renda fixa (essencial)",
 		metodo_pagamento: "Débito/Pix",
 		cartao_id: "",
+		conta_id: "",
 		parcelas: "1",
 		observacao: "",
+		terceiro: false,
+		contato_id: "",
 	});
 
-	const carregarCartoes = async () => {
+	const [contatos, setContatos] = useState<any[]>([]);
+
+	const carregarDados = async () => {
 		const { data: { user } } = await supabase.auth.getUser();
 		if (user) {
-			const { data } = await supabase.from("cartoes").select("*").eq("usuario_id", user.id).order("nome");
-			setCartoes(data || []);
+			const [resCartoes, resContas, resContatos] = await Promise.all([
+				supabase.from("cartoes").select("*").eq("usuario_id", user.id).order("nome"),
+				supabase.from("contas_bancarias").select("*").eq("usuario_id", user.id).order("nome"),
+				supabase.from("contatos").select("*").eq("usuario_id", user.id).order("nome"),
+			]);
+			setCartoes(resCartoes.data || []);
+			setContas(resContas.data || []);
+			setContatos(resContatos.data || []);
 		}
 	};
 
 	// Resetar estados ao fechar/abrir
 	useEffect(() => {
 		if (isOpen) {
-			carregarCartoes();
+			carregarDados();
+			if (initialSearchTerm) {
+				setSearchTerm(initialSearchTerm);
+			}
 		} else {
 			setSearchTerm("");
 			setItemSelecionado(null);
 		}
-	}, [isOpen]);
+	}, [isOpen, initialSearchTerm]);
 
 	// Filtro de histórico lateral (busca por descrição ou categoria)
 	const ocorrencias = useMemo(() => {
@@ -136,29 +153,37 @@ export function EditGastoWeb({
 			tipo: item.tipo || "Renda fixa (essencial)",
 			metodo_pagamento: item.metodo_pagamento === "Pix" || item.metodo_pagamento === "Débito" ? "Débito/Pix" : item.metodo_pagamento || "Débito/Pix",
 			cartao_id: item.cartao_id || "",
+			conta_id: item.conta_id || "",
 			parcelas: (item.total_parcelas || 1).toString(),
 			observacao: item.observacao || "",
+			terceiro: item.terceiro || false,
+			contato_id: item.contato_id || "",
 		});
 	};
 
 	const handleUpdate = async () => {
 		if (!itemSelecionado) return;
 		const isCredito = formEdit.metodo_pagamento === "Crédito";
+
+		if (!isCredito && !formEdit.conta_id) {
+			alert("Por favor, selecione uma Conta Bancária.");
+			return;
+		}
+		if (isCredito && !formEdit.cartao_id) {
+			alert("Por favor, selecione um Cartão de Crédito.");
+			return;
+		}
+
 		try {
 			const { error } = await supabase
-				.from("gastos")
+				.from("transacoes")
 				.update({
 					descricao: formEdit.descricao,
 					valor: parseFloat(formEdit.valor.replace(/\./g, "").replace(",", ".")),
 					data: formEdit.data,
-					classificacao: formEdit.classificacao,
-					categoria: formEdit.categoria,
-					tipo: formEdit.tipo,
-					metodo_pagamento: formEdit.metodo_pagamento,
 					cartao_id: isCredito ? formEdit.cartao_id : null,
-					total_parcelas: parseInt(formEdit.parcelas) || 1,
-					considerar_soma: !isCredito,
-					observacao: formEdit.observacao,
+					conta_id: !isCredito ? formEdit.conta_id : null,
+					observacao: `[LEGADO EDITADO] Categoria: ${formEdit.categoria} | Observação original: ${formEdit.observacao}`,
 				})
 				.eq("id", itemSelecionado.id);
 
@@ -180,7 +205,7 @@ export function EditGastoWeb({
 		setIsDeleting(true);
 		try {
 			const { error } = await supabase
-				.from("gastos")
+				.from("transacoes")
 				.delete()
 				.eq("id", itemSelecionado.id);
 			if (error) throw error;
@@ -222,7 +247,9 @@ export function EditGastoWeb({
 
 					<div className="flex-1 overflow-y-auto px-5 space-y-3 pb-6 custom-scrollbar">
 						{ocorrencias.length > 0 ? (
-							ocorrencias.map((item: any) => (
+							ocorrencias.map((item: any) => {
+								const isOrphan = !item.conta_id && item.metodo_pagamento !== "Crédito";
+								return (
 								<button
 									key={item.id}
 									onClick={() => selecionarRegistro(item)}
@@ -247,17 +274,23 @@ export function EditGastoWeb({
 										</div>
 									</div>
 									<div className="flex justify-between items-center text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mt-0.5">
-										<span>
-											{new Date(item.data + "T12:00:00").toLocaleDateString(
-												"pt-BR",
+										<div className="flex items-center gap-2">
+											<span>
+												{new Date(item.data + "T12:00:00").toLocaleDateString("pt-BR")}
+											</span>
+											{isOrphan && (
+												<span className="bg-rose-500/10 text-rose-500 px-1.5 py-0.5 rounded flex items-center gap-1 text-[8px]" title="Não vinculado à conta">
+													<AlertCircle size={10} /> S/ CONTA
+												</span>
 											)}
-										</span>
+										</div>
 										<span className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-lg">
 											{item.categoria}
 										</span>
 									</div>
 								</button>
-							))
+								);
+							})
 						) : (
 							<div className="py-16 text-center opacity-30">
 								<AlertCircle
@@ -393,8 +426,8 @@ export function EditGastoWeb({
 									</div>
 								</div>
 
-								{/* CAMPOS DE CRÉDITO */}
-								{formEdit.metodo_pagamento === "Crédito" && (
+								{/* CAMPOS DE CRÉDITO / DÉBITO */}
+								{formEdit.metodo_pagamento === "Crédito" ? (
 									<div className="grid grid-cols-2 gap-4 bg-rose-500/10 dark:bg-rose-500/5 p-4 rounded-3xl border border-rose-500/20 animate-in slide-in-from-top-2 duration-300">
 										<div className="space-y-1.5">
 											<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">Cartão</label>
@@ -435,6 +468,19 @@ export function EditGastoWeb({
 												</div>
 											</div>
 										)}
+									</div>
+								) : (
+									<div className="space-y-1.5 animate-in slide-in-from-top-2 duration-300">
+										<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">Conta Bancária Origem</label>
+										<select
+											className="w-full p-3.5 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none text-sm cursor-pointer"
+											value={formEdit.conta_id}
+											onChange={(e) => setFormEdit({ ...formEdit, conta_id: e.target.value })}>
+											<option value="">Selecione de onde saiu o dinheiro...</option>
+											{contas.map((c) => (
+												<option key={c.id} value={c.id}>{c.nome}</option>
+											))}
+										</select>
 									</div>
 								)}
 
@@ -477,13 +523,45 @@ export function EditGastoWeb({
 									</div>
 								</div>
 
+								{/* RESPONSÁVEL PELO GASTO */}
+								<div className="space-y-3">
+									<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 block">Responsável pelo Gasto</label>
+									<div className="bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+										<label className="flex items-center gap-3 cursor-pointer">
+											<input 
+												type="checkbox" 
+												className="w-4 h-4 rounded text-rose-500 border-slate-300 focus:ring-rose-500"
+												checked={formEdit.terceiro} 
+												onChange={(e) => setFormEdit({ ...formEdit, terceiro: e.target.checked })} 
+											/>
+											<span className="font-bold text-sm text-slate-750 dark:text-slate-200">Este gasto foi de outra pessoa? (Terceiro deve)</span>
+										</label>
+										
+										{formEdit.terceiro && (
+											<div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
+												<label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">Quem deve pagar?</label>
+												<select
+													className="w-full p-3.5 rounded-2xl font-bold bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 text-sm cursor-pointer"
+													value={formEdit.contato_id}
+													onChange={(e) => setFormEdit({ ...formEdit, contato_id: e.target.value })}
+												>
+													<option value="">Selecione um contato...</option>
+													{contatos.map((c) => (
+														<option key={c.id} value={c.id}>{c.nome}</option>
+													))}
+												</select>
+											</div>
+										)}
+									</div>
+								</div>
+
 								{/* OBSERVAÇÃO */}
 								<div className="space-y-1.5">
 									<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 block">
 										Observação / Detalhes
 									</label>
 									<textarea
-										className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-205 dark:border-slate-700 focus:border-rose-500 transition-colors resize-none h-24 text-sm"
+										className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 transition-colors resize-none h-24 text-sm"
 										placeholder="Detalhes adicionais ou texto bruto do banco..."
 										value={formEdit.observacao}
 										onChange={(e) => setFormEdit({ ...formEdit, observacao: e.target.value })}

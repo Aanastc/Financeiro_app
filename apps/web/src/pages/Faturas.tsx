@@ -62,7 +62,7 @@ export default function Faturas() {
 			const observacaoStr = pago ? JSON.stringify(obsObj) : null;
 			
 			const { error } = await supabase
-				.from("gastos")
+				.from("despesas")
 				.update({ 
 					terceiro_pago: pago,
 					observacao: observacaoStr
@@ -83,7 +83,7 @@ export default function Faturas() {
 			const contatoId = isTerceiro ? value : null;
 
 			const { error } = await supabase
-				.from("gastos")
+				.from("despesas")
 				.update({
 					terceiro: isTerceiro,
 					contato_id: contatoId,

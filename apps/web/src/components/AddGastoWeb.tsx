@@ -28,6 +28,8 @@ export function AddGastoWeb({
 	initialCartaoId = "",
 }: any) {
 	const [cartoes, setCartoes] = useState<any[]>([]);
+	const [contatos, setContatos] = useState<any[]>([]);
+	const [contas, setContas] = useState<any[]>([]);
 	const [isAddCartaoOpen, setIsAddCartaoOpen] = useState(false);
 
 	const [form, setForm] = useState({
@@ -39,22 +41,36 @@ export function AddGastoWeb({
 		tipo: "", // Optional
 		metodo_pagamento: initialCartaoId ? "Crédito" : "Débito/Pix",
 		cartao_id: initialCartaoId,
+		conta_id: "",
 		parcelas: "1",
+		terceiro: false,
+		contato_id: "",
 	});
 
-	const carregarCartoes = async () => {
+	const carregarDados = async () => {
 		const {
 			data: { user },
 		} = await supabase.auth.getUser();
 		if (user) {
-			const data = await financeService.getCartoes(user.id);
-			setCartoes(data || []);
+			const [cartoesData, contasData, contatosData] = await Promise.all([
+				financeService.getCartoes(user.id),
+				financeService.getContasBancarias(user.id),
+				supabase.from("contatos").select("*").eq("usuario_id", user.id).order("nome")
+			]);
+			setCartoes(cartoesData || []);
+			setContas(contasData || []);
+			setContatos(contatosData.data || []);
+			
+			// Se o usuário tiver só uma conta, já seleciona ela por padrão
+			if (contasData && contasData.length === 1) {
+				setForm(prev => ({ ...prev, conta_id: contasData[0].id }));
+			}
 		}
 	};
 
 	useEffect(() => {
 		if (isOpen) {
-			carregarCartoes();
+			carregarDados();
 			setForm(prev => ({
 				...prev,
 				cartao_id: initialCartaoId || prev.cartao_id,
@@ -92,19 +108,34 @@ export function AddGastoWeb({
 	const preview = previewParcelamento();
 
 	const handleSave = async () => {
+		if (form.metodo_pagamento !== "Crédito" && !form.conta_id) {
+			alert("Por favor, selecione uma Conta Bancária.");
+			return;
+		}
+		if (form.metodo_pagamento === "Crédito" && !form.cartao_id) {
+			alert("Por favor, selecione um Cartão de Crédito.");
+			return;
+		}
+
 		const {
 			data: { user },
 		} = await supabase.auth.getUser();
 		if (!user) return;
 
 		try {
-			await financeService.addGasto(user.id, form);
+			await financeService.addGasto(user.id, {
+				...form,
+				terceiro: form.terceiro,
+				contato_id: form.terceiro && form.contato_id ? form.contato_id : null,
+			});
 
 			setForm({
 				...form,
 				descricao: "",
 				valor: "",
 				metodo_pagamento: "Débito/Pix",
+				terceiro: false,
+				contato_id: "",
 			});
 
 			onSuccess();
@@ -238,14 +269,29 @@ export function AddGastoWeb({
 								)}
 							</div>
 						) : (
-							<div className="space-y-1.5">
-								<label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">Valor do Gasto</label>
-								<input
-									placeholder="Valor R$ 0,00"
-									className="w-full p-5 bg-slate-50 dark:bg-slate-850 rounded-3xl font-black text-rose-500 dark:text-rose-400 text-3xl border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none text-center"
-									value={form.valor}
-									onChange={(e) => setForm({ ...form, valor: formatCurrency(e.target.value) })}
-								/>
+							<div className="space-y-3">
+								<div className="space-y-1.5">
+									<label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">Conta Bancária Origem</label>
+									<select
+										className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
+										value={form.conta_id}
+										onChange={(e) => setForm({ ...form, conta_id: e.target.value })}>
+										<option value="">Selecione de onde saiu o dinheiro...</option>
+										{contas.map((c) => (
+											<option key={c.id} value={c.id}>{c.nome}</option>
+										))}
+									</select>
+								</div>
+								
+								<div className="space-y-1.5">
+									<label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">Valor do Gasto</label>
+									<input
+										placeholder="Valor R$ 0,00"
+										className="w-full p-5 bg-slate-50 dark:bg-slate-850 rounded-3xl font-black text-rose-500 dark:text-rose-400 text-3xl border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none text-center"
+										value={form.valor}
+										onChange={(e) => setForm({ ...form, valor: formatCurrency(e.target.value) })}
+									/>
+								</div>
 							</div>
 						)}
 					</div>
@@ -273,6 +319,38 @@ export function AddGastoWeb({
 									<option key={t} value={t}>{t}</option>
 								))}
 							</select>
+						</div>
+					</div>
+
+					{/* 5. RESPONSÁVEL PELO GASTO */}
+					<div className="space-y-3">
+						<p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">5. Responsável pelo Gasto</p>
+						<div className="bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+							<label className="flex items-center gap-3 cursor-pointer">
+								<input 
+									type="checkbox" 
+									className="w-4 h-4 rounded text-rose-500 border-slate-300 focus:ring-rose-500"
+									checked={form.terceiro} 
+									onChange={(e) => setForm({ ...form, terceiro: e.target.checked })} 
+								/>
+								<span className="font-bold text-sm text-slate-750 dark:text-slate-200">Este gasto foi de outra pessoa? (Terceiro deve)</span>
+							</label>
+							
+							{form.terceiro && (
+								<div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
+									<label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">Quem deve pagar?</label>
+									<select
+										className="w-full p-3.5 rounded-2xl font-bold bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 text-sm cursor-pointer"
+										value={form.contato_id}
+										onChange={(e) => setForm({ ...form, contato_id: e.target.value })}
+									>
+										<option value="">Selecione um contato...</option>
+										{contatos.map((c) => (
+											<option key={c.id} value={c.id}>{c.nome}</option>
+										))}
+									</select>
+								</div>
+							)}
 						</div>
 					</div>
 

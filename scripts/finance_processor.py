@@ -53,6 +53,13 @@ regras_keywords = [
     {"keyword": "ANA EUNICE ARA", "nova_desc": "Curso de Inglês", "cat": "Educação", "tipo": "Renda fixa (essencial)"},
     {"keyword": "PGTO BOLETO", "nova_desc": "Curso de Inglês", "cat": "Educação", "tipo": "Renda fixa (essencial)"},
     {"keyword": "Rafael Lomas", "nova_desc": "Pix Mensal (Rafael)", "cat": "Outros", "tipo": "Renda variável"},
+    {"keyword": "Uber", "nova_desc": "Uber", "cat": "Transporte", "tipo": "Renda variável"},
+    {"keyword": "99app", "nova_desc": "99 App", "cat": "Transporte", "tipo": "Renda variável"},
+    {"keyword": "99 app", "nova_desc": "99 App", "cat": "Transporte", "tipo": "Renda variável"},
+    {"keyword": "ifood", "nova_desc": "iFood", "cat": "Alimentação", "tipo": "Lazer"},
+    {"keyword": "Htm", "nova_desc": "HTM (Educação)", "cat": "Educação", "tipo": "Renda fixa (essencial)"},
+    {"keyword": "007373", "nova_desc": "Pagamento Salário - UNIFOR", "cat": "Renda fixa", "tipo": "Renda fixa (essencial)"},
+    {"keyword": "LIQUIDO DE VENCIMENTO", "nova_desc": "Pagamento Salário - UNIFOR", "cat": "Renda fixa", "tipo": "Renda fixa (essencial)"},
 ]
 
 def clean_valor(v):
@@ -170,15 +177,6 @@ def parse_date(d):
 full_df['data'] = full_df['data'].apply(parse_date)
 full_df = full_df.dropna(subset=['data', 'valor'])
 
-# Remover duplicados com tolerância (mesmo valor e descrição parecida no mesmo mês)
-# Primeiro arredonda valores para evitar erro de float
-full_df['valor'] = full_df['valor'].round(2)
-# Criar uma chave de "mês" para ajudar na detecção de duplicados
-full_df['mes_ref'] = full_df['data'].dt.strftime('%Y-%m')
-
-# Drop de duplicados mais agressivo
-full_df = full_df.drop_duplicates(subset=['mes_ref', 'valor', 'desc_limpa', 'metodo_final'])
-
 if 'cartao_final' not in full_df.columns:
     full_df['cartao_final'] = None
 
@@ -284,20 +282,22 @@ with open(sql_file, 'w', encoding='utf-8') as f:
                 p_atual = i + 1
                 f.write(f"INSERT INTO public.gastos (usuario_id, descricao, valor, data, categoria, tipo, metodo_pagamento, considerar_soma, total_parcelas, parcela_atual, observacao) "
                         f"SELECT '{user_id}', '{desc}', {valor_parcela}, '{dt_parc}', '{row['categoria']}', '{row['tipo_orcamento']}', '{row['metodo_final']}', false, {num_parcelas}, {p_atual}, '{obs}' "
-                        f"WHERE NOT EXISTS (SELECT 1 FROM public.gastos WHERE usuario_id = '{user_id}' AND data = '{dt_parc}' AND (ABS(valor - {valor_parcela}) < 0.01) AND descricao = '{desc}' AND parcela_atual = {p_atual});\n")
+                        f"WHERE NOT EXISTS (SELECT 1 FROM public.gastos WHERE usuario_id = '{user_id}' AND descricao = '{desc}' AND parcela_atual = {p_atual});\n")
         else:
-            # Caso contrário, insere apenas o registro atual
+            # Para despesas normais, checa descricao e o mes/ano
+            mes_ano = dt_base[:7] # YYYY-MM
             f.write(f"INSERT INTO public.gastos (usuario_id, descricao, valor, data, categoria, tipo, metodo_pagamento, considerar_soma, total_parcelas, parcela_atual, observacao) "
                     f"SELECT '{user_id}', '{desc}', {valor_total}, '{dt_base}', '{row['categoria']}', '{row['tipo_orcamento']}', '{row['metodo_final']}', {str(not is_cred).lower()}, {num_parcelas}, {parcela_atual}, '{obs}' "
-                    f"WHERE NOT EXISTS (SELECT 1 FROM public.gastos WHERE usuario_id = '{user_id}' AND data = '{dt_base}' AND valor = {valor_total} AND descricao = '{desc}' AND parcela_atual = {parcela_atual});\n")
+                    f"WHERE NOT EXISTS (SELECT 1 FROM public.gastos WHERE usuario_id = '{user_id}' AND TO_CHAR(data, 'YYYY-MM') = '{mes_ano}' AND ABS(valor - {valor_total}) < 0.05 AND descricao = '{desc}' AND parcela_atual = {parcela_atual});\n")
     
     for _, row in entradas_df.iterrows():
         desc = str(row['desc_limpa']).replace("'", "''")
         val = abs(row['valor'])
         dt = row['data_iso']
+        mes_ano = dt[:7]
         f.write(f"INSERT INTO public.entradas (usuario_id, descricao, valor, data) "
                 f"SELECT '{user_id}', '{desc}', {val}, '{dt}' "
-                f"WHERE NOT EXISTS (SELECT 1 FROM public.entradas WHERE usuario_id = '{user_id}' AND data = '{dt}' AND valor = {val} AND descricao = '{desc}');\n")
+                f"WHERE NOT EXISTS (SELECT 1 FROM public.entradas WHERE usuario_id = '{user_id}' AND TO_CHAR(data, 'YYYY-MM') = '{mes_ano}' AND ABS(valor - {val}) < 0.05 AND descricao = '{desc}');\n")
     
     f.write("\nCOMMIT;")
 

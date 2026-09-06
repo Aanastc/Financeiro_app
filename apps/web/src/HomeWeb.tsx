@@ -1,355 +1,173 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../../../packages/services/supabase";
 import {
-	BarChart,
-	Bar,
-	XAxis,
-	YAxis,
-	CartesianGrid,
-	Tooltip,
-	ResponsiveContainer,
-	Legend,
-	PieChart,
-	Pie,
-	Cell,
+	BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell,
 } from "recharts";
 import {
-	ArrowUpRight,
-	ArrowDownRight,
-	ChevronRight,
-	Wallet,
-	TrendingUp,
-	TrendingDown,
-	Sparkles,
-	AlertCircle,
-	Phone,
-	CreditCard,
-	ExternalLink,
-	RefreshCw,
-	Users,
-	HandCoins,
-	ChevronDown,
-	Calendar,
+	ArrowUpRight, ArrowDownRight, Wallet, TrendingUp, TrendingDown, Sparkles, AlertCircle, Phone, CreditCard, ChevronDown, Calendar, Brain, HandCoins, Users, Bell, ArrowRight
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../../../packages/services/auth.service";
 import { financeService } from "../../../packages/services/finance.service";
 import { ExportExcelButton } from "./components/ExportExcelButton";
-import { motion } from "framer-motion";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
+import OnboardingContasModal from "./components/OnboardingContasModal";
+import { getFaturaMesReferencia } from "../../../packages/utils/cartao.utils";
 
-const NOME_MESES = [
-	"Janeiro",
-	"Fevereiro",
-	"Março",
-	"Abril",
-	"Maio",
-	"Junho",
-	"Julho",
-	"Agosto",
-	"Setembro",
-	"Outubro",
-	"Novembro",
-	"Dezembro",
-];
+const NOME_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
 export default function HomeWeb() {
 	const navigate = useNavigate();
-	const [stats, setStats] = useState({
-		entradasMes: 0,
-		gastosMes: 0,
-		saldoTotal: 0,
-	});
+	const [stats, setStats] = useState({ entradasMes: 0, gastosMes: 0, saldoTotal: 0 });
 	const [nome, setNome] = useState("");
+	const [userId, setUserId] = useState("");
 	const [isClient, setIsClient] = useState(false);
 	const [isFetchingData, setIsFetchingData] = useState(true);
 
-	useEffect(() => {
-		setIsClient(true);
-	}, []);
+	useEffect(() => { setIsClient(true); }, []);
+	
 	const [rawEntradas, setRawEntradas] = useState<any[]>([]);
 	const [rawGastos, setRawGastos] = useState<any[]>([]);
 	const [rawFaturas, setRawFaturas] = useState<any[]>([]);
 	const [rawInvestimentos, setRawInvestimentos] = useState<any[]>([]);
 	const [rawDividas, setRawDividas] = useState<any[]>([]);
-
-	// NOVOS ESTADOS
 	const [rawFaturasNaoPagas, setRawFaturasNaoPagas] = useState<any[]>([]);
 	const [lastLaunchDate, setLastLaunchDate] = useState<string | null>(null);
 	const [hasLaunchesThisMonth, setHasLaunchesThisMonth] = useState<boolean>(true);
 	const [devedores, setDevedores] = useState<any[]>([]);
 	const [cartoes, setCartoes] = useState<any[]>([]);
-	const [loadingFaturas, setLoadingFaturas] = useState(false);
+	
+	const [contasBancarias, setContasBancarias] = useState<any[]>([]);
+	const [showOnboarding, setShowOnboarding] = useState(false);
+	const [showOrphanAlert, setShowOrphanAlert] = useState(false);
 
-	// IA REPORT
-	const [aiReport, setAiReport] = useState<string>("");
-	const [loadingAI, setLoadingAI] = useState(false);
-
-	// FILTROS
 	const hoje = new Date();
 	const [filterYear, setFilterYear] = useState(hoje.getFullYear());
-	const [filterMonth, setFilterMonth] = useState<number | "all">("all");
+	const [filterMonth, setFilterMonth] = useState<number | "all">(new Date().getMonth() + 1);
 	const [filterCategory, setFilterCategory] = useState<string>("all");
 
 	const loadDashboardData = useCallback(async () => {
-		const {
-			data: { user },
-		} = await supabase.auth.getUser();
+		const { data: { user } } = await supabase.auth.getUser();
 		if (!user) return;
+		setUserId(user.id);
 
 		const startOfYear = `${filterYear}-01-01`;
 		const endOfYear = `${filterYear}-12-31`;
-
 		const d = new Date();
 		const currentMonthStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 		const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-		const [
-			saldoAtual,
-			resEntradas,
-			resGastos,
-			resFaturas,
-			resInv,
-			resDiv,
-			resDevedores,
-			resCartoes,
-			resLastEntrada,
-			resLastGasto,
-			resCountEntradas,
-			resCountGastos
-		] = await Promise.all([
-			financeService.getGlobalBalance(user.id),
-			supabase.from("entradas").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
-			supabase.from("gastos").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
-			supabase.from("pagamentos_faturas").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
-			supabase.from("investimentos").select("*").eq("usuario_id", user.id),
-			supabase.from("dividas").select("*").eq("usuario_id", user.id).gte("vencimento_parcela", startOfYear).lte("vencimento_parcela", endOfYear),
-			financeService.getDevedores(user.id),
-			financeService.getCartoes(user.id),
-			supabase.from("entradas").select("data").eq("usuario_id", user.id).lte("data", todayStr).order("data", { ascending: false }).limit(1),
-			supabase.from("gastos").select("data").eq("usuario_id", user.id).lte("data", todayStr).order("data", { ascending: false }).limit(1),
-			supabase.from("entradas").select("id", { count: "exact", head: true }).eq("usuario_id", user.id).gte("data", currentMonthStart),
-			supabase.from("gastos").select("id", { count: "exact", head: true }).eq("usuario_id", user.id).gte("data", currentMonthStart),
-		]);
-
-		setStats(prev => ({ ...prev, saldoTotal: saldoAtual }));
-		setRawEntradas(resEntradas.data || []);
-		setRawGastos(resGastos.data || []);
-		setRawFaturas(resFaturas.data || []);
-		setRawInvestimentos(resInv.data || []);
-		setRawDividas(resDiv.data || []);
-		setDevedores(resDevedores || []);
-		setCartoes(resCartoes || []);
-
-		const lastEntradaDate = resLastEntrada.data?.[0]?.data;
-		const lastGastoDate = resLastGasto.data?.[0]?.data;
-		let lastLaunch: string | null = null;
-		if (lastEntradaDate && lastGastoDate) {
-			lastLaunch = lastEntradaDate > lastGastoDate ? lastEntradaDate : lastGastoDate;
-		} else {
-			lastLaunch = lastEntradaDate || lastGastoDate || null;
-		}
-		setLastLaunchDate(lastLaunch);
-
-		const totalCountThisMonth = (resCountEntradas.count || 0) + (resCountGastos.count || 0);
-		setHasLaunchesThisMonth(totalCountThisMonth > 0);
-
-		// Buscar faturas não pagas dos últimos 3 meses
-		setLoadingFaturas(true);
 		try {
-			const cartoesData = await financeService.getCartoes(user.id);
-			if (cartoesData && cartoesData.length > 0) {
+			const [
+				saldoAtual, resEntradas, resGastos, resFaturas, resInv, resDiv, resDevedores, resCartoes, resLastEntrada, resLastGasto, resCountEntradas, resCountGastos, resContas
+			] = await Promise.all([
+				financeService.getGlobalBalance(user.id).catch(() => 0),
+				supabase.from("receitas").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
+				supabase.from("despesas").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
+				supabase.from("pagamentos_faturas").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
+				supabase.from("investimentos").select("*").eq("usuario_id", user.id),
+				supabase.from("passivos").select("*").eq("usuario_id", user.id),
+				financeService.getDevedores(user.id).catch(() => []),
+				financeService.getCartoes(user.id).catch(() => []),
+				supabase.from("receitas").select("data").eq("usuario_id", user.id).lte("data", todayStr).order("data", { ascending: false }).limit(1),
+				supabase.from("despesas").select("data").eq("usuario_id", user.id).lte("data", todayStr).order("data", { ascending: false }).limit(1),
+				supabase.from("receitas").select("id", { count: "exact", head: true }).eq("usuario_id", user.id).gte("data", currentMonthStart),
+				supabase.from("despesas").select("id", { count: "exact", head: true }).eq("usuario_id", user.id).gte("data", currentMonthStart),
+				financeService.getContasBancarias(user.id).catch(() => []),
+			]);
+
+			setStats(prev => ({ ...prev, saldoTotal: saldoAtual }));
+			setRawEntradas(resEntradas?.data || []);
+			setRawGastos(resGastos?.data || []);
+			setRawFaturas(resFaturas?.data || []);
+			setRawInvestimentos(resInv?.data || []);
+			setRawDividas(resDiv?.data || []);
+			setDevedores(resDevedores || []);
+			setCartoes(resCartoes || []);
+			
+			const loadedContas = resContas || [];
+			setContasBancarias(loadedContas);
+			
+			// Verificações para Modal
+			if (loadedContas.length === 0) {
+				setShowOnboarding(true);
+			} else {
+				// Verifica se tem lançamentos órfãos
+				const hasOrphanEntradas = (resEntradas?.data || []).some(e => !e.conta_id);
+				const hasOrphanGastos = (resGastos?.data || []).some(g => !g.conta_id && g.metodo_pagamento !== "Crédito");
+				if (hasOrphanEntradas || hasOrphanGastos) {
+					setShowOrphanAlert(true);
+				}
+			}
+
+			const lastEntradaDate = resLastEntrada?.data?.[0]?.data;
+			const lastGastoDate = resLastGasto?.data?.[0]?.data;
+			let lastLaunch: string | null = null;
+			if (lastEntradaDate && lastGastoDate) {
+				lastLaunch = lastEntradaDate > lastGastoDate ? lastEntradaDate : lastGastoDate;
+			} else {
+				lastLaunch = lastEntradaDate || lastGastoDate || null;
+			}
+			setLastLaunchDate(lastLaunch);
+			setHasLaunchesThisMonth(((resCountEntradas?.count || 0) + (resCountGastos?.count || 0)) > 0);
+
+			if (resCartoes && resCartoes.length > 0) {
 				const lastMonths = [];
-				const d = new Date();
+				const dDate = new Date();
 				for (let i = 0; i < 3; i++) {
-					const year = d.getFullYear();
-					const month = d.getMonth() + 1;
-					lastMonths.push(`${year}-${String(month).padStart(2, '0')}`);
-					d.setMonth(d.getMonth() - 1);
+					lastMonths.push(`${dDate.getFullYear()}-${String(dDate.getMonth() + 1).padStart(2, '0')}`);
+					dDate.setMonth(dDate.getMonth() - 1);
 				}
 
 				const faturasPromises: Promise<any>[] = [];
-				cartoesData.forEach((c: any) => {
+				resCartoes.forEach((c: any) => {
 					lastMonths.forEach((m) => {
-						faturasPromises.push(
-							financeService.getFaturaMensal(user.id, c.id, m)
-								.then(res => ({ ...res, mesReferencia: m }))
-								.catch(() => null)
-						);
+						faturasPromises.push(financeService.getFaturaMensal(user.id, c.id, m).then(res => ({ ...res, mesReferencia: m })).catch(() => null));
 					});
 				});
 
 				const faturasResult = await Promise.all(faturasPromises);
-				const faturasNaoPagas = faturasResult.filter((f: any) => f && f.totalFatura > 0 && f.pendente > 0.01);
-				setRawFaturasNaoPagas(faturasNaoPagas);
+				setRawFaturasNaoPagas(faturasResult.filter((f: any) => f && f.totalFatura > 0 && f.pendente > 0.01));
 			} else {
 				setRawFaturasNaoPagas([]);
 			}
 		} catch (err) {
-			console.error("Erro ao carregar faturas pendentes:", err);
-		} finally {
-			setLoadingFaturas(false);
+			console.error("Erro ao carregar dados do dashboard:", err);
 		}
 	}, [filterYear]);
 
-	// Carregar cache de insights de IA
 	useEffect(() => {
-		const cached = localStorage.getItem(`finance_ai_report_${filterYear}`);
-		if (cached) {
-			setAiReport(cached);
-		} else {
-			setAiReport("");
+		async function initData() {
+			await loadDashboardData();
+			const u = await authService.getCurrentUser();
+			if (u) setNome(u.nome.split(" ")[0]);
+			setIsFetchingData(false);
 		}
-	}, [filterYear]);
+		initData();
 
-	const generateAIInsights = async () => {
-		setLoadingAI(true);
-		try {
-			const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-			if (!apiKey) {
-				toast.error("Chave da API do Gemini não configurada!");
-				setLoadingAI(false);
-				return;
+		let channelEntradas: any;
+		let channelGastos: any;
+
+		async function setupRealtime() {
+			const { data: { user } } = await supabase.auth.getUser();
+			if (user) {
+				channelEntradas = financeService.subscribeToChanges("receitas", user.id, loadDashboardData);
+				channelGastos = financeService.subscribeToChanges("despesas", user.id, loadDashboardData);
 			}
-
-			// Maiores categorias
-			const categoriasGastos: { [key: string]: number } = {};
-			rawGastos.forEach(g => {
-				const cat = g.categoria || "Outros";
-				categoriasGastos[cat] = (categoriasGastos[cat] || 0) + Number(g.valor);
-			});
-
-			const topCategories = Object.entries(categoriasGastos)
-				.map(([nome, valor]) => ({ nome, valor }))
-				.sort((a, b) => b.valor - a.valor)
-				.slice(0, 3);
-
-			const genAI = new GoogleGenerativeAI(apiKey);
-
-			const prompt = `Você é um consultor financeiro pessoal especialista em finanças pessoais e investimentos.
-Analise os seguintes dados financeiros do usuário para o ano ${filterYear}:
-- Saldo Global Consolidado Atual: R$ ${stats.saldoTotal}
-- Entradas Totais do Ano: R$ ${rawEntradas.reduce((acc, cur) => acc + Number(cur.valor), 0)}
-- Despesas Totais do Ano (incluindo faturas pagas): R$ ${rawGastos.reduce((acc, cur) => acc + Number(cur.valor), 0) + rawFaturas.reduce((acc, cur) => acc + Number(cur.valor), 0)}
-- Dívidas Ativas: R$ ${rawDividas.reduce((acc, cur) => acc + Number(cur.valor_total), 0)}
-- Distribuição de Gastos por Categoria: ${JSON.stringify(topCategories)}
-- Faturas Pendentes nos últimos 3 meses: ${rawFaturasNaoPagas.length} faturas, somando R$ ${rawFaturasNaoPagas.reduce((acc, cur) => acc + Number(cur.pendente), 0)} em aberto
-- Devedores ativos (dinheiro que o usuário emprestou e tem a receber): R$ ${devedores.reduce((acc, cur) => acc + Number(cur.total_devido), 0)}
-
-Com base nesses dados completos, elabore um relatório consultivo estruturado em português do Brasil:
-1. Resumo Geral da Situação Atual: Faça um diagnóstico sincero e direto sobre a relação entre receitas, gastos e o saldo atual.
-2. Dicas e Recomendações: Forneça pelo menos 3 dicas práticas de economia, amortização de dívidas ou direcionamento de investimentos adequados para esse cenário.
-
-Escreva o texto final formatado com títulos em negrito, tópicos claros com emojis e parágrafos curtos. Não use markdown de bloco (como \`\`\`), apenas negritos e quebras de linha para a leitura ficar muito agradável.`;
-
-			const modelsToTry = [
-				"gemini-2.5-flash", 
-				"gemini-2.0-flash", 
-				"gemini-flash-latest",
-				"gemini-pro-latest"
-			];
-			let result;
-			let lastError;
-			const errorsMap: { [model: string]: string } = {};
-
-			const callModelWithRetry = async (modelName: string, retries = 1, delay = 1500): Promise<any> => {
-				const modelInstance = genAI.getGenerativeModel({ model: modelName });
-				try {
-					return await modelInstance.generateContent(prompt);
-				} catch (error: any) {
-					const errorMessage = error?.message || "";
-					const isTransient = errorMessage.includes("503") || errorMessage.includes("experiencing demand") || errorMessage.includes("429");
-					if (retries > 0 && isTransient) {
-						await new Promise(resolve => setTimeout(resolve, delay));
-						return callModelWithRetry(modelName, retries - 1, delay * 2);
-					}
-					throw error;
-				}
-			};
-
-			for (const modelName of modelsToTry) {
-				try {
-					if (modelsToTry.indexOf(modelName) > 0) console.log(`Tentando modelo backup: ${modelName}`);
-					result = await callModelWithRetry(modelName);
-					break;
-				} catch (err: any) {
-					console.warn(`Falha no modelo ${modelName}:`, err);
-					errorsMap[modelName] = err?.message || String(err);
-					lastError = err;
-				}
-			}
-
-			if (!result) {
-				console.error("Erros detalhados por modelo:", errorsMap);
-				const primaryError = errorsMap["gemini-2.5-flash"] || "";
-				if (primaryError && !primaryError.includes("404")) {
-					throw new Error(`Falha no modelo principal (Gemini 2.5): ${primaryError}`);
-				}
-				const errorMessage = lastError?.message || "";
-				if (errorMessage.includes("404")) {
-					throw new Error("Sua chave da API do Google não tem acesso aos modelos Gemini (Erro 404). Verifique no Google AI Studio se a chave está correta.");
-				}
-				throw lastError || new Error("Não foi possível conectar a Inteligência Artificial.");
-			}
-			const text = result.response.text().trim();
-			setAiReport(text);
-			localStorage.setItem(`finance_ai_report_${filterYear}`, text);
-			toast.success("Análise de IA concluída!");
-		} catch (error) {
-			console.error("Erro ao gerar insights com IA:", error);
-			toast.error("Erro na leitura da IA.");
-		} finally {
-			setLoadingAI(false);
 		}
-	};
-
-	const handleCobrarWhatsApp = (devedor: any) => {
-		const telefone = devedor.contato?.telefone?.replace(/\D/g, "");
-		if (!telefone || telefone.length < 10) {
-			toast.error("Telefone inválido ou não cadastrado.");
-			return;
-		}
-
-		const getPaymentInfo = (observacao: string) => {
-			if (!observacao) return null;
-			try {
-				if (observacao.trim().startsWith("{")) {
-					return JSON.parse(observacao);
-				}
-			} catch (e) {
-				// Ignore
-			}
-			return null;
+		setupRealtime();
+		return () => {
+			if (channelEntradas) supabase.removeChannel(channelEntradas);
+			if (channelGastos) supabase.removeChannel(channelGastos);
 		};
+	}, [loadDashboardData]);
 
-		const itensPendentes = devedor.itens.filter((i: any) => !i.terceiro_pago);
-		if (itensPendentes.length === 0) {
-			toast.error("Não há itens pendentes para cobrar.");
-			return;
-		}
-
-		const itensText = itensPendentes.map((i: any) => {
-			const dataFormatada = new Date(i.data).toLocaleDateString("pt-BR");
-			const payInfo = getPaymentInfo(i.observacao);
-			if (payInfo && typeof payInfo.valor_pago === "number") {
-				const restante = Math.max(0, Number(i.valor) - payInfo.valor_pago);
-				return `• ${i.descricao} (${dataFormatada}): R$ ${Number(i.valor).toFixed(2)} (Falta pagar: R$ ${restante.toFixed(2)})`;
-			}
-			return `• ${i.descricao} (${dataFormatada}): R$ ${Number(i.valor).toFixed(2)}`;
-		}).join("%0A");
-
-		const total = Number(devedor.total_devido).toFixed(2);
-		const mensagem = `Olá, ${devedor.contato.nome}! Tudo bem?%0A%0ASegue o demonstrativo detalhado dos valores em aberto:%0A%0A${itensText}%0A%0A*Total pendente:* R$ ${total}%0A%0AQuando puder realizar o acerto, por favor me envie o comprovante. Muito obrigado!`;
-
-		window.open(`https://wa.me/${telefone}?text=${mensagem}`, "_blank");
-	};
-
-	const formatMonthReference = (mesStr: string) => {
-		const [ano, mes] = mesStr.split("-").map(Number);
-		const data = new Date(ano, mes - 1, 1);
-		const nome = data.toLocaleString("pt-BR", { month: "long" });
-		return `${nome.charAt(0).toUpperCase() + nome.slice(1)} ${ano}`;
+	const getGreeting = () => {
+		const hour = hoje.getHours();
+		if (hour < 12) return "Bom dia";
+		if (hour < 18) return "Boa tarde";
+		return "Boa noite";
 	};
 
 	const dashboardData = useMemo(() => {
@@ -385,70 +203,38 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 			const fat = rawFaturas.filter(e => e.data.startsWith(prefix)).reduce((a, c) => a + Number(c.valor), 0);
 			const inv = rawInvestimentos.reduce((a, c) => a + Number(c.valor_investido), 0) / 12;
 			const div = rawDividas.filter(e => (e.vencimento_parcela?.startsWith(prefix) || e.data?.startsWith(prefix))).reduce((a, c) => a + Number(c.valor_total), 0);
-
-			dadosGrafico.push({
-				mes: mesesNomes[i],
-				entradas: ent,
-				gastos: gas + fat,
-				cartoes: fat,
-				investimentos: inv,
-				dividas: div,
-			});
+			dadosGrafico.push({ mes: mesesNomes[i], entradas: ent, gastos: gas + fat, cartoes: fat, investimentos: inv, dividas: div });
 		}
 
 		const parseDate = (d: any) => new Date(d).getTime();
-		const recentesEntradas = [...filteredEntradas].sort((a, b) => parseDate(b.data) - parseDate(a.data)).slice(0, 5);
-		const recentesGastos = [...filteredGastos].sort((a, b) => parseDate(b.data) - parseDate(a.data)).slice(0, 5);
-		const recentesCartoes = [...filteredFaturas].sort((a, b) => parseDate(b.data) - parseDate(a.data)).slice(0, 5);
-		const recentesInvestimentos = [...filteredInvestimentos].slice(0, 5);
-		const recentesDividas = [...filteredDividas].sort((a, b) => parseDate(b.vencimento_parcela) - parseDate(a.vencimento_parcela)).slice(0, 5);
-
 		return {
 			totaisMes,
 			dadosGrafico,
 			recentes: {
-				entradas: recentesEntradas,
-				gastos: recentesGastos,
-				cartoes: recentesCartoes,
-				investimentos: recentesInvestimentos,
-				dividas: recentesDividas
+				entradas: [...filteredEntradas].sort((a, b) => parseDate(b.data) - parseDate(a.data)).slice(0, 5),
+				gastos: [...filteredGastos].sort((a, b) => parseDate(b.data) - parseDate(a.data)).slice(0, 5),
+				cartoes: [...filteredFaturas].sort((a, b) => parseDate(b.data) - parseDate(a.data)).slice(0, 5),
+				investimentos: [...filteredInvestimentos].slice(0, 5),
+				dividas: [...filteredDividas].sort((a, b) => parseDate(b.vencimento_parcela) - parseDate(a.vencimento_parcela)).slice(0, 5)
 			}
 		};
 	}, [rawEntradas, rawGastos, rawFaturas, rawInvestimentos, rawDividas, filterYear, filterMonth]);
 
 	const cartoesResumo = useMemo(() => {
 		if (cartoes.length === 0) return [];
-
-		const activeMonthStr = filterMonth !== "all"
-			? `${filterYear}-${String(filterMonth).padStart(2, '0')}`
-			: `${filterYear}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-
+		const activeMonthStr = filterMonth !== "all" ? `${filterYear}-${String(filterMonth).padStart(2, '0')}` : `${filterYear}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+		
 		return cartoes.map((c: any) => {
-			const gastosCartao = rawGastos.filter(g =>
-				g.cartao_id === c.id &&
-				g.data.startsWith(activeMonthStr)
-			);
+			const fechamentoDia = c.fechamento_dia || 1;
+			const vencimentoDia = c.vencimento_dia || 1;
+			const gastosCartao = rawGastos.filter(g => g.cartao_id === c.id && (!g.data ? false : getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia) === activeMonthStr));
 			const totalFatura = gastosCartao.reduce((sum, item) => sum + Number(item.valor), 0);
-
-			const pagamentosFatura = rawFaturas.filter(p =>
-				p.cartao_id === c.id &&
-				p.mes_referencia === activeMonthStr
-			);
+			const pagamentosFatura = rawFaturas.filter(p => p.cartao_id === c.id && p.mes_referencia === activeMonthStr);
 			const totalPago = pagamentosFatura.reduce((sum, item) => sum + Number(item.valor), 0);
-
 			const pendente = Math.max(0, totalFatura - totalPago);
 			const limiteDisponivel = Math.max(0, Number(c.limite) - totalFatura);
 			const percentualUso = Number(c.limite) > 0 ? (totalFatura / Number(c.limite)) * 100 : 0;
-
-			return {
-				cartao: c,
-				totalFatura,
-				totalPago,
-				pendente,
-				limiteDisponivel,
-				percentualUso,
-				mesStr: activeMonthStr
-			};
+			return { cartao: c, totalFatura, totalPago, pendente, limiteDisponivel, percentualUso, mesStr: activeMonthStr };
 		});
 	}, [cartoes, rawGastos, rawFaturas, filterMonth, filterYear]);
 
@@ -480,49 +266,64 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 		return Object.keys(grouped).map(name => ({ name, value: grouped[name] }));
 	}, [rawGastos, filterYear, filterMonth]);
 
-	const totalEntradasPie = useMemo(() => {
-		return entradaPieData.reduce((acc, cur) => acc + Number(cur.value), 0);
-	}, [entradaPieData]);
+	const totalEntradasPie = useMemo(() => entradaPieData.reduce((acc, cur) => acc + Number(cur.value), 0), [entradaPieData]);
+	const totalGastosPie = useMemo(() => gastoPieData.reduce((acc, cur) => acc + Number(cur.value), 0), [gastoPieData]);
+	const saldoFiltrado = useMemo(() => dashboardData.totaisMes.entradas - dashboardData.totaisMes.gastos, [dashboardData]);
 
-	const totalGastosPie = useMemo(() => {
-		return gastoPieData.reduce((acc, cur) => acc + Number(cur.value), 0);
-	}, [gastoPieData]);
-
-	const saldoFiltrado = useMemo(() => {
-		return dashboardData.totaisMes.entradas - dashboardData.totaisMes.gastos;
-	}, [dashboardData]);
-
-	const COLORS_ENTRADAS = ["#10B981", "#34D399", "#059669", "#6EE7B7", "#047857"];
-	const COLORS_GASTOS = ["#F43F5E", "#FB7185", "#E11D48", "#FDA4AF", "#BE123C", "#F87171", "#EF4444"];
-
-	useEffect(() => {
-		async function initData() {
-			await loadDashboardData();
-			const u = await authService.getCurrentUser();
-			if (u) setNome(u.nome.split(" ")[0]);
-			setIsFetchingData(false);
-		}
-		
-		initData();
-
-		let channelEntradas: any;
-		let channelGastos: any;
-
-		async function setupRealtime() {
-			const { data: { user } } = await supabase.auth.getUser();
-			if (user) {
-				channelEntradas = financeService.subscribeToChanges("entradas", user.id, loadDashboardData);
-				channelGastos = financeService.subscribeToChanges("gastos", user.id, loadDashboardData);
-			}
-		}
-
-		setupRealtime();
-
-		return () => {
-			if (channelEntradas) supabase.removeChannel(channelEntradas);
-			if (channelGastos) supabase.removeChannel(channelGastos);
+	const previsaoGastoProximoMes = useMemo(() => {
+		const h = new Date();
+		const proxMes = new Date(h.getFullYear(), h.getMonth() + 1, 1);
+		const proxMesPrefixo = `${proxMes.getFullYear()}-${String(proxMes.getMonth() + 1).padStart(2, "0")}`;
+		const totalParcelasProxMes = rawGastos.filter(g => g.metodo_pagamento === "Crédito" && g.data.startsWith(proxMesPrefixo)).reduce((sum, g) => sum + Number(g.valor), 0);
+		const totalDividasProxMes = rawDividas.filter(d => d.status !== "quitada" && d.vencimento_parcela?.startsWith(proxMesPrefixo)).reduce((sum, d) => sum + (Number(d.valor_total) / Number(d.parcelas)), 0);
+		const gastosVariaveis = rawGastos.filter(g => g.metodo_pagamento !== "Crédito");
+		const mensalVariavel: { [key: number]: number } = {};
+		gastosVariaveis.forEach(g => {
+			const m = new Date(g.data + "T12:00:00").getMonth();
+			mensalVariavel[m] = (mensalVariavel[m] || 0) + Number(g.valor);
+		});
+		const values = Object.values(mensalVariavel);
+		const mediaVariavel = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+		return {
+			mesNome: NOME_MESES[proxMes.getMonth()],
+			totalPrevisao: totalParcelasProxMes + totalDividasProxMes + mediaVariavel,
+			totalParcelasProxMes,
+			totalDividasProxMes,
+			mediaVariavel
 		};
-	}, [loadDashboardData]);
+	}, [rawGastos, rawDividas]);
+
+	const upcomingPayments = useMemo(() => {
+		const reminders: any[] = [];
+		const today = new Date();
+		const in7Days = new Date(today);
+		in7Days.setDate(today.getDate() + 7);
+		const todayStr = today.toISOString().split("T")[0];
+		const limitStr = in7Days.toISOString().split("T")[0];
+
+		rawDividas.filter(d => d.status !== "quitada" && d.vencimento_parcela >= todayStr && d.vencimento_parcela <= limitStr).forEach(d => {
+			reminders.push({ type: "divida", title: `Dívida: ${d.descricao}`, date: d.vencimento_parcela, amount: Number(d.valor_total) / Number(d.parcelas) });
+		});
+
+		rawFaturasNaoPagas.forEach(f => {
+			if (f.cartao) {
+				const day = String(f.cartao.dia_vencimento).padStart(2, "0");
+				const vDate = `${f.mesReferencia}-${day}`;
+				if (vDate >= todayStr && vDate <= limitStr) {
+					reminders.push({ type: "fatura", title: `Fatura: ${f.cartao.nome}`, date: vDate, amount: f.pendente });
+				}
+			}
+		});
+		return reminders.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+	}, [rawDividas, rawFaturasNaoPagas]);
+
+	const handleCobrarWhatsApp = (devedor: any) => {
+		const telefone = devedor.contato?.telefone?.replace(/\D/g, "");
+		if (!telefone || telefone.length < 10) return toast.error("Telefone inválido.");
+		const itensText = devedor.itens.filter((i: any) => !i.terceiro_pago).map((i: any) => `• ${i.descricao}: R$ ${Number(i.valor).toFixed(2)}`).join("%0A");
+		const msg = `Olá, ${devedor.contato.nome}! Tudo bem?%0A%0ASegue o demonstrativo dos valores em aberto:%0A%0A${itensText}%0A%0A*Total:* R$ ${Number(devedor.total_devido).toFixed(2)}%0A%0AQuando puder realizar o acerto, me envie o comprovante. Muito obrigado!`;
+		window.open(`https://wa.me/${telefone}?text=${msg}`, "_blank");
+	};
 
 	if (isFetchingData) {
 		return (
@@ -533,188 +334,119 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 		);
 	}
 
-	const containerVariants = {
-		hidden: { opacity: 0 },
-		visible: { opacity: 1, transition: { staggerChildren: 0.05 } }
-	};
-
-	const itemVariants = {
-		hidden: { y: 15, opacity: 0 },
-		visible: { y: 0, opacity: 1, transition: { type: "spring", stiffness: 260, damping: 22 } }
-	};
+	const devedoresAtivos = devedores.filter(d => d.total_devido > 0);
+	const COLORS_ENTRADAS = ["#10B981", "#34D399", "#059669", "#6EE7B7", "#047857"];
+	const COLORS_GASTOS = ["#F43F5E", "#FB7185", "#E11D48", "#FDA4AF", "#BE123C", "#F87171", "#EF4444"];
 
 	return (
-		<motion.div
-			className="space-y-6 sm:space-y-8 pb-20"
-			variants={containerVariants}
-			initial="hidden"
-			animate="visible"
-		>
-			{/* 1. GREETING HEADER & QUICK ACTIONS */}
-			<motion.div
-				variants={itemVariants}
-				className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[36px] border border-slate-100 dark:border-slate-800 shadow-sm transition-colors"
-			>
-				<div className="space-y-1">
-					<h2 className="text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
-						<span>
-							<span>Olá, </span>
-							<span className="inline-block">{nome}</span>
-							<span>!</span>
-						</span>
-						<span className="animate-bounce">👋</span>
-					</h2>
-					<p className="text-slate-400 dark:text-slate-500 font-bold text-xs uppercase tracking-wider">Painel de controle financeiro pessoal</p>
-				</div>
-
-				<div className="flex flex-wrap gap-3">
-					<button
-						onClick={() => navigate("/gastos?add=true")}
-						className="flex items-center gap-2 px-5 py-3 bg-rose-500 hover:bg-rose-600 text-white rounded-2xl font-bold text-xs shadow-md shadow-rose-100 dark:shadow-none transition-all active:scale-95 cursor-pointer"
-					>
-						<TrendingDown size={14} /> <span>Novo Gasto</span>
+		<motion.div className="space-y-6 sm:space-y-8 pb-20" initial={{ opacity: 0 }} animate={{ opacity: 1, transition: { staggerChildren: 0.05 } }}>
+			
+			{/* 1. SAUDAÇÃO & BOTÕES */}
+			<div className="flex flex-col gap-4">
+				<h2 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
+					<span>{getGreeting()}, {nome}!</span>
+					<span className="animate-bounce">👋</span>
+				</h2>
+				<div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 w-full">
+					<button onClick={() => navigate("/gastos?add=true")} className="col-span-2 sm:col-span-1 flex items-center justify-center gap-2 w-full sm:w-auto px-5 py-3 sm:py-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-bold text-sm sm:text-xs shadow-sm transition-all cursor-pointer">
+						<TrendingDown size={16} className="sm:w-3.5 sm:h-3.5" /> <span>Nova Despesa</span>
 					</button>
-					<button
-						onClick={() => navigate("/entradas?add=true")}
-						className="flex items-center gap-2 px-5 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-bold text-xs shadow-md shadow-emerald-100 dark:shadow-none transition-all active:scale-95 cursor-pointer"
-					>
-						<TrendingUp size={14} /> <span>Nova Entrada</span>
+					<button onClick={() => navigate("/entradas?add=true")} className="col-span-1 flex items-center justify-center gap-2 w-full sm:w-auto px-5 py-3 sm:py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-sm sm:text-xs shadow-sm transition-all cursor-pointer">
+						<TrendingUp size={16} className="sm:w-3.5 sm:h-3.5" /> <span>Nova Receita</span>
 					</button>
-					<button
-						onClick={() => navigate("/dividas?add=true")}
-						className="flex items-center gap-2 px-5 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-2xl font-bold text-xs shadow-md shadow-purple-100 dark:shadow-none transition-all active:scale-95 cursor-pointer"
-					>
-						<HandCoins size={14} /> <span>Nova Dívida</span>
+					<button onClick={() => navigate("/dividas?add=true")} className="col-span-1 flex items-center justify-center gap-2 w-full sm:w-auto px-5 py-3 sm:py-2.5 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-bold text-sm sm:text-xs shadow-sm transition-all cursor-pointer">
+						<HandCoins size={16} className="sm:w-3.5 sm:h-3.5" /> <span>Novo Passivo</span>
 					</button>
 				</div>
-			</motion.div>
+			</div>
 
-			{/* ALERTA DE LANÇAMENTOS */}
-			{(!hasLaunchesThisMonth && hoje.getDate() >= 20) ? (
-				<motion.div
-					variants={itemVariants}
-					className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-3xl bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 shadow-sm transition-colors"
-				>
-					<div className="flex items-center gap-3.5">
-						<div className="p-3 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-2xl shrink-0">
-							<AlertCircle size={20} className="animate-pulse" />
+			{/* 2 E 3. LEMBRETES E ÚLTIMO LANÇAMENTO (LADO A LADO) */}
+			<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+				{/* 2. LEMBRETES DE PAGAMENTOS PRÓXIMOS */}
+				{upcomingPayments.length > 0 ? (
+					<motion.div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 p-5 rounded-xl shadow-sm flex flex-col gap-4 justify-center">
+						<div className="flex items-center gap-3">
+							<div className="p-3 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-xl">
+								<Bell size={20} className="animate-pulse" />
+							</div>
+							<div>
+								<h4 className="font-extrabold text-amber-900 dark:text-amber-300 text-sm">Lembretes de Vencimento</h4>
+								<p className="text-amber-700/80 dark:text-amber-400/80 text-xs font-semibold">Você tem {upcomingPayments.length} pagamento(s) para os próximos 7 dias.</p>
+							</div>
 						</div>
-						<div className="space-y-1">
-							<p className="font-extrabold text-amber-900 dark:text-amber-300 text-sm">
-								Atenção: Nenhum lançamento realizado em {NOME_MESES[hoje.getMonth()]}!
-							</p>
-							<p className="text-amber-700/80 dark:text-amber-400/80 text-xs font-semibold">
-								Já estamos no final do mês e você ainda não cadastrou nenhuma receita ou despesa.
-								{lastLaunchDate && (
-									<span> O seu último lançamento foi em <strong className="text-amber-900 dark:text-amber-200">{lastLaunchDate.split("-").reverse().join("/")}</strong>.</span>
-								)}
-							</p>
-						</div>
-					</div>
-					<div className="flex gap-2.5 w-full sm:w-auto shrink-0">
-						<button
-							onClick={() => navigate("/gastos?add=true")}
-							className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer w-full sm:w-auto text-center"
-						>
-							Lançar Gasto
-						</button>
-						<button
-							onClick={() => navigate("/entradas?add=true")}
-							className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer w-full sm:w-auto text-center"
-						>
-							Lançar Entrada
-						</button>
-					</div>
-				</motion.div>
-			) : (
-				lastLaunchDate ? (
-					<motion.div
-						variants={itemVariants}
-						className="flex items-center gap-3.5 p-4 rounded-3xl bg-indigo-50/50 dark:bg-indigo-950/10 border border-indigo-100/60 dark:border-indigo-900/20 shadow-sm transition-colors"
-					>
-						<div className="p-2.5 bg-indigo-100/60 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-2xl shrink-0">
-							<Calendar size={18} />
-						</div>
-						<div>
-							<p className="text-xs font-bold text-slate-400 dark:text-slate-500">
-								Última atividade registrada
-							</p>
-							<p className="text-sm font-black text-slate-700 dark:text-slate-250 mt-0.5">
-								Seu último lançamento foi realizado em <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">{lastLaunchDate.split("-").reverse().join("/")}</span>.
-							</p>
+						<div className="flex flex-col gap-2 w-full max-h-32 overflow-y-auto pr-1 custom-scrollbar">
+							{upcomingPayments.map((pay, i) => (
+								<div key={i} className="flex justify-between items-center bg-white dark:bg-slate-900 px-4 py-2 rounded-lg border border-amber-100 dark:border-slate-800 text-xs shadow-sm gap-4">
+									<span className="font-bold text-slate-700 dark:text-slate-300 truncate max-w-[150px]">{pay.title}</span>
+									<div className="text-right shrink-0">
+										<span className="text-slate-500 dark:text-slate-400 mr-2">{pay.date.includes("undefined") ? pay.date.replace("undefined", "01").split("-").reverse().join("/") : pay.date.split("-").reverse().join("/")}</span>
+										<span className="font-black text-rose-500 dark:text-rose-455">R$ {pay.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+									</div>
+								</div>
+							))}
 						</div>
 					</motion.div>
 				) : (
-					<motion.div
-						variants={itemVariants}
-						className="flex items-center gap-3.5 p-4 rounded-3xl bg-indigo-50/50 dark:bg-indigo-950/10 border border-indigo-100/60 dark:border-indigo-900/20 shadow-sm transition-colors"
-					>
-						<div className="p-2.5 bg-indigo-100/60 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-2xl shrink-0">
-							<Calendar size={18} />
+					<motion.div className="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/30 p-5 rounded-xl shadow-sm flex items-center gap-4 justify-center">
+						<div className="p-3 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded-xl">
+							<Bell size={20} />
 						</div>
 						<div>
-							<p className="text-xs font-bold text-slate-400 dark:text-slate-500">
-								Status dos lançamentos
-							</p>
-							<p className="text-sm font-black text-slate-700 dark:text-slate-200 mt-0.5">
-								Você ainda não possui nenhum lançamento cadastrado no sistema. Comece adicionando seus gastos ou entradas!
+							<h4 className="font-extrabold text-emerald-900 dark:text-emerald-300 text-sm">Tudo em dia!</h4>
+							<p className="text-emerald-700/80 dark:text-emerald-400/80 text-xs font-semibold">Nenhum vencimento previsto para os próximos 7 dias.</p>
+						</div>
+					</motion.div>
+				)}
+
+				{/* 3. ÚLTIMO LANÇAMENTO REGISTRADO */}
+				{(!hasLaunchesThisMonth && hoje.getDate() >= 20) ? (
+					<motion.div className="flex flex-col items-start justify-center gap-4 p-5 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 shadow-sm">
+						<div className="flex items-center gap-3.5">
+							<div className="p-3 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-xl"><AlertCircle size={20} className="animate-pulse" /></div>
+							<div>
+								<p className="font-extrabold text-amber-900 dark:text-amber-300 text-sm">Nenhum lançamento realizado neste mês!</p>
+								<p className="text-amber-700/80 dark:text-amber-400/80 text-xs font-semibold mt-1">
+									Seu último lançamento foi em <strong className="text-amber-900 dark:text-amber-200">{lastLaunchDate?.split("-").reverse().join("/") || "N/A"}</strong>.
+								</p>
+							</div>
+						</div>
+					</motion.div>
+				) : (
+					<motion.div className="flex items-center gap-3.5 p-5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/10 border border-indigo-100/60 dark:border-indigo-900/20 shadow-sm h-full">
+						<div className="p-3 bg-indigo-100/60 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-xl"><Calendar size={20} /></div>
+						<div>
+							<p className="text-xs font-bold text-slate-400 dark:text-slate-500">{lastLaunchDate ? "Última atividade registrada" : "Status dos lançamentos"}</p>
+							<p className="text-sm font-black text-slate-700 dark:text-slate-200 mt-1">
+								{lastLaunchDate ? `Seu último lançamento foi em ${lastLaunchDate.split("-").reverse().join("/")}.` : "Nenhum lançamento cadastrado no sistema."}
 							</p>
 						</div>
 					</motion.div>
-				)
-			)}
+				)}
+			</div>
 
-			{/* 3. FILTROS (ABAIXO DE AÇÕES RÁPIDAS) */}
-			<motion.div
-				variants={itemVariants}
-				className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-3xl sm:rounded-[28px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:justify-between md:items-center gap-4 transition-colors"
-			>
-				<div className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
-					<Sparkles size={16} className="text-indigo-500" />
-					<p className="text-xs font-black uppercase tracking-widest">Filtrar Período</p>
+			{/* 4. FILTROS & RESUMO CONSOLIDADO */}
+			<div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 w-full">
+				<div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+					<Sparkles size={18} className="text-indigo-500" />
+					<h3 className="text-sm font-black uppercase tracking-widest">Resumo Consolidado</h3>
 				</div>
-
-				<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-					{/* Select: Ano */}
+				
+				<div className="flex flex-col sm:flex-row justify-end gap-3 w-full md:w-auto">
 					<div className="relative w-full sm:w-auto">
-						<select
-							value={filterYear}
-							onChange={(e) => setFilterYear(Number(e.target.value))}
-							className="appearance-none w-full pr-8 pl-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-350 outline-none focus:border-indigo-500 hover:bg-white dark:hover:bg-slate-750 transition-all cursor-pointer"
-						>
-							{[hoje.getFullYear() - 1, hoje.getFullYear(), hoje.getFullYear() + 1].map(y => (
-								<option key={y} value={y}>{y}</option>
-							))}
+						<select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))} className="w-full pr-8 pl-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-350 cursor-pointer appearance-none outline-none focus:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm">
+							{[hoje.getFullYear() - 1, hoje.getFullYear(), hoje.getFullYear() + 1].map(y => <option key={y} value={y}>{y}</option>)}
 						</select>
-						<div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400">
-							<ChevronDown size={12} />
-						</div>
+						<ChevronDown size={12} className="absolute inset-y-0 right-3 my-auto text-slate-400 pointer-events-none" />
 					</div>
-
-					{/* Select: Mês */}
 					<div className="relative w-full sm:w-auto">
-						<select
-							value={filterMonth}
-							onChange={(e) => setFilterMonth(e.target.value === "all" ? "all" : Number(e.target.value))}
-							className="appearance-none w-full pr-8 pl-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-350 outline-none focus:border-indigo-500 hover:bg-white dark:hover:bg-slate-750 transition-all cursor-pointer"
-						>
+						<select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value === "all" ? "all" : Number(e.target.value))} className="w-full pr-8 pl-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-350 cursor-pointer appearance-none outline-none focus:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm">
 							<option value="all">Ano Todo</option>
-							{NOME_MESES.map((m, i) => (
-								<option key={i} value={i + 1}>{m}</option>
-							))}
+							{NOME_MESES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
 						</select>
-						<div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400">
-							<ChevronDown size={12} />
-						</div>
+						<ChevronDown size={12} className="absolute inset-y-0 right-3 my-auto text-slate-400 pointer-events-none" />
 					</div>
-
-					{/* Select: Categoria */}
 					<div className="relative w-full sm:w-auto">
-						<select
-							value={filterCategory}
-							onChange={(e) => setFilterCategory(e.target.value)}
-							className="appearance-none w-full pr-8 pl-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-350 outline-none focus:border-indigo-500 hover:bg-white dark:hover:bg-slate-750 transition-all cursor-pointer truncate"
-						>
+						<select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="w-full pr-8 pl-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-350 cursor-pointer appearance-none outline-none focus:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm">
 							<option value="all">Visão Geral</option>
 							<option value="entradas">Só Entradas</option>
 							<option value="gastos">Só Gastos</option>
@@ -722,550 +454,240 @@ Escreva o texto final formatado com títulos em negrito, tópicos claros com emo
 							<option value="investimentos">Só Investimentos</option>
 							<option value="dividas">Só Dívidas</option>
 						</select>
-						<div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400">
-							<ChevronDown size={12} />
-						</div>
+						<ChevronDown size={12} className="absolute inset-y-0 right-3 my-auto text-slate-400 pointer-events-none" />
 					</div>
-
-					<div className="h-8 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block mx-1"></div>
 					<ExportExcelButton />
 				</div>
-			</motion.div>
+			</div>
 
-			{/* CARDS DE RESUMO */}
-			<motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-				{/* 4. CARD SALDO CONSOLIDADO FILTRADO */}
-				<motion.div
-					whileHover={{ y: -4, boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1)" }}
-					className={`bg-gradient-to-br ${saldoFiltrado >= 0
-							? "from-indigo-900 via-slate-900 to-indigo-950"
-							: "from-rose-950 via-slate-900 to-rose-900"
-						} p-5 sm:p-8 rounded-3xl sm:rounded-[32px] shadow-xl text-white relative overflow-hidden flex flex-col justify-between transition-all duration-300 md:col-span-2 lg:col-span-1`}
-				>
-					<div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
-						<Wallet size={120} />
-					</div>
-					<div className="absolute -left-10 -bottom-10 w-40 h-40 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
-
+			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+				<motion.div className={`bg-gradient-to-br ${saldoFiltrado >= 0 ? "from-indigo-900 via-slate-900 to-indigo-950" : "from-rose-950 via-slate-900 to-rose-900"} p-6 sm:p-8 rounded-xl shadow-xl text-white relative overflow-hidden flex flex-col justify-between md:col-span-2 lg:col-span-1`}>
+					<Wallet size={120} className="absolute -top-4 -right-4 p-4 opacity-[0.03] pointer-events-none" />
 					<div>
-						<p className="text-indigo-300 dark:text-indigo-400 font-bold uppercase tracking-wider text-[10px] mb-2">
-							{filterMonth === "all" ? "Saldo Anual Consolidado" : "Saldo do Período"}
-						</p>
-						<h3 className="text-4xl font-black mb-1 flex items-baseline">
-							<span className="text-indigo-455 text-xl font-bold mr-1">R$</span>
-							<span>{saldoFiltrado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-						</h3>
-					</div>
-
-					<div className="mt-4 pt-4 border-t border-indigo-850/40 flex justify-between items-center text-[10px] text-indigo-300 font-semibold">
-						<span>
-							<span>Filtro: </span>
-							<span>{filterMonth === "all" ? `${filterYear}` : `${NOME_MESES[filterMonth - 1]} / ${filterYear}`}</span>
-						</span>
-						<span className={`px-2.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider ${saldoFiltrado >= 0 ? "bg-emerald-500/20 text-emerald-350" : "bg-rose-500/20 text-rose-350"
-							}`}>
-							{saldoFiltrado >= 0 ? "Positivo" : "Negativo"}
-						</span>
+						<p className="text-indigo-300 dark:text-indigo-400 font-bold uppercase tracking-wider text-xs mb-3">{filterMonth === "all" ? "Saldo Anual Consolidado" : "Saldo do Período"}</p>
+						<h3 className="text-4xl sm:text-5xl font-black mb-1 flex items-baseline"><span className="text-indigo-455 text-2xl font-bold mr-1.5 opacity-80">R$</span><span>{saldoFiltrado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span></h3>
 					</div>
 				</motion.div>
+				{(filterCategory === "all" || filterCategory === "entradas") && <MetricCard title="Entradas (Período)" value={dashboardData.totaisMes.entradas} icon={<TrendingUp size={24} className="text-emerald-600 dark:text-emerald-455" />} bgClass="bg-emerald-50 dark:bg-emerald-950/30" colorClass="text-emerald-600 dark:text-emerald-455" borderClass="bg-emerald-500" />}
+				{(filterCategory === "all" || filterCategory === "gastos") && <MetricCard title="Gastos (Período)" value={dashboardData.totaisMes.gastos} icon={<TrendingDown size={24} className="text-rose-600 dark:text-rose-455" />} bgClass="bg-rose-50 dark:bg-rose-950/30" colorClass="text-rose-600 dark:text-rose-455" borderClass="bg-rose-500" />}
+				{filterCategory === "cartoes" && <MetricCard title="Faturas (Período)" value={dashboardData.totaisMes.faturas} icon={<CreditCard size={24} className="text-purple-600 dark:text-purple-450" />} bgClass="bg-purple-50 dark:bg-purple-950/30" colorClass="text-purple-600 dark:text-purple-450" borderClass="bg-purple-500" />}
+				{filterCategory === "investimentos" && <MetricCard title="Investimentos (Período)" value={dashboardData.totaisMes.investimentos} icon={<TrendingUp size={24} className="text-blue-600 dark:text-blue-450" />} bgClass="bg-blue-50 dark:bg-blue-950/30" colorClass="text-blue-600 dark:text-blue-450" borderClass="bg-blue-500" />}
+				{filterCategory === "dividas" && <MetricCard title="Dívidas (Período)" value={dashboardData.totaisMes.dividas} icon={<HandCoins size={24} className="text-orange-600 dark:text-orange-450" />} bgClass="bg-orange-50 dark:bg-orange-950/30" colorClass="text-orange-600 dark:text-orange-450" borderClass="bg-orange-500" />}
+			</div>
 
-				{(filterCategory === "all" || filterCategory === "entradas") && (
-					<MetricCard
-						title="Entradas (Mês)"
-						value={dashboardData.totaisMes.entradas}
-						icon={<TrendingUp size={20} className="text-emerald-600 dark:text-emerald-400" />}
-						bgClass="bg-emerald-50 dark:bg-emerald-950/30"
-						colorClass="text-emerald-600 dark:text-emerald-455"
-						borderClass="bg-emerald-500"
-					/>
-				)}
-
+			{/* 5. PREVISÃO E EVOLUÇÃO ANUAL */}
+			<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 				{(filterCategory === "all" || filterCategory === "gastos") && (
-					<MetricCard
-						title="Gastos (Mês)"
-						value={dashboardData.totaisMes.gastos}
-						icon={<TrendingDown size={20} className="text-rose-600 dark:text-rose-400" />}
-						bgClass="bg-rose-50 dark:bg-rose-950/30"
-						colorClass="text-rose-600 dark:text-rose-455"
-						borderClass="bg-rose-500"
-					/>
-				)}
-
-				{filterCategory === "cartoes" && (
-					<MetricCard
-						title="Faturas (Mês)"
-						value={dashboardData.totaisMes.faturas}
-						icon={<CreditCard size={20} className="text-purple-600 dark:text-purple-400" />}
-						bgClass="bg-purple-50 dark:bg-purple-950/30"
-						colorClass="text-purple-600 dark:text-purple-450"
-						borderClass="bg-purple-500"
-					/>
-				)}
-
-				{filterCategory === "investimentos" && (
-					<MetricCard
-						title="Investimentos (Mês)"
-						value={dashboardData.totaisMes.investimentos}
-						icon={<TrendingUp size={20} className="text-blue-600 dark:text-blue-400" />}
-						bgClass="bg-blue-50 dark:bg-blue-950/30"
-						colorClass="text-blue-600 dark:text-blue-450"
-						borderClass="bg-blue-500"
-					/>
-				)}
-
-				{filterCategory === "dividas" && (
-					<MetricCard
-						title="Dívidas (Mês)"
-						value={dashboardData.totaisMes.dividas}
-						icon={<HandCoins size={20} className="text-orange-600 dark:text-orange-400" />}
-						bgClass="bg-orange-50 dark:bg-orange-950/30"
-						colorClass="text-orange-600 dark:text-orange-450"
-						borderClass="bg-orange-500"
-					/>
-				)}
-			</motion.div>
-
-			{/* GRÁFICO DINÂMICO */}
-			<motion.div
-				variants={itemVariants}
-				className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-between transition-colors"
-			>
-				<div className="flex justify-between items-center mb-8">
-					<h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Evolução Anual</h3>
-				</div>
-				<div className="h-96 w-full">
-					{isClient && (
-						<ResponsiveContainer width="100%" height="100%">
-							<BarChart data={dashboardData.dadosGrafico} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-								<defs>
-									<linearGradient id="colorEntradas" x1="0" y1="0" x2="0" y2="1">
-										<stop offset="5%" stopColor="#10B981" stopOpacity={0.85} />
-										<stop offset="95%" stopColor="#10B981" stopOpacity={0.15} />
-									</linearGradient>
-									<linearGradient id="colorGastos" x1="0" y1="0" x2="0" y2="1">
-										<stop offset="5%" stopColor="#F43F5E" stopOpacity={0.85} />
-										<stop offset="95%" stopColor="#F43F5E" stopOpacity={0.15} />
-									</linearGradient>
-									<linearGradient id="colorCartoes" x1="0" y1="0" x2="0" y2="1">
-										<stop offset="5%" stopColor="#A855F7" stopOpacity={0.85} />
-										<stop offset="95%" stopColor="#A855F7" stopOpacity={0.15} />
-									</linearGradient>
-									<linearGradient id="colorInvestimentos" x1="0" y1="0" x2="0" y2="1">
-										<stop offset="5%" stopColor="#3B82F6" stopOpacity={0.85} />
-										<stop offset="95%" stopColor="#3B82F6" stopOpacity={0.15} />
-									</linearGradient>
-									<linearGradient id="colorDividas" x1="0" y1="0" x2="0" y2="1">
-										<stop offset="5%" stopColor="#F97316" stopOpacity={0.85} />
-										<stop offset="95%" stopColor="#F97316" stopOpacity={0.15} />
-									</linearGradient>
-								</defs>
-								<CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
-								<XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontWeight: 600, fontSize: 12 }} dy={10} />
-								<YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
-								<Tooltip
-									cursor={{ fill: "#f8fafc" }}
-									contentStyle={{ borderRadius: "16px", border: "none", boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)", fontWeight: 600, padding: "12px 20px" }}
-									formatter={(value: number) => [`R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, ""]}
-								/>
-								<Legend iconType="circle" wrapperStyle={{ paddingTop: "20px" }} />
-
-								{(filterCategory === "all" || filterCategory === "entradas") && <Bar dataKey="entradas" name="Entradas" fill="url(#colorEntradas)" radius={[6, 6, 0, 0]} barSize={20} />}
-								{(filterCategory === "all" || filterCategory === "gastos") && <Bar dataKey="gastos" name="Saídas/Gastos" fill="url(#colorGastos)" radius={[6, 6, 0, 0]} barSize={20} />}
-								{filterCategory === "cartoes" && <Bar dataKey="cartoes" name="Faturas" fill="url(#colorCartoes)" radius={[6, 6, 0, 0]} barSize={20} />}
-								{filterCategory === "investimentos" && <Bar dataKey="investimentos" name="Investimentos" fill="url(#colorInvestimentos)" radius={[6, 6, 0, 0]} barSize={20} />}
-								{filterCategory === "dividas" && <Bar dataKey="dividas" name="Dívidas" fill="url(#colorDividas)" radius={[6, 6, 0, 0]} barSize={20} />}
-							</BarChart>
-						</ResponsiveContainer>
-					)}
-				</div>
-			</motion.div>
-
-			{/* GRÁFICOS DE PIZZA DE CATEGORIAS */}
-			<motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-				{/* Entradas */}
-				<div className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col items-center relative transition-colors">
-					<h3 className="text-lg font-black text-slate-800 dark:text-slate-100 tracking-tight mb-4 self-start flex items-center gap-2">
-						<TrendingUp className="text-emerald-500" size={20} /> <span>Origem das Entradas</span>
-					</h3>
-					<div className="relative h-64 w-full flex justify-center items-center">
-						{entradaPieData.length > 0 && isClient ? (
-							<div className="w-full h-full relative flex items-center justify-center">
-								<ResponsiveContainer width="100%" height="100%">
-									<PieChart>
-										<Pie
-											data={entradaPieData}
-											innerRadius={70}
-											outerRadius={90}
-											paddingAngle={4}
-											dataKey="value"
-											stroke="none"
-										>
-											{entradaPieData.map((_, index) => (
-												<Cell key={`cell-${index}`} fill={COLORS_ENTRADAS[index % COLORS_ENTRADAS.length]} />
-											))}
-										</Pie>
-										<Tooltip formatter={(value: number) => `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} />
-										<Legend verticalAlign="bottom" height={36} iconType="circle" />
-									</PieChart>
-								</ResponsiveContainer>
-								<div className="absolute flex flex-col items-center justify-center pointer-events-none pb-9">
-									<span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total</span>
-									<span className="text-lg font-black text-slate-800 dark:text-slate-100">
-										R$ {totalEntradasPie.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}
-									</span>
-								</div>
+					<motion.div className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm lg:col-span-1 flex flex-col justify-between">
+						<div>
+							<p className="text-purple-500 font-bold uppercase tracking-wider text-xs mb-3 flex items-center gap-1.5"><Brain size={16} className="animate-pulse" /> Previsão de Gastos ({previsaoGastoProximoMes.mesNome})</p>
+							<h3 className="text-4xl font-black text-slate-800 dark:text-slate-100 flex items-baseline mb-6"><span className="text-purple-500 text-xl mr-1.5 opacity-80">R$</span><span>{previsaoGastoProximoMes.totalPrevisao.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span></h3>
+							<div className="space-y-3 text-sm text-slate-600 dark:text-slate-350">
+								<div className="flex justify-between items-center"><span className="flex items-center gap-1.5"><CreditCard size={14} className="opacity-70" /> Faturas Previstas</span><span className="font-bold text-slate-800 dark:text-slate-100">R$ {previsaoGastoProximoMes.totalParcelasProxMes.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span></div>
+								<div className="flex justify-between items-center"><span className="flex items-center gap-1.5"><HandCoins size={14} className="opacity-70" /> Dívidas Previstas</span><span className="font-bold text-slate-800 dark:text-slate-100">R$ {previsaoGastoProximoMes.totalDividasProxMes.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span></div>
+								<div className="flex justify-between items-center"><span className="flex items-center gap-1.5"><TrendingDown size={14} className="opacity-70" /> Média Variável</span><span className="font-bold text-slate-800 dark:text-slate-100">R$ {previsaoGastoProximoMes.mediaVariavel.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span></div>
 							</div>
-						) : entradaPieData.length > 0 ? (
-							<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-						) : (
-							<p className="text-slate-300 dark:text-slate-700 italic text-sm">Sem entradas cadastradas neste período</p>
-						)}
-					</div>
-				</div>
-
-				{/* Gastos */}
-				<div className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col items-center relative transition-colors">
-					<h3 className="text-lg font-black text-slate-800 dark:text-slate-100 tracking-tight mb-4 self-start flex items-center gap-2">
-						<TrendingDown className="text-rose-500" size={20} /> <span>Destino dos Gastos</span>
-					</h3>
-					<div className="relative h-64 w-full flex justify-center items-center">
-						{gastoPieData.length > 0 && isClient ? (
-							<div className="w-full h-full relative flex items-center justify-center">
-								<ResponsiveContainer width="100%" height="100%">
-									<PieChart>
-										<Pie
-											data={gastoPieData}
-											innerRadius={70}
-											outerRadius={90}
-											paddingAngle={4}
-											dataKey="value"
-											stroke="none"
-										>
-											{gastoPieData.map((_, index) => (
-												<Cell key={`cell-${index}`} fill={COLORS_GASTOS[index % COLORS_GASTOS.length]} />
-											))}
-										</Pie>
-										<Tooltip formatter={(value: number) => `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} />
-										<Legend verticalAlign="bottom" height={36} iconType="circle" />
-									</PieChart>
-								</ResponsiveContainer>
-								<div className="absolute flex flex-col items-center justify-center pointer-events-none pb-9">
-									<span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total</span>
-									<span className="text-lg font-black text-slate-800 dark:text-slate-100">
-										R$ {totalGastosPie.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}
-									</span>
-								</div>
-							</div>
-						) : gastoPieData.length > 0 ? (
-							<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-						) : (
-							<p className="text-slate-300 dark:text-slate-700 italic text-sm">Sem gastos cadastrados neste período</p>
-						)}
-					</div>
-				</div>
-			</motion.div>
-
-			{/* FATURAS PENDENTES E DEVEDORES ATIVOS */}
-			<motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-				{/* Resumo de Faturas por Período */}
-				<div className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col h-full transition-colors">
-					<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-						<h3 className="font-black text-slate-800 dark:text-slate-100 text-xl tracking-tight flex items-center gap-2">
-							<CreditCard className="text-pink-500" size={22} />
-							<span>Faturas dos Cartões</span>
-						</h3>
-						<button
-							onClick={() => navigate("/cartoes")}
-							className="text-xs font-bold text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 bg-indigo-50 hover:bg-indigo-100/60 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/30 px-3.5 py-1.5 rounded-full transition-all cursor-pointer w-full sm:w-auto text-center"
-						>
-							Ver Todos
-						</button>
-					</div>
-
-					<div className="space-y-4 flex-1">
-						{cartoesResumo.length === 0 ? (
-							<div className="flex flex-col items-center justify-center h-48 text-center text-slate-400 dark:text-slate-500">
-								<AlertCircle size={32} className="text-slate-300 mb-2" />
-								<p className="font-bold text-sm">Nenhum cartão cadastrado</p>
-								<p className="text-xs">Cadastre seus cartões na tela de Cartões.</p>
-							</div>
-						) : (
-							cartoesResumo.map((res: any) => {
-								return (
-									<div
-										key={res.cartao.id}
-										className="flex flex-col p-4 bg-slate-50 dark:bg-slate-850/40 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all space-y-3"
-									>
-										<div className="flex items-center justify-between">
-											<div className="flex items-center gap-2.5">
-												<span
-													className="w-3.5 h-3.5 rounded-full border border-white dark:border-slate-900 shadow-sm"
-													style={{ backgroundColor: res.cartao.cor_hex || "#6366f1" }}
-												/>
-												<p className="font-bold text-slate-800 dark:text-slate-100 text-sm">{res.cartao.nome}</p>
-											</div>
-											<button
-												onClick={() => navigate(`/faturas/${res.cartao.id}`)}
-												className="text-xs font-black text-indigo-500 hover:text-indigo-600 dark:text-indigo-455 hover:underline cursor-pointer"
-											>
-												Detalhes
-											</button>
-										</div>
-
-										<div className="grid grid-cols-3 gap-2 text-left pt-1">
-											<div>
-												<span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Fatura</span>
-												<p className="font-black text-slate-700 dark:text-slate-200 text-xs">
-													R$ {res.totalFatura.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-												</p>
-											</div>
-											<div>
-												<span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Pago</span>
-												<p className="font-black text-emerald-600 dark:text-emerald-400 text-xs">
-													R$ {res.totalPago.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-												</p>
-											</div>
-											<div>
-												<span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Pendente</span>
-												<p className="font-black text-rose-500 dark:text-rose-455 text-xs">
-													R$ {res.pendente.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-												</p>
-											</div>
-										</div>
-
-										{Number(res.cartao.limite) > 0 && (
-											<div className="space-y-1.5 pt-1">
-												<div className="flex justify-between items-center text-[9px] text-slate-400 dark:text-slate-550 font-black uppercase tracking-wider">
-													<span>Uso: {res.percentualUso.toFixed(0)}%</span>
-													<span>Disp: R$ {res.limiteDisponivel.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} / R$ {Number(res.cartao.limite).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}</span>
-												</div>
-												<div className="w-full bg-slate-150 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
-													<div
-														className="h-full rounded-full transition-all duration-500"
-														style={{
-															width: `${Math.min(res.percentualUso, 100)}%`,
-															backgroundColor: res.cartao.cor_hex || "#6366f1"
-														}}
-													/>
-												</div>
-											</div>
-										)}
-									</div>
-								);
-							})
-						)}
-					</div>
-				</div>
-
-				{/* Devedores Ativos */}
-				<div className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col h-full transition-colors">
-					<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-						<h3 className="font-black text-slate-800 dark:text-slate-100 text-xl tracking-tight flex items-center gap-2">
-							<Users className="text-pink-500" size={22} />
-							<span>Devedores Ativos</span>
-						</h3>
-						<button
-							onClick={() => navigate("/devedores")}
-							className="text-xs font-bold text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 bg-indigo-50 hover:bg-indigo-100/60 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/30 px-3.5 py-1.5 rounded-full transition-all cursor-pointer w-full sm:w-auto text-center"
-						>
-							Ir para Devedores
-						</button>
-					</div>
-
-					<div className="space-y-4 flex-1">
-						{devedores.filter(d => d.total_devido > 0).length === 0 ? (
-							<div className="flex flex-col items-center justify-center h-48 text-center text-slate-400 dark:text-slate-500">
-								<AlertCircle size={32} className="text-emerald-400 mb-2" />
-								<p className="font-bold text-sm">Ninguém deve nada!</p>
-								<p className="text-xs">Não há valores a receber de terceiros pendentes.</p>
-							</div>
-						) : (
-							devedores
-								.filter((d: any) => d.total_devido > 0)
-								.map((devedor: any) => (
-									<div
-										key={devedor.contato.id}
-										className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-850/40 hover:bg-pink-50/10 dark:hover:bg-pink-950/10 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all"
-									>
-										<div className="flex items-center gap-3">
-											<div className="w-9 h-9 bg-pink-100 dark:bg-pink-950/60 rounded-full flex justify-center items-center">
-												<span className="text-pink-600 dark:text-pink-400 font-black text-sm">
-													{devedor.contato.nome.charAt(0).toUpperCase()}
-												</span>
-											</div>
-											<div>
-												<p className="font-bold text-slate-800 dark:text-slate-100 text-sm">{devedor.contato.nome}</p>
-												<p className="text-xs text-slate-400 dark:text-slate-500 font-medium mt-0.5">
-													{devedor.contato.telefone || "Sem Telefone"}
-												</p>
-											</div>
-										</div>
-
-										<div className="flex items-center gap-4">
-											<div className="text-right">
-												<p className="text-[10px] text-slate-400 dark:text-slate-550 font-bold uppercase">Total devido</p>
-												<p className="font-black text-rose-500 dark:text-rose-455 text-sm">
-													R$ {devedor.total_devido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-												</p>
-											</div>
-											<button
-												onClick={() => handleCobrarWhatsApp(devedor)}
-												className="p-2 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-xl transition-all shadow-sm shadow-emerald-100 dark:shadow-none cursor-pointer"
-												title="Cobrar via WhatsApp"
-											>
-												<Phone size={16} />
-											</button>
-										</div>
-									</div>
-								))
-						)}
-					</div>
-				</div>
-			</motion.div>
-
-			{/* ÚLTIMOS LANÇAMENTOS DINÂMICOS */}
-			<motion.div variants={itemVariants} className={`grid grid-cols-1 ${filterCategory === "all" ? "lg:grid-cols-2" : "lg:grid-cols-1"} gap-8`}>
-				{(filterCategory === "all" || filterCategory === "entradas") && (
-					<RecentSection title="Últimas Entradas" items={dashboardData.recentes.entradas} colorClass="text-emerald-500" bgIconClass="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400" icon={<ArrowUpRight size={18} />} onMore={() => navigate("/entradas")} dateField="data" />
-				)}
-				{(filterCategory === "all" || filterCategory === "gastos") && (
-					<RecentSection title="Últimos Gastos" items={dashboardData.recentes.gastos} colorClass="text-rose-500" bgIconClass="bg-rose-50 text-rose-600 dark:bg-rose-950/20 dark:text-rose-450" icon={<ArrowDownRight size={18} />} onMore={() => navigate("/gastos")} dateField="data" />
-				)}
-				{filterCategory === "cartoes" && (
-					<RecentSection title="Últimos Pagtos Fatura" items={dashboardData.recentes.cartoes} colorClass="text-purple-500" bgIconClass="bg-purple-50 text-purple-600 dark:bg-purple-950/20 dark:text-purple-400" icon={<ArrowDownRight size={18} />} onMore={() => navigate("/cartoes")} dateField="data" />
-				)}
-				{filterCategory === "investimentos" && (
-					<RecentSection title="Últimos Investimentos" items={dashboardData.recentes.investimentos} colorClass="text-blue-500" bgIconClass="bg-blue-50 text-blue-600 dark:bg-blue-950/20 dark:text-blue-400" icon={<TrendingUp size={18} />} onMore={() => navigate("/investimentos")} titleField="titulo" dateField={null} />
-				)}
-				{filterCategory === "dividas" && (
-					<RecentSection title="Últimas Dívidas" items={dashboardData.recentes.dividas} colorClass="text-orange-500" bgIconClass="bg-orange-50 text-orange-600 dark:bg-orange-950/20 dark:text-orange-400" icon={<TrendingDown size={18} />} onMore={() => navigate("/dividas")} dateField="vencimento_parcela" />
-				)}
-			</motion.div>
-
-			{/* INSIGHTS DE IA (NO FINAL DA PÁGINA) */}
-			<motion.div
-				variants={itemVariants}
-				className="bg-gradient-to-tr from-pink-500/5 via-white to-indigo-500/5 dark:from-pink-950/10 dark:via-slate-900 dark:to-indigo-950/10 p-6 sm:p-10 rounded-3xl sm:rounded-[40px] border border-pink-100/40 dark:border-pink-950/20 shadow-sm flex flex-col gap-6 transition-colors"
-			>
-				<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-					<div className="space-y-1">
-						<h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
-							<Sparkles className="text-pink-500 animate-pulse" size={24} />
-							<span>Insights de IA</span>
-						</h3>
-						<p className="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">
-							Consultor financeiro pessoal especialista de inteligência artificial
-						</p>
-					</div>
-					<button
-						onClick={generateAIInsights}
-						disabled={loadingAI}
-						className="px-5 py-2.5 bg-pink-50 hover:bg-pink-100/80 dark:bg-pink-950/30 dark:hover:bg-pink-900/40 text-pink-600 dark:text-pink-400 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 font-black text-xs uppercase shadow-sm cursor-pointer active:scale-95 shrink-0 self-start sm:self-center font-extrabold"
-					>
-						{loadingAI ? (
-							<div className="animate-spin rounded-full h-4 w-4 border-b-2 border-pink-600"></div>
-						) : (
-							<RefreshCw size={14} />
-						)}
-						<span>Gerar Nova Análise</span>
-					</button>
-				</div>
-
-				<div className="mt-2">
-					{aiReport ? (
-						<div className="text-sm sm:text-base text-slate-700 dark:text-slate-200 font-medium leading-relaxed whitespace-pre-line bg-white/60 dark:bg-slate-900/60 p-6 sm:p-8 rounded-2xl border border-slate-100/80 dark:border-slate-800/80 shadow-inner">
-							{aiReport}
 						</div>
-					) : (
-						<div className="p-8 bg-white/70 dark:bg-slate-900/60 rounded-2xl border border-slate-100 dark:border-slate-800 text-center space-y-4 max-w-lg mx-auto">
-							<div className="text-4xl select-none">✨</div>
-							<h4 className="font-extrabold text-slate-800 dark:text-slate-100 text-base">Análise de IA Pendente</h4>
-							<p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
-								Clique no botão **Gerar Nova Análise** acima para que o consultor financeiro de Inteligência Artificial elabore um diagnóstico detalhado da sua saúde financeira atual e monte recomendações personalizadas.
+					</motion.div>
+				)}
+				<motion.div className={`bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm ${filterCategory === "all" || filterCategory === "gastos" ? "lg:col-span-2" : "lg:col-span-3"}`}>
+					<h3 className="text-lg font-black text-slate-800 dark:text-slate-100 mb-6">Evolução Anual</h3>
+					<div className="h-64 w-full">
+						{isClient && (
+							<ResponsiveContainer width="100%" height="100%">
+								<BarChart data={dashboardData.dadosGrafico} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+									<CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
+									<XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} dy={5} />
+									<YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
+									<Tooltip cursor={{ fill: "#f8fafc" }} contentStyle={{ borderRadius: "12px", border: "none" }} formatter={(value: number) => [`R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, ""]} />
+									<Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+									{(filterCategory === "all" || filterCategory === "entradas") && <Bar dataKey="entradas" name="Entradas" fill="#10B981" radius={[4, 4, 0, 0]} barSize={12} />}
+									{(filterCategory === "all" || filterCategory === "gastos") && <Bar dataKey="gastos" name="Gastos/Faturas" fill="#F43F5E" radius={[4, 4, 0, 0]} barSize={12} />}
+								</BarChart>
+							</ResponsiveContainer>
+						)}
+					</div>
+				</motion.div>
+			</div>
+
+			{/* 6. FATURAS & DEVEDORES */}
+			<div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+				{/* STATUS DOS CARTÕES */}
+				{(filterCategory === "all" || filterCategory === "cartoes") && (
+					<div className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col h-full">
+						<div className="flex items-center gap-2 mb-6">
+							<CreditCard size={20} className="text-purple-500" />
+							<h3 className="font-black text-slate-800 dark:text-slate-100 text-lg sm:text-xl">Status dos Cartões</h3>
+						</div>
+						<div className="space-y-4 flex-1">
+							{cartoesResumo.length === 0 ? (
+								<div className="text-center text-slate-400 dark:text-slate-500 py-10"><p className="font-bold text-sm">Nenhum cartão cadastrado</p></div>
+							) : (
+								cartoesResumo.map((res: any) => {
+									return (
+										<div key={res.cartao.id} className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-850/40 rounded-xl border border-slate-100 dark:border-slate-800 flex flex-col gap-3 transition-colors hover:border-slate-200 dark:hover:border-slate-700">
+											<div className="flex justify-between items-center">
+												<div className="flex flex-col">
+													<p className="font-extrabold text-slate-800 dark:text-slate-100 text-sm sm:text-base">{res.cartao.nome}</p>
+													<p className="text-xs text-rose-500 dark:text-rose-450 font-bold mt-0.5">
+														Fatura: R$ {res.totalFatura.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+													</p>
+												</div>
+												<button onClick={() => navigate(`/faturas/${res.cartao.id}`)} className="p-2 text-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded-lg transition-colors shadow-sm" title="Acessar Fatura">
+													<ArrowRight size={16} />
+												</button>
+											</div>
+											{res.cartao.limite > 0 && (
+												<div className="mt-1">
+													<div className="flex justify-between text-[11px] sm:text-xs mb-1.5">
+														<span className="font-bold text-slate-500 dark:text-slate-400">
+															L. Disp: <span className="text-emerald-600 dark:text-emerald-450">R$ {res.limiteDisponivel.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+														</span>
+														<span className="font-bold text-slate-400">{Math.round(res.percentualUso)}% Usado</span>
+													</div>
+													<div className="h-1.5 sm:h-2 w-full bg-slate-200 dark:bg-slate-700/50 rounded-full overflow-hidden">
+														<div className={`h-full transition-all duration-500 ${res.percentualUso > 90 ? 'bg-rose-500' : res.percentualUso > 75 ? 'bg-amber-500' : 'bg-indigo-500'}`} style={{ width: `${Math.min(100, Math.max(0, res.percentualUso))}%` }} />
+													</div>
+												</div>
+											)}
+										</div>
+									);
+								})
+							)}
+						</div>
+					</div>
+				)}
+
+				{devedoresAtivos.length > 0 && (
+					<div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col">
+						<div className="flex justify-between items-center mb-6">
+							<h3 className="font-black text-slate-800 dark:text-slate-100 text-lg flex items-center gap-2"><Users className="text-pink-500" size={20} /> Devedores Ativos</h3>
+							<button onClick={() => navigate("/devedores")} className="text-xs font-bold text-indigo-500 hover:underline">Ir para Devedores</button>
+						</div>
+						<div className="space-y-4 flex-1">
+							{devedoresAtivos.map((devedor: any) => (
+								<div key={devedor.contato.id} className="flex justify-between items-center p-4 sm:p-5 bg-slate-50 dark:bg-slate-850/40 rounded-xl border border-slate-100 dark:border-slate-800">
+									<div>
+										<p className="font-extrabold text-slate-800 dark:text-slate-100 text-sm sm:text-base">{devedor.contato.nome}</p>
+										<p className="text-xs font-medium text-slate-500 dark:text-slate-450">{devedor.contato.telefone || "Sem Telefone"}</p>
+									</div>
+									<div className="flex items-center gap-4">
+										<div className="text-right">
+											<p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase">Total</p>
+											<p className="font-black text-rose-500 text-sm">R$ {devedor.total_devido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+										</div>
+										<button onClick={() => handleCobrarWhatsApp(devedor)} className="p-2 sm:p-2.5 bg-[#25D366] hover:bg-[#20BD5A] transition-colors text-white rounded-xl shadow-sm"><Phone size={16} /></button>
+									</div>
+								</div>
+							))}
+						</div>
+					</div>
+				)}
+			</div>
+
+			{/* 7. GRÁFICOS DE PIZZA (ORIGENS E DESTINOS) */}
+			<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+				<div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col items-center">
+					<h3 className="text-md font-black text-slate-800 dark:text-slate-100 mb-4 self-start flex items-center gap-2"><TrendingUp className="text-emerald-500" size={18} /> Origem das Entradas</h3>
+					<div className="h-64 w-full relative flex items-center justify-center">
+						{entradaPieData.length > 0 ? (
+							<>
+								<ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={entradaPieData} innerRadius={65} outerRadius={90} paddingAngle={2} dataKey="value" stroke="none">{entradaPieData.map((_, i) => <Cell key={i} fill={COLORS_ENTRADAS[i % COLORS_ENTRADAS.length]} />)}</Pie><Tooltip formatter={(val: number) => `R$ ${val.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} /><Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: 13, paddingTop: 10 }} /></PieChart></ResponsiveContainer>
+								<div className="absolute pb-10 flex flex-col items-center pointer-events-none"><span className="text-xs text-slate-400 dark:text-slate-500 font-bold">TOTAL</span><span className="text-xl font-black text-slate-800 dark:text-slate-100">R$ {totalEntradasPie.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}</span></div>
+							</>
+						) : <p className="text-slate-400 italic text-sm">Sem dados.</p>}
+					</div>
+				</div>
+				<div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col items-center">
+					<h3 className="text-md font-black text-slate-800 dark:text-slate-100 mb-4 self-start flex items-center gap-2"><TrendingDown className="text-rose-500" size={18} /> Destino dos Gastos</h3>
+					<div className="h-64 w-full relative flex items-center justify-center">
+						{gastoPieData.length > 0 ? (
+							<>
+								<ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={gastoPieData} innerRadius={65} outerRadius={90} paddingAngle={2} dataKey="value" stroke="none">{gastoPieData.map((_, i) => <Cell key={i} fill={COLORS_GASTOS[i % COLORS_GASTOS.length]} />)}</Pie><Tooltip formatter={(val: number) => `R$ ${val.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} /><Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: 13, paddingTop: 10 }} /></PieChart></ResponsiveContainer>
+								<div className="absolute pb-10 flex flex-col items-center pointer-events-none"><span className="text-xs text-slate-400 dark:text-slate-500 font-bold">TOTAL</span><span className="text-xl font-black text-slate-800 dark:text-slate-100">R$ {totalGastosPie.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}</span></div>
+							</>
+						) : <p className="text-slate-400 italic text-sm">Sem dados.</p>}
+					</div>
+				</div>
+			</div>
+
+			{/* 8. ÚLTIMOS LANÇAMENTOS */}
+			<div className={`grid grid-cols-1 ${filterCategory === "all" ? "lg:grid-cols-2" : "lg:grid-cols-1"} gap-6`}>
+				{(filterCategory === "all" || filterCategory === "entradas") && <RecentSection title="Últimas Entradas" items={dashboardData.recentes.entradas} colorClass="text-emerald-500 dark:text-emerald-455" bgIconClass="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400" icon={<ArrowUpRight size={16} />} onMore={() => navigate("/entradas")} dateField="data" />}
+				{(filterCategory === "all" || filterCategory === "gastos") && <RecentSection title="Últimos Gastos" items={dashboardData.recentes.gastos} colorClass="text-rose-500 dark:text-rose-455" bgIconClass="bg-rose-50 text-rose-600 dark:bg-rose-950/20 dark:text-rose-450" icon={<ArrowDownRight size={16} />} onMore={() => navigate("/gastos")} dateField="data" />}
+				{filterCategory === "cartoes" && <RecentSection title="Últimos Pagtos Fatura" items={dashboardData.recentes.cartoes} colorClass="text-purple-500 dark:text-purple-450" bgIconClass="bg-purple-50 text-purple-600 dark:bg-purple-950/20 dark:text-purple-400" icon={<ArrowDownRight size={16} />} onMore={() => navigate("/cartoes")} dateField="data" />}
+				{filterCategory === "investimentos" && <RecentSection title="Últimos Investimentos" items={dashboardData.recentes.investimentos} colorClass="text-blue-500 dark:text-blue-450" bgIconClass="bg-blue-50 text-blue-600 dark:bg-blue-950/20 dark:text-blue-400" icon={<TrendingUp size={16} />} onMore={() => navigate("/investimentos")} titleField="titulo" dateField={null} />}
+				{filterCategory === "dividas" && <RecentSection title="Últimas Dívidas" items={dashboardData.recentes.dividas} colorClass="text-orange-500 dark:text-orange-450" bgIconClass="bg-orange-50 text-orange-600 dark:bg-orange-950/20 dark:text-orange-400" icon={<TrendingDown size={16} />} onMore={() => navigate("/dividas")} dateField="vencimento_parcela" />}
+			</div>
+
+			{/* MODALS */}
+			<OnboardingContasModal 
+				isOpen={showOnboarding} 
+				userId={userId} 
+				onComplete={() => {
+					setShowOnboarding(false);
+					loadDashboardData();
+				}} 
+			/>
+
+			<AnimatePresence>
+				{showOrphanAlert && !showOnboarding && (
+					<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+						<motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="bg-white dark:bg-slate-900 rounded-3xl p-8 max-w-md w-full shadow-2xl border border-rose-100 dark:border-rose-900/30 text-center relative overflow-hidden">
+							<div className="absolute top-0 left-0 w-full h-1 bg-rose-500"></div>
+							<div className="w-16 h-16 bg-rose-50 dark:bg-rose-900/20 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-5">
+								<AlertCircle size={32} />
+							</div>
+							<h3 className="text-xl font-black text-slate-800 dark:text-slate-100 mb-3">Lançamentos Sem Conta</h3>
+							<p className="text-slate-500 dark:text-slate-400 text-sm mb-6 leading-relaxed">
+								Detectamos que existem lançamentos antigos que não estão vinculados a nenhuma conta bancária. Para que o seu saldo funcione corretamente, por favor, edite esses lançamentos adicionando a conta de origem/destino.
 							</p>
-						</div>
-					)}
-				</div>
+							<button onClick={() => setShowOrphanAlert(false)} className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all shadow-md">
+								Entendi
+							</button>
+						</motion.div>
+					</motion.div>
+				)}
+			</AnimatePresence>
 
-				<div className="pt-4 border-t border-slate-150/40 dark:border-slate-800/40 text-center">
-					<span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-						{aiReport ? "Gerado por Gemini AI • Dados consolidados do ano" : "Resumo Geral IA"}
-					</span>
-				</div>
-			</motion.div>
 		</motion.div>
 	);
 }
 
 function MetricCard({ title, value, icon, bgClass, colorClass, borderClass }: any) {
 	return (
-		<motion.div
-			whileHover={{ y: -4 }}
-			className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[32px] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col justify-between transition-all hover:border-slate-200 dark:hover:border-slate-700/80"
-		>
+		<motion.div whileHover={{ y: -2 }} className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col justify-between">
 			<div>
-				<div className="flex items-center gap-3 mb-4">
-					<div className={`p-2.5 rounded-2xl ${bgClass} ${colorClass}`}>
-						{icon}
-					</div>
-					<p className="text-slate-450 dark:text-slate-500 font-bold uppercase tracking-wider text-[10px]">{title}</p>
-				</div>
-				<h3 className="text-3xl font-black text-slate-855 dark:text-slate-100 flex items-baseline">
-					<span className="text-slate-400 dark:text-slate-655 text-xl font-bold mr-1">R$</span>
-					<span>{value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-				</h3>
+				<div className="flex items-center gap-3 mb-4"><div className={`p-3 rounded-xl ${bgClass} ${colorClass}`}>{icon}</div><p className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-xs">{title}</p></div>
+				<h3 className="text-3xl sm:text-4xl font-black text-slate-800 dark:text-slate-100 flex items-baseline"><span className="text-slate-400 dark:text-slate-655 text-xl font-bold mr-1.5 opacity-80">R$</span><span>{value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span></h3>
 			</div>
-
-			<div className="h-1.5 w-full bg-slate-50 dark:bg-slate-850 rounded-full mt-5 overflow-hidden">
-				<div className={`h-full ${borderClass} rounded-full`} style={{ width: "40%" }} />
-			</div>
+			<div className="h-1.5 w-full bg-slate-50 dark:bg-slate-850 rounded-full mt-6 overflow-hidden"><div className={`h-full ${borderClass} rounded-full`} style={{ width: "40%" }} /></div>
 		</motion.div>
 	);
 }
 
 function RecentSection({ title, items, colorClass, bgIconClass, icon, onMore, titleField = "descricao", dateField = "data" }: any) {
 	return (
-		<div className="bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col h-full transition-colors">
-			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-				<h3 className="font-black text-slate-800 dark:text-slate-100 text-xl tracking-tight">{title}</h3>
-				<button
-					onClick={onMore}
-					className="text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-305 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 px-3.5 py-1.5 rounded-full transition-colors flex items-center justify-center text-xs font-bold cursor-pointer w-full sm:w-auto"
-				>
-					<span>Ver mais</span> <ChevronRight size={14} className="ml-1" />
-				</button>
+		<div className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col h-full">
+			<div className="flex justify-between items-center mb-6">
+				<h3 className="font-black text-slate-800 dark:text-slate-100 text-lg sm:text-xl">{title}</h3>
+				<button onClick={onMore} className="text-indigo-500 hover:underline text-xs sm:text-sm font-bold">Ver mais</button>
 			</div>
-
-			<div className="space-y-5 flex-1">
+			<div className="space-y-4 flex-1">
 				{items.length === 0 ? (
-					<div className="flex items-center justify-center h-full text-slate-400 dark:text-slate-500 italic text-sm">
-						Nenhum registro encontrado.
-					</div>
+					<div className="text-slate-400 dark:text-slate-500 italic text-sm text-center py-6 font-medium">Nenhum registro.</div>
 				) : (
 					items.map((item: any, i: number) => (
-						<motion.div
-							key={i}
-							whileHover={{ x: 4 }}
-							className="flex justify-between items-center group cursor-default"
-						>
-							<div className="flex items-center gap-4">
-								<div className={`p-3 rounded-2xl ${bgIconClass}`}>
-									{icon}
-								</div>
-								<div>
-									<p className="font-bold text-slate-700 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-slate-100 transition-colors text-sm">{item[titleField] || item.descricao}</p>
-									{dateField && item[dateField] && (
-										<p className="text-[11px] text-slate-400 dark:text-slate-550 font-semibold mt-0.5">
-											{new Date(item[dateField] + "T12:00:00").toLocaleDateString("pt-BR")}
-										</p>
-									)}
+						<div key={i} className="flex justify-between items-center gap-4">
+							<div className="flex items-center gap-4 flex-1 min-w-0">
+								<div className={`p-3 rounded-xl shrink-0 ${bgIconClass}`}>{icon}</div>
+								<div className="min-w-0 flex-1">
+									<p className="font-extrabold text-slate-700 dark:text-slate-300 text-sm truncate">{item[titleField] || item.descricao}</p>
+									{dateField && item[dateField] && <p className="text-xs text-slate-500 dark:text-slate-450 font-semibold mt-0.5">{new Date(item[dateField] + "T12:00:00").toLocaleDateString("pt-BR")}</p>}
 								</div>
 							</div>
-							<p className={`font-black tracking-tight text-sm ${colorClass}`}>
-								<span className="text-[10px] mr-1 opacity-70">R$</span>
-								<span>{Number(item.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-							</p>
-						</motion.div>
+							<p className={`font-black text-sm sm:text-base shrink-0 ${colorClass}`}>R$ {Number(item.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+						</div>
 					))
 				)}
 			</div>

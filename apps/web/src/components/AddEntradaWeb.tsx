@@ -1,13 +1,35 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, Save, ArrowUpCircle, Edit3 } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
+import { financeService } from "../../../../packages/services/finance.service";
 
 export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
+	const [contas, setContas] = useState<any[]>([]);
 	const [form, setForm] = useState({
 		descricao: "",
 		valor: "", // Ex: "1.700,06"
 		data: new Date().toISOString().split("T")[0],
+		conta_id: "",
 	});
+
+	const carregarContas = async () => {
+		const {
+			data: { user },
+		} = await supabase.auth.getUser();
+		if (user) {
+			const contasData = await financeService.getContasBancarias(user.id);
+			setContas(contasData || []);
+			if (contasData && contasData.length === 1) {
+				setForm(prev => ({ ...prev, conta_id: contasData[0].id }));
+			}
+		}
+	};
+
+	useEffect(() => {
+		if (isOpen) {
+			carregarContas();
+		}
+	}, [isOpen]);
 
 	if (!isOpen) return null;
 
@@ -30,7 +52,7 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 
 		try {
 			const { error } = await supabase
-				.from("entradas")
+				.from("receitas")
 				.update({ descricao: newName.trim() })
 				.eq("usuario_id", user.id)
 				.eq("descricao", oldName);
@@ -49,6 +71,11 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 	};
 
 	const handleSave = async () => {
+		if (!form.conta_id) {
+			alert("Por favor, selecione uma Conta Bancária.");
+			return;
+		}
+
 		const {
 			data: { user },
 		} = await supabase.auth.getUser();
@@ -60,16 +87,17 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 		const valorNumerico = parseFloat(valorLimpo);
 
 		if (!user || !descFinal || isNaN(valorNumerico) || valorNumerico <= 0) {
-			alert("Insira um valor válido.");
+			alert("Insira um valor válido e uma descrição.");
 			return;
 		}
 
-		await supabase.from("entradas").insert([
+		await supabase.from("receitas").insert([
 			{
 				usuario_id: user.id,
 				descricao: descFinal,
 				valor: valorNumerico,
 				data: form.data,
+				conta_id: form.conta_id,
 			},
 		]);
 
@@ -77,6 +105,7 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 			descricao: "",
 			valor: "",
 			data: new Date().toISOString().split("T")[0],
+			conta_id: "",
 		});
 		onSuccess();
 		onClose();
@@ -154,7 +183,22 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 						</div>
 					</div>
 
-					<div className="grid grid-cols-2 gap-4">
+					<div className="space-y-1.5 mt-4">
+						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-wider">
+							Conta de Destino
+						</label>
+						<select
+							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-emerald-500 cursor-pointer text-sm"
+							value={form.conta_id}
+							onChange={(e) => setForm({ ...form, conta_id: e.target.value })}>
+							<option value="">Selecione onde o dinheiro entrou...</option>
+							{contas.map((c) => (
+								<option key={c.id} value={c.id}>{c.nome}</option>
+							))}
+						</select>
+					</div>
+
+					<div className="grid grid-cols-2 gap-4 mt-4">
 						<div className="space-y-1.5">
 							<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-wider">
 								Valor (R$)

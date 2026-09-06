@@ -17,12 +17,12 @@ export function ExportExcelButton() {
 
 			// 🔹 buscar dados
 			const { data: entradas } = await supabase
-				.from("entradas")
+				.from("receitas")
 				.select("*")
 				.eq("usuario_id", user.id);
 
 			const { data: gastos } = await supabase
-				.from("gastos")
+				.from("despesas")
 				.select("*")
 				.eq("usuario_id", user.id);
 

@@ -225,7 +225,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			setContatos(dataContatos || []);
 
 			const { data: dataGastos } = await supabase
-				.from('gastos')
+				.from("despesas")
 				.select('descricao, parcela_atual, total_parcelas, valor, data')
 				.eq('usuario_id', user.id)
 				.gt('total_parcelas', 1);
@@ -285,19 +285,19 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 Retorne APENAS um JSON estrito, sem blocos de código (markdown \`\`\`json), sem textos adicionais, apenas o objeto JSON.
 O JSON deve ter um array chamado "transacoes", e cada objeto deve ter:
 - "data": string (formato YYYY-MM-DD)
-- "descricao": string (nome limpo da transação. Para transações que representam Pix (enviados ou recebidos) ou transferências, mantenha obrigatoriamente o nome da pessoa destinatária ou remetente na descrição conforme aparece no extrato original, sem abreviar ou deletar, ex: "PIX ENVIADO - JHULIANA MARIA SILVA" ou "PIX RECEBIDO - PEDRO SOUZA". Para outras compras normais de cartão, limpe e remova indicações de parcelas como "de - X/Y", "X/Y", "de Y", "parcela X", etc., deixando apenas o nome do estabelecimento base.)
+- "categoria": string (Classifique o tipo exato da transação ou entrada. Para Entradas/Receitas, use classificações como "Pix Recebido", "Salário", "Rendimento", "Transferência", "Crédito em Conta", etc. Para gastos, adivinhe uma dessas: Moradia, Alimentação, Transporte, Saúde, Lazer, Educação, Assinaturas, Presente, Estetica e Comercio, Emprestimo, Serviços, Outros. Se for pagamento de fatura, use "Pagamento de Fatura".)
+- "descricao": string (NOME LIMPO da pessoa, empresa, estabelecimento ou cartão. EXTREMAMENTE IMPORTANTE: REMOVA todos os prefixos como "PIX ENVIADO", "PIX RECEBIDO", "LÍQUIDO DE VENCIMENTO", "PAGAMENTO RECEBIDO", "CRÉDITO EM CONTA". Na descrição, deve sobrar APENAS o nome do destinatário/remetente, a razão social, ou o nome do cartão. Exemplos: Se for "PIX RECEBIDO - PEDRO SOUZA", a descrição é APENAS "Pedro Souza". Se for "LÍQUIDO DE VENCIMENTO", a descrição é o nome da empresa ou apenas "Salário Líquido". Se for "CRÉDITO EM CONTA", tente colocar o nome do banco ou origem. Remova também indicações de parcelas como "de - X/Y", "parcela X".)
 - "valor": number (positivo, float)
-- "tipo_transacao": string (exatamente "Entrada", "Gasto", "Meta" ou "PagamentoFatura". Classifique como "Meta" se a descrição indicar transferência, depósito ou resgate de caixinha, cofrinho, investimentos de metas ou reserva de economia, como "retirado para caixinha", "guardado na caixinha", "cofrinho", etc. Classifique como "PagamentoFatura" se a descrição indicar explicitamente o pagamento, liquidação ou recebimento de crédito da fatura de um cartão de crédito, por exemplo "Pagamento de fatura", "Pagamento Nubank", "Pagamento recebido", "Pagamento efetuado", "Crédito por pagamento", etc.)
-- "categoria": string (adivinhe uma dessas: Moradia, Alimentação, Transporte, Saúde, Lazer, Educação, Assinaturas, Presente, Estetica e Comercio, Emprestimo, Salário, Serviços, Outros)
+- "tipo_transacao": string (exatamente "Entrada", "Gasto", "Meta" ou "PagamentoFatura". Classifique como "Meta" se a descrição indicar transferência, depósito ou resgate de caixinha, cofrinho, investimentos de metas ou reserva de economia. Classifique como "PagamentoFatura" se a descrição indicar explicitamente o pagamento, liquidação ou recebimento de crédito da fatura de um cartão de crédito.)
 - "parcela_atual": number (se for "1/10" ou "de - 1/12", coloque 1. Se não tiver parcela, 1)
 - "total_parcelas": number (se for "1/10" ou "de - 1/12", coloque 12 ou o número total de parcelas indicado. Se não tiver parcela, 1)
 - "terceiro": boolean (true se for pagamento para/por terceiro e não do próprio titular, ex: compra pra fulano, OU se for uma entrada recebida de terceiros que represente reembolso/PIX de despesas divididas)
-- "nome_terceiro": string (se "terceiro" for true, o nome do terceiro identificado no extrato/compra/recebimento, por exemplo se for Gasto "VMT MAKUKE" para Jhulie ou Entrada "PIX Jhuliana Maria", retorne "Jhulie" ou "Jhuliana")
-- "metodo_pagamento": string (exatamente "Crédito" se for um gasto no cartão de crédito, mesmo que de 1x só sem parcelas, ou se o arquivo analisado for claramente uma fatura de cartão; "Débito" para extrato de conta corrente comum; ou "Pix" se for transferência instantânea Pix)
+- "nome_terceiro": string (se "terceiro" for true, o nome do terceiro identificado no extrato)
+- "metodo_pagamento": string (exatamente "Crédito" se for um gasto no cartão de crédito; "Débito" para extrato de conta corrente comum; ou "Pix" se for transferência instantânea Pix)
 
 Regras Importantes de Análise:
-1. Quando houver operações de crédito/antecipação ou empréstimo onde o valor do crédito entra como saldo na conta, mas há uma diferença de juros/taxas retida, identifique essa diferença e gere uma transação separada do tipo "Gasto" (categoria "Emprestimo" ou "Outros") com descrição apropriada (ex: "Juros de Antecipação" ou similar) representando esse gasto correspondente à diferença dos juros.
-2. Para transações do tipo PIX ou transferências, inclua na descrição o nome do destinatário ou remetente conforme consta no extrato (ex: 'Pix Enviado Jhuliana Silva' ou 'Pix Recebido Pedro Souza'). Não abrevie nem remova esses nomes.`;
+1. Quando houver operações de crédito/antecipação ou empréstimo onde o valor do crédito entra como saldo na conta, mas há uma diferença de juros/taxas retida, identifique essa diferença e gere uma transação separada do tipo "Gasto" (categoria "Emprestimo" ou "Outros") com descrição apropriada (ex: "Juros de Antecipação" ou similar).
+2. A separação entre CATEGORIA e DESCRIÇÃO deve ser rigorosa: Categoria é a NATUREZA da transação (Pix, Salário, Alimentação), Descrição é a ENTIDADE (João da Silva, Mercado Extra, Nubank).`;
 
 			let base64String = "";
 			let mimeType = "";
@@ -440,8 +440,8 @@ Regras Importantes de Análise:
 			const categoriaMap = new Map<string, string>();
 			if (user) {
 				const [historyGastos, historyEntradas] = await Promise.all([
-					supabase.from("gastos").select("descricao, categoria").eq("usuario_id", user.id),
-					supabase.from("entradas").select("descricao, categoria").eq("usuario_id", user.id)
+					supabase.from("despesas").select("descricao, categoria").eq("usuario_id", user.id),
+					supabase.from("receitas").select("descricao, categoria").eq("usuario_id", user.id)
 				]);
 
 				historyGastos.data?.forEach(g => {
@@ -635,7 +635,7 @@ Regras Importantes de Análise:
 				}));
 
 			if (entradasParaSalvar.length > 0) {
-				const { error } = await supabase.from("entradas").insert(entradasParaSalvar);
+				const { error } = await supabase.from("receitas").insert(entradasParaSalvar);
 				if (error) throw error;
 				importados += entradasParaSalvar.length;
 			}
@@ -668,7 +668,7 @@ Regras Importantes de Análise:
 			}
 
 			const { data: activeDividas } = await supabase
-				.from("dividas")
+				.from("passivos")
 				.select("*")
 				.eq("usuario_id", user.id)
 				.eq("status", "pendente");
@@ -686,7 +686,7 @@ Regras Importantes de Análise:
 					const novoStatus = novaParcela === matchedDivida.parcelas ? "quitada" : "pendente";
 
 					const { error: updateError } = await supabase
-						.from("dividas")
+						.from("passivos")
 						.update({
 							parcela_atual: novaParcela,
 							status: novoStatus,

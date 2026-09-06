@@ -63,7 +63,7 @@ export default function EntradasScreen() {
 			if (!user) return;
 
 			const { data, error } = await supabase
-				.from("entradas")
+				.from("receitas")
 				.select("*")
 				.eq("usuario_id", user.id)
 				.gte("data", `${year}-01-01`)
@@ -115,7 +115,7 @@ export default function EntradasScreen() {
 			const {
 				data: { user },
 			} = await supabase.auth.getUser();
-			await supabase.from("entradas").insert([
+			await supabase.from("receitas").insert([
 				{
 					usuario_id: user?.id,
 					descricao,
@@ -312,14 +312,14 @@ export default function EntradasScreen() {
 				onClose={() => setEditModalVisible(false)}
 				onSave={async (id, novoValor) => {
 					await supabase
-						.from("entradas")
+						.from("receitas")
 						.update({ valor: Number(novoValor) })
 						.eq("id", id);
 					setEditModalVisible(false);
 					loadData();
 				}}
 				onDelete={async (id) => {
-					await supabase.from("entradas").delete().eq("id", id);
+					await supabase.from("receitas").delete().eq("id", id);
 					setEditModalVisible(false);
 					loadData();
 				}}

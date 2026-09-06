@@ -84,11 +84,18 @@ const NOME_MESES_COMPLETO = [
 
 export default function GastosWeb() {
 	const [data, setData] = useState<any[]>([]);
+	const [entradasData, setEntradasData] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [year, setYear] = useState(new Date().getFullYear());
 	const [monthFilter, setMonthFilter] = useState<number | "all">("all");
 	const [isAddOpen, setIsAddOpen] = useState(false);
 	const [isEditOpen, setIsEditOpen] = useState(false);
+	const [editSearchTerm, setEditSearchTerm] = useState("");
+
+	const handleEditRow = (descricao: string) => {
+		setEditSearchTerm(descricao);
+		setIsEditOpen(true);
+	};
 
 	const loadData = useCallback(async () => {
 		setLoading(true);
@@ -96,14 +103,24 @@ export default function GastosWeb() {
 			data: { user },
 		} = await supabase.auth.getUser();
 		if (user) {
-			const { data: list } = await supabase
-				.from("gastos")
-				.select("*")
-				.eq("usuario_id", user.id)
-				.gte("data", `${year}-01-01`)
-				.lte("data", `${year}-12-31`)
-				.order("data", { ascending: true });
-			setData(list || []);
+			const [gastosRes, entradasRes] = await Promise.all([
+				supabase
+					.from("despesas")
+					.select("*")
+					.eq("usuario_id", user.id)
+					.gte("data", `${year}-01-01`)
+					.lte("data", `${year}-12-31`)
+					.order("data", { ascending: true }),
+				supabase
+					.from("receitas")
+					.select("*")
+					.eq("usuario_id", user.id)
+					.gte("data", `${year}-01-01`)
+					.lte("data", `${year}-12-31`)
+					.order("data", { ascending: true })
+			]);
+			setData(gastosRes.data || []);
+			setEntradasData(entradasRes.data || []);
 		}
 		setLoading(false);
 	}, [year]);
@@ -116,7 +133,7 @@ export default function GastosWeb() {
 		async function setupRealtime() {
 			const { data: { user } } = await supabase.auth.getUser();
 			if (user) {
-				channel = financeService.subscribeToChanges("gastos", user.id, loadData);
+				channel = financeService.subscribeToChanges("despesas", user.id, loadData);
 			}
 		}
 		setupRealtime();
@@ -179,6 +196,32 @@ export default function GastosWeb() {
 			};
 		});
 	}, [data]);
+
+	const fluxoMensalConsolidado = useMemo(() => {
+		const receitas = Array(12).fill(0);
+		const despesas = Array(12).fill(0);
+		const saldos = Array(12).fill(0);
+
+		entradasData.forEach((item) => {
+			const mesIdx = new Date(item.data + "T12:00:00").getUTCMonth();
+			receitas[mesIdx] += Number(item.valor);
+		});
+
+		data.forEach((item) => {
+			const mesIdx = new Date(item.data + "T12:00:00").getUTCMonth();
+			despesas[mesIdx] += Number(item.valor);
+		});
+
+		for (let i = 0; i < 12; i++) {
+			saldos[i] = receitas[i] - despesas[i];
+		}
+
+		const totalReceitas = receitas.reduce((a, b) => a + b, 0);
+		const totalDespesas = despesas.reduce((a, b) => a + b, 0);
+		const totalSaldo = totalReceitas - totalDespesas;
+
+		return { receitas, despesas, saldos, totalReceitas, totalDespesas, totalSaldo };
+	}, [entradasData, data]);
 
 	const totalPeriodo = useMemo(() => {
 		if (monthFilter === "all")
@@ -689,15 +732,26 @@ export default function GastosWeb() {
 										<tr key={i} className="hover:bg-[#FDFCFB] dark:hover:bg-slate-850/50 transition-colors group">
 											<td 
 												title={resumoObs}
-												className={`p-4 sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-[#FDFCFB] dark:group-hover:bg-slate-850/50 z-10 border-r border-slate-100 dark:border-slate-800 transition-colors ${
-													resumoObs ? "cursor-help" : "cursor-default"
-												}`}>
-												<div className="flex items-center gap-3">
-													{getGastoIcon(row.descricao, row.categoria)}
-													<div>
-														<p className="font-black text-[#3D3030] dark:text-slate-205 text-sm group-hover:text-pink-600 dark:group-hover:text-pink-400 transition-colors">{row.descricao}</p>
-														<p className="text-[9px] font-bold text-gray-300 dark:text-slate-500 uppercase">{row.categoria}</p>
+												onClick={() => handleEditRow(row.descricao)}
+												className={`p-4 sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-[#FDFCFB] dark:group-hover:bg-slate-850/50 z-10 border-r border-slate-100 dark:border-slate-800 transition-colors cursor-pointer`}>
+												<div className="flex items-center justify-between w-full pr-2">
+													<div className="flex items-center gap-3">
+														{getGastoIcon(row.descricao, row.categoria)}
+														<div>
+															<p className="font-black text-[#3D3030] dark:text-slate-200 text-sm group-hover:text-pink-600 dark:group-hover:text-pink-400 transition-colors">{row.descricao}</p>
+															<p className="text-[9px] font-bold text-gray-400 dark:text-slate-500 uppercase">{row.categoria}</p>
+														</div>
 													</div>
+													<button
+														onClick={(e) => {
+															e.stopPropagation();
+															handleEditRow(row.descricao);
+														}}
+														className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-pink-50 dark:hover:bg-slate-800 text-slate-400 hover:text-pink-600 rounded-full transition-all cursor-pointer"
+														title="Editar lançamentos"
+													>
+														<Edit3 size={14} />
+													</button>
 												</div>
 											</td>
 											{row.valores.map((v, idx) => {
@@ -709,8 +763,9 @@ export default function GastosWeb() {
 													<td
 														key={idx}
 														title={obsText}
+														onClick={() => handleEditRow(row.descricao)}
 														className={`p-3 text-center text-sm relative transition-all group/cell ${
-															temObs ? "cursor-help" : "cursor-default"
+															temObs ? "cursor-pointer" : "cursor-default"
 														} ${monthFilter === idx ? "bg-pink-50/20 dark:bg-pink-950/10" : ""} ${isCurrentMonth ? "bg-pink-50/10 dark:bg-pink-950/5" : ""}`}>
 														<div className="flex flex-col items-center">
 															<span className={`font-bold transition-colors ${
@@ -739,6 +794,55 @@ export default function GastosWeb() {
 									);
 								})
 							)}
+							{/* SUMMARIZED FLOW ROWS (RECEITAS, DESPESAS, SALDO) */}
+							{!loading && matrixData.length > 0 && (
+								<>
+									{/* Receitas Row */}
+									<tr className="bg-emerald-50/10 dark:bg-emerald-950/10 font-bold border-t-2 border-slate-200 dark:border-slate-800">
+										<td className="p-4 font-black text-emerald-600 dark:text-emerald-400 sticky left-0 bg-white dark:bg-slate-900 z-10 border-r border-slate-105 dark:border-slate-800">
+											TOTAL RECEITAS (+)
+										</td>
+										{fluxoMensalConsolidado.receitas.map((val, idx) => (
+											<td key={idx} className="p-3 text-center text-emerald-600 dark:text-emerald-400 font-bold">
+												{val > 0 ? val.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : "—"}
+											</td>
+										))}
+										<td className="p-4 text-right font-black text-emerald-700 dark:text-emerald-350 bg-emerald-50/20 dark:bg-emerald-950/20 border-l border-slate-105 dark:border-slate-800">
+											R$ {fluxoMensalConsolidado.totalReceitas.toLocaleString()}
+										</td>
+									</tr>
+
+									{/* Despesas Row */}
+									<tr className="bg-rose-50/10 dark:bg-rose-955/10 font-bold">
+										<td className="p-4 font-black text-rose-600 dark:text-rose-455 sticky left-0 bg-white dark:bg-slate-900 z-10 border-r border-slate-105 dark:border-slate-800">
+											TOTAL DESPESAS (-)
+										</td>
+										{fluxoMensalConsolidado.despesas.map((val, idx) => (
+											<td key={idx} className="p-3 text-center text-rose-600 dark:text-rose-455 font-bold">
+												{val > 0 ? val.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : "—"}
+											</td>
+										))}
+										<td className="p-4 text-right font-black text-rose-700 dark:text-rose-350 bg-rose-50/20 dark:bg-rose-955/20 border-l border-slate-105 dark:border-slate-800">
+											R$ {fluxoMensalConsolidado.totalDespesas.toLocaleString()}
+										</td>
+									</tr>
+
+									{/* Saldo Líquido Row */}
+									<tr className="bg-slate-100/50 dark:bg-slate-950 font-black border-t border-slate-200 dark:border-slate-800">
+										<td className="p-4 font-black text-slate-800 dark:text-slate-200 sticky left-0 bg-white dark:bg-slate-900 z-10 border-r border-slate-105 dark:border-slate-800">
+											SALDO LÍQUIDO (=)
+										</td>
+										{fluxoMensalConsolidado.saldos.map((val, idx) => (
+											<td key={idx} className={`p-3 text-center font-black ${val >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-455"}`}>
+												{val.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+											</td>
+										))}
+										<td className={`p-4 text-right font-black border-l border-slate-105 dark:border-slate-800 ${fluxoMensalConsolidado.totalSaldo >= 0 ? "text-emerald-700 dark:text-emerald-350 bg-emerald-50/20 dark:bg-emerald-950/20" : "text-rose-700 dark:text-rose-350 bg-rose-50/20 dark:bg-rose-955/20"}`}>
+											R$ {fluxoMensalConsolidado.totalSaldo.toLocaleString()}
+										</td>
+									</tr>
+								</>
+							)}
 						</tbody>
 					</table>
 				</div>
@@ -752,10 +856,13 @@ export default function GastosWeb() {
 			/>
 			<EditGastoWeb
 				isOpen={isEditOpen}
-				onClose={() => setIsEditOpen(false)}
+				onClose={() => {
+					setIsEditOpen(false);
+					setEditSearchTerm("");
+				}}
 				onSuccess={loadData}
 				dataSnapshot={data}
-				sugestoes={descricoesExistentes}
+				initialSearchTerm={editSearchTerm}
 			/>
 		</div>
 	);

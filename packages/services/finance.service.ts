@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { getFaturaCycle } from "../utils/cartao.utils";
 
 export const financeService = {
   /**
@@ -31,15 +32,30 @@ export const financeService = {
    */
   async getMonthlyStats(usuario_id: string, startDate: string, endDate: string) {
     try {
-      const [entradas, gastosDebito, pagamentosFatura] = await Promise.all([
-        supabase.from("entradas").select("valor").eq("usuario_id", usuario_id).gte("data", startDate).lte("data", endDate),
-        supabase.from("gastos").select("valor").eq("usuario_id", usuario_id).eq("considerar_soma", true).gte("data", startDate).lte("data", endDate),
-        supabase.from("pagamentos_faturas").select("valor").eq("usuario_id", usuario_id).gte("data", startDate).lte("data", endDate),
-      ]);
+      const { data: transacoes, error } = await supabase
+        .from("transacoes")
+        .select("valor, tipo, cartao_id")
+        .eq("usuario_id", usuario_id)
+        .gte("data", startDate)
+        .lte("data", endDate)
+        .in("status", ["CONFIRMADA", "PENDENTE"]); // Ajuste conforme seu enum de status
 
-      const totalEntradas = entradas.data?.reduce((sum: number, item: any) => sum + Number(item.valor), 0) || 0;
-      const totalGastosDebito = gastosDebito.data?.reduce((sum: number, item: any) => sum + Number(item.valor), 0) || 0;
-      const totalPagamentos = pagamentosFatura.data?.reduce((sum: number, item: any) => sum + Number(item.valor), 0) || 0;
+      if (error) throw error;
+
+      let totalEntradas = 0;
+      let totalGastosDebito = 0;
+      let totalPagamentos = 0;
+
+      transacoes?.forEach((t: any) => {
+        const valorNum = Number(t.valor);
+        if (t.tipo === "RECEITA") {
+          totalEntradas += valorNum;
+        } else if (t.tipo === "DESPESA" && !t.cartao_id) {
+          totalGastosDebito += valorNum;
+        } else if (t.tipo === "PAGAMENTO_FATURA") {
+          totalPagamentos += valorNum;
+        }
+      });
 
       return {
         totalEntradas,
@@ -54,29 +70,70 @@ export const financeService = {
 
   async getRecentTransactions(usuario_id: string, limit: number) {
     try {
-      const [entradas, gastos] = await Promise.all([
-        supabase.from("entradas").select("id, descricao, valor, data").eq("usuario_id", usuario_id).order("data", { ascending: false }).limit(limit),
-        supabase.from("gastos").select("id, descricao, valor, data, metodo_pagamento").eq("usuario_id", usuario_id).order("data", { ascending: false }).limit(limit),
-      ]);
+      const { data, error } = await supabase
+        .from("transacoes")
+        .select("id, descricao, valor, data, tipo, cartao_id")
+        .eq("usuario_id", usuario_id)
+        .order("data", { ascending: false })
+        .limit(limit);
 
-      const merged = [
-        ...(entradas.data?.map((i: any) => ({ ...i, tipo: "entrada" })) || []),
-        ...(gastos.data?.map((i: any) => ({ ...i, tipo: "gasto" })) || []),
-      ];
+      if (error) throw error;
 
-      return merged
-        .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
-        .slice(0, limit);
+      // Mapeia para o formato que a interface já espera (metodo_pagamento, isGasto)
+      const formatted = (data || []).map((t: any) => ({
+        id: t.id,
+        descricao: t.descricao,
+        valor: t.valor,
+        data: t.data,
+        isGasto: t.tipo === "DESPESA" || t.tipo === "PAGAMENTO_FATURA",
+        metodo_pagamento: t.cartao_id ? "Crédito" : "Débito",
+        tipo_transacao: t.tipo
+      }));
+
+      return formatted;
     } catch (error) { throw error; }
   },
 
+  async getContasBancarias(usuario_id: string) {
+    const { data, error } = await supabase.from("contas_bancarias").select("*").eq("usuario_id", usuario_id).order("nome");
+    if (error) throw error;
+    return data;
+  },
+
+  async addContaBancaria(usuario_id: string, dados: any) {
+    const { data, error } = await supabase.from("contas_bancarias").insert([{ ...dados, usuario_id }]).select();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateContaBancaria(usuario_id: string, conta_id: string, dados: any) {
+    const { data, error } = await supabase
+      .from("contas_bancarias")
+      .update(dados)
+      .eq("id", conta_id)
+      .eq("usuario_id", usuario_id)
+      .select();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteContaBancaria(usuario_id: string, conta_id: string) {
+    const { error } = await supabase
+      .from("contas_bancarias")
+      .delete()
+      .eq("id", conta_id)
+      .eq("usuario_id", usuario_id);
+    if (error) throw error;
+  },
+
   async getCartoes(usuario_id: string) {
-    const { data, error } = await supabase.from("cartoes").select("*").eq("usuario_id", usuario_id).order("nome");
+    const { data, error } = await supabase.from("cartoes").select("*, contas_bancarias(nome)").eq("usuario_id", usuario_id).order("nome");
     if (error) throw error;
     return data;
   },
 
   async addCartao(usuario_id: string, dados: any) {
+    // Inclui conta_id e dependente se houver
     const { data, error } = await supabase.from("cartoes").insert([{ ...dados, usuario_id }]).select();
     if (error) throw error;
     return data;
@@ -94,7 +151,7 @@ export const financeService = {
   },
 
   async getAllGastosCredito(usuario_id: string) {
-    const { data, error } = await supabase.from("gastos").select("*").eq("usuario_id", usuario_id).eq("metodo_pagamento", "Crédito"); 
+    const { data, error } = await supabase.from("despesas").select("*").eq("usuario_id", usuario_id).eq("metodo_pagamento", "Crédito"); 
     if (error) throw error;
     return data;
   },
@@ -122,30 +179,15 @@ export const financeService = {
     const isCredito = form.metodo_pagamento === "Crédito";
     const descricaoLimpa = limparDescricao(form.descricao);
 
-    // 💳 PARCELADO (CRIAÇÃO MANUAL OU IMPORTAÇÃO DE SÉRIE)
+    // 💳 PARCELADO (CRIAÇÃO MANUAL)
     if (isCredito && numParcelas > 1) {
       const valorDaParcela = form.valor_ja_dividido ? valorNumerico : (valorNumerico / numParcelas);
       const [year, month, day] = form.data.split('-').map(Number);
       const currentParcelaInput = form.parcela_atual || 1;
 
-      // 1. Procurar parcelas já existentes para essa mesma descrição e total de parcelas
-      const { data: existingSeries } = await supabase
-        .from("gastos")
-        .select("id, parcela_atual, identificador_parcelamento, data")
-        .eq("usuario_id", usuario_id)
-        .eq("total_parcelas", numParcelas)
-        .ilike("descricao", `%${descricaoLimpa}%`);
-
-      const foundAgrupador = existingSeries?.find(g => g.identificador_parcelamento)?.identificador_parcelamento;
-      const finalAgrupador = foundAgrupador || form.identificador_parcelamento || crypto.randomUUID();
-      const existingParcelas = new Set(existingSeries?.map(g => g.parcela_atual) || []);
-
-      const listaParcelas = [];
+      const listaTransacoes = [];
 
       for (let i = 1; i <= numParcelas; i++) {
-        // Se a parcela já existe no banco de dados, pulamos
-        if (existingParcelas.has(i)) continue;
-
         // Calcula a data da parcela i deslocada a partir do mês da parcela de entrada
         const deslocamentoMeses = i - currentParcelaInput;
         const dataParcela = new Date(year, month - 1 + deslocamentoMeses, day, 12, 0, 0);
@@ -153,60 +195,82 @@ export const financeService = {
           dataParcela.setDate(0); // Ajuste de fim de mês
         }
 
-        listaParcelas.push({
+        listaTransacoes.push({
           usuario_id,
-          descricao: descricaoLimpa,
+          tipo: 'DESPESA',
+          descricao: `${descricaoLimpa} (${i}/${numParcelas})`,
           valor: valorDaParcela,
           data: dataParcela.toISOString().split("T")[0],
-          categoria: form.categoria || "Outros",
-          classificacao: form.classificacao || "Variável",
-          tipo: form.tipo || "Essencial",
-          metodo_pagamento: "Crédito",
           cartao_id: form.cartao_id,
-          parcela_atual: i,
-          total_parcelas: numParcelas,
-          identificador_parcelamento: finalAgrupador,
-          considerar_soma: false,
-          terceiro: form.terceiro || false,
-          contato_id: form.contato_id || null,
-          terceiro_pago: form.terceiro_pago || false,
-          observacao: form.observacao || null,
-          conta_id: form.conta_id || null,
+          conta_id: null,
+          observacao: `[LEGADO] Categoria: ${form.categoria} | Agrupador: ${form.identificador_parcelamento}`,
         });
       }
 
-      if (listaParcelas.length > 0) {
-        const { error } = await supabase.from("gastos").insert(listaParcelas);
+      if (listaTransacoes.length > 0) {
+        const { error } = await supabase.from("transacoes").insert(listaTransacoes);
         if (error) throw error;
       }
       return;
     }
 
     // 💸 GASTO NORMAL
-    const { error } = await supabase.from("gastos").insert([
+    const { error } = await supabase.from("transacoes").insert([
       {
         usuario_id,
+        tipo: 'DESPESA',
         descricao: descricaoLimpa,
         valor: valorNumerico,
         data: form.data,
-        categoria: form.categoria || "Outros",
-        classificacao: form.classificacao || "Variável",
-        tipo: form.tipo || "Essencial",
-        metodo_pagamento: form.metodo_pagamento,
-        cartao_id: form.cartao_id || null,
-        total_parcelas: 1,
-        parcela_atual: 1,
-        identificador_parcelamento: null,
-        considerar_soma: true,
-        terceiro: form.terceiro || false,
-        contato_id: form.contato_id || null,
-        terceiro_pago: form.terceiro_pago || false,
-        observacao: form.observacao || null,
-        conta_id: form.conta_id || null,
+        cartao_id: isCredito ? form.cartao_id : null,
+        conta_id: isCredito ? null : form.conta_id,
+        observacao: `[LEGADO] Categoria: ${form.categoria}`,
       },
     ]);
 
     if (error) throw error;
+  },
+
+  async addTransferencia(usuario_id: string, form: any) {
+    const valorNumerico =
+      typeof form.valor === "string"
+        ? parseFloat(form.valor.replace(/\./g, "").replace(",", "."))
+        : form.valor;
+
+    if (!form.conta_origem_id || !form.conta_destino_id) {
+      throw new Error("Contas de origem e destino são obrigatórias");
+    }
+
+    // 1. Cria a Transação "Pai"
+    const { data: transacao, error: errTransacao } = await supabase.from("transacoes").insert([
+      {
+        usuario_id,
+        tipo: 'TRANSFERENCIA',
+        descricao: form.descricao || "Transferência entre contas",
+        valor: valorNumerico,
+        data: form.data,
+        observacao: form.observacao || null,
+        // conta_id não é preenchido aqui pois a transação envolve duas contas. 
+        // Os detalhes ficam na tabela `transferencias`.
+      },
+    ]).select().single();
+
+    if (errTransacao) throw errTransacao;
+
+    // 2. Cria o detalhamento de Transferência
+    const { error: errDetalhe } = await supabase.from("transferencias").insert([
+      {
+        usuario_id,
+        conta_origem_id: form.conta_origem_id,
+        conta_destino_id: form.conta_destino_id,
+        valor: valorNumerico,
+        data: form.data,
+        transacao_id: transacao.id,
+        observacao: form.observacao || null
+      }
+    ]);
+
+    if (errDetalhe) throw errDetalhe;
   },
 
   async bulkAddGastos(usuario_id: string, gastos: any[]) {
@@ -266,12 +330,12 @@ export const financeService = {
       }
     });
 
-    const { error } = await supabase.from("gastos").insert(payload);
+    const { error } = await supabase.from("despesas").insert(payload);
     if (error) throw error;
   },
 
   async getGastosPorCartao(cartao_id: string) {
-    const { data, error } = await supabase.from("gastos").select("*").eq("cartao_id", cartao_id).order("data", { ascending: false });
+    const { data, error } = await supabase.from("despesas").select("*").eq("cartao_id", cartao_id).order("data", { ascending: false });
     if (error) throw error;
     return data;
   },
@@ -306,8 +370,8 @@ export const financeService = {
   async getGlobalBalance(usuario_id: string) {
     try {
       const [entradas, gastosDebito, pagamentosFatura, metas, investimentos] = await Promise.all([
-        supabase.from("entradas").select("valor").eq("usuario_id", usuario_id),
-        supabase.from("gastos").select("valor").eq("usuario_id", usuario_id).eq("considerar_soma", true),
+        supabase.from("receitas").select("valor").eq("usuario_id", usuario_id),
+        supabase.from("despesas").select("valor").eq("usuario_id", usuario_id).eq("considerar_soma", true),
         supabase.from("pagamentos_faturas").select("valor").eq("usuario_id", usuario_id),
         supabase.from("metas").select("id, metas_depositos(valor)").eq("usuario_id", usuario_id),
         supabase.from("investimentos").select("valor_investido").eq("usuario_id", usuario_id),
@@ -381,8 +445,14 @@ export const financeService = {
   },
 
   async addDivida(usuario_id: string, dados: any) {
-    const { error } = await supabase.from("dividas").insert([{ ...dados, usuario_id }]);
+    const { error } = await supabase.from("passivos").insert([{ ...dados, usuario_id }]);
     if (error) throw error;
+  },
+
+  async getUserIdByEmail(email: string) {
+    const { data, error } = await supabase.rpc('get_user_id_by_email', { search_email: email });
+    if (error) throw error;
+    return data; // UUID ou null
   },
 
   async pagarParcelaDivida(dividaId: string, currentParcela: number, totalParcelas: number, currentVencimento: string) {
@@ -395,7 +465,7 @@ export const financeService = {
     const nextVencimento = date.toISOString().split("T")[0];
 
     const { error } = await supabase
-      .from("dividas")
+      .from("passivos")
       .update({
         parcela_atual: nextParcela,
         status,
@@ -408,7 +478,7 @@ export const financeService = {
 
   async quitarDivida(dividaId: string) {
     const { error } = await supabase
-      .from("dividas")
+      .from("passivos")
       .update({ status: 'quitada' })
       .eq("id", dividaId);
 
@@ -418,7 +488,7 @@ export const financeService = {
   async getDevedores(usuario_id: string) {
     // Busca TODOS os gastos marcados como terceiro = true (pagos e não pagos) para manter histórico
     const { data, error } = await supabase
-      .from("gastos")
+      .from("despesas")
       .select("*, contatos(*)")
       .eq("usuario_id", usuario_id)
       .eq("terceiro", true)
@@ -465,7 +535,7 @@ export const financeService = {
   },
 
   async marcarTerceiroPago(gasto_id: string, pago: boolean) {
-    const { error } = await supabase.from("gastos").update({ terceiro_pago: pago }).eq("id", gasto_id);
+    const { error } = await supabase.from("despesas").update({ terceiro_pago: pago }).eq("id", gasto_id);
     if (error) throw error;
   },
 
@@ -486,16 +556,14 @@ export const financeService = {
       
     if (cartaoError || !cartao) throw cartaoError || new Error("Cartão não encontrado");
 
-    // Lógica para filtrar o mês: do primeiro ao último dia do mês
-    // Como a data já representa a data em que a parcela cai:
-    const dataInicio = `${ano}-${String(mes).padStart(2, '0')}-01`;
+    // Lógica correta de filtragem baseada no ciclo exato de fechamento
+    const fechamentoDia = cartao.fechamento_dia || 1;
+    const vencimentoDia = cartao.vencimento_dia || 1;
     
-    // Para pegar o último dia do mês, criamos a data no dia 0 do próximo mês
-    const ultimoDia = new Date(ano, mes, 0).getDate();
-    const dataFim = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+    const { dataInicio, dataFim } = getFaturaCycle(anoMes, fechamentoDia, vencimentoDia);
     
     const { data: itens, error } = await supabase
-      .from("gastos")
+      .from("despesas")
       .select("*, contatos(*)")
       .eq("usuario_id", usuario_id)
       .eq("cartao_id", cartao_id)

@@ -20,6 +20,8 @@ export interface Gasto {
 export interface Divida {
   id: string;
   usuario_id: string;
+  credor_id?: string;
+  devedor_id?: string;
   descricao: string;
   valor_total: number;
   parcelas: number;

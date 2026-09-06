@@ -130,9 +130,9 @@ Retorne o conselho em formato markdown limpo, com títulos curtos, linguagem ami
 		const { data: { user } } = await supabase.auth.getUser();
 		if (user) {
 			const { data, error } = await supabase
-				.from("dividas")
-				.select("*")
-				.eq("usuario_id", user.id)
+				.from("passivos")
+				.select("*, credor:usuarios!credor_id(nome), devedor:usuarios!devedor_id(nome)")
+				.or(`usuario_id.eq.${user.id},credor_id.eq.${user.id},devedor_id.eq.${user.id}`)
 				.order("vencimento_parcela", { ascending: true });
 			
 			if (error) toast.error("Erro ao carregar dívidas");
@@ -148,7 +148,7 @@ Retorne o conselho em formato markdown limpo, com títulos curtos, linguagem ami
 		async function setupRealtime() {
 			const { data: { user } } = await supabase.auth.getUser();
 			if (user) {
-				channel = financeService.subscribeToChanges("dividas", user.id, loadDividas);
+				channel = financeService.subscribeToChanges("passivos", user.id, loadDividas);
 			}
 		}
 		setupRealtime();
@@ -175,9 +175,21 @@ Retorne o conselho em formato markdown limpo, com títulos curtos, linguagem ami
 	};
 
 	const stats = useMemo(() => {
-		const total = dividas.reduce((acc, d) => acc + Number(d.valor_total), 0);
-		const pendentes = dividas.filter(d => d.status === 'pendente').length;
-		return { total, pendentes };
+		let total = 0;
+		let saldoDevedor = 0;
+		let pendentes = 0;
+		
+		dividas.forEach(d => {
+			total += Number(d.valor_total);
+			if (d.status === 'pendente' || d.status === 'ativo') {
+				pendentes++;
+				const valorParcela = Number(d.valor_total) / Number(d.parcelas);
+				const parcelasRestantes = Number(d.parcelas) - Number(d.parcela_atual) + 1;
+				saldoDevedor += parcelasRestantes * valorParcela;
+			}
+		});
+
+		return { total, saldoDevedor, pendentes };
 	}, [dividas]);
 
 	const resultadoSimulacao = useMemo(() => {
@@ -220,13 +232,13 @@ Retorne o conselho em formato markdown limpo, com títulos curtos, linguagem ami
 					<p className="text-[10px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest mb-2">Parcelas Pendentes</p>
 					<h2 className="text-3xl font-black text-amber-500">{stats.pendentes} itens ativos</h2>
 				</div>
-				<div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-5 sm:p-8 rounded-3xl sm:rounded-[35px] shadow-lg shadow-purple-200 dark:shadow-none text-white relative overflow-hidden">
-					<div className="absolute bottom-0 right-0 w-40 h-40 bg-white/10 rounded-tl-full blur-xl" />
-					<p className="text-[10px] font-black text-purple-200 uppercase tracking-widest mb-2">Previsão Próxima</p>
-					<div className="flex items-center gap-3">
-						<Clock size={28} className="text-purple-200" />
-						<h2 className="text-xl font-black leading-tight">Organize-se para os<br/>próximos vencimentos</h2>
+				<div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-5 sm:p-8 rounded-3xl sm:rounded-[35px] shadow-lg shadow-purple-200 dark:shadow-none text-white relative overflow-hidden flex flex-col justify-between">
+					<div className="absolute bottom-0 right-0 w-40 h-40 bg-white/10 rounded-tl-full blur-xl pointer-events-none" />
+					<div>
+						<p className="text-[10px] font-black text-purple-200 uppercase tracking-widest mb-2">Saldo Devedor Restante</p>
+						<h2 className="text-3xl font-black">R$ {stats.saldoDevedor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h2>
 					</div>
+					<p className="text-[9px] text-purple-200 font-semibold mt-2 relative z-10">*Somente parcelas não pagas</p>
 				</div>
 			</div>
 
@@ -252,20 +264,60 @@ Retorne o conselho em formato markdown limpo, com títulos curtos, linguagem ami
 							</thead>
 							<tbody className="divide-y divide-gray-50">
 								{dividas.length > 0 ? (
-									dividas.map((d) => (
-										<tr key={d.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors group">
-											<td className="p-6">
-												<div className="font-black text-slate-700 dark:text-slate-205">{d.descricao}</div>
-												<div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mt-1 flex flex-wrap gap-2">
-													{d.banco && <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-350 px-2 py-0.5 rounded">{d.banco}</span>}
-													{d.tipo_divida && <span className="bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded">{d.tipo_divida}</span>}
-												</div>
-											</td>
-											<td className="p-6 text-center">
-												<span className="bg-slate-100 text-slate-500 px-3 py-1 rounded-lg text-[10px] font-black">
-													{d.parcela_atual}/{d.parcelas}
-												</span>
-											</td>
+									dividas.map((d) => {
+										const pctQuitado = d.status === "quitada" || d.status === "pago"
+											? 100
+											: Math.min(100, Math.max(0, Math.round(((Number(d.parcela_atual) - 1) / Number(d.parcelas)) * 100)));
+										
+										const rowSaldoDevedor = d.status === "quitada" || d.status === "pago"
+											? 0
+											: (Number(d.parcelas) - Number(d.parcela_atual) + 1) * (Number(d.valor_total) / Number(d.parcelas));
+										
+										const valorParcela = Number(d.valor_total) / Number(d.parcelas);
+										const parcelasRestantes = d.status === "quitada" || d.status === "pago"
+											? 0
+											: Number(d.parcelas) - Number(d.parcela_atual) + 1;
+
+										return (
+											<tr key={d.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors group">
+												<td className="p-6">
+													<div className="font-black text-slate-800 dark:text-slate-100">{d.descricao}</div>
+													<div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mt-1 flex flex-wrap gap-2">
+														{d.banco && <span className="bg-slate-105 dark:bg-slate-800 text-slate-600 dark:text-slate-350 px-2 py-0.5 rounded">{d.banco}</span>}
+														{d.tipo_divida && <span className="bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded">{d.tipo_divida}</span>}
+														{d.credor_id && d.devedor_id && (
+															<span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded flex items-center gap-1 border border-indigo-100 dark:border-indigo-900/50">
+																👥 Compartilhado
+															</span>
+														)}
+													</div>
+													{/* Progress Bar */}
+													<div className="mt-3.5 max-w-[200px]">
+														<div className="flex justify-between text-[9px] font-bold text-slate-400 mb-1">
+															<span>Quitação ({pctQuitado}%)</span>
+															<span>Restam R$ {rowSaldoDevedor.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+														</div>
+														<div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+															<div 
+																className="bg-purple-500 h-full transition-all duration-300"
+																style={{ width: `${pctQuitado}%` }}
+															/>
+														</div>
+													</div>
+												</td>
+												<td className="p-6 text-center">
+													<span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-3 py-1 rounded-lg text-[10px] font-black">
+														{d.parcela_atual}/{d.parcelas}
+													</span>
+													<div className="text-[10px] font-bold text-slate-700 dark:text-slate-300 mt-1.5">
+														{valorParcela.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/parc
+													</div>
+													{parcelasRestantes > 0 && (
+														<div className="text-[8px] font-black text-purple-500 uppercase mt-1">
+															{parcelasRestantes} restante{parcelasRestantes > 1 ? "s" : ""}
+														</div>
+													)}
+												</td>
 											<td className="p-6 text-center font-bold text-rose-500 dark:text-rose-400 text-xs">{d.juros}%</td>
 											<td className="p-6 text-center text-xs">
 												<div className="font-medium text-slate-450 dark:text-slate-400">De {new Date(d.data_inicio + "T12:00:00").toLocaleDateString('pt-BR')}</div>
@@ -319,8 +371,9 @@ Retorne o conselho em formato markdown limpo, com títulos curtos, linguagem ami
 												</div>
 											</td>
 										</tr>
-									))
-								) : (
+									);
+								})
+							) : (
 									<tr>
 										<td colSpan={6} className="p-20 text-center opacity-40">
 											<div className="flex flex-col items-center justify-center gap-4">

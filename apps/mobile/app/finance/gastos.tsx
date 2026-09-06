@@ -64,7 +64,7 @@ export default function Gastos() {
 			if (!user) return;
 
 			const { data, error } = await supabase
-				.from("gastos")
+				.from("despesas")
 				.select("*")
 				.eq("usuario_id", user.id)
 				.gte("data", `${year}-01-01`)
@@ -121,7 +121,7 @@ export default function Gastos() {
 			} = await supabase.auth.getUser();
 			if (user) {
 				// Chamando a função geral que criamos no packages/services
-				channel = financeService.subscribeToChanges("gastos", user.id, () => {
+				channel = financeService.subscribeToChanges("despesas", user.id, () => {
 					// Quando houver QUALQUER mudança no banco (Web ou App), recarrega
 					loadData();
 				});
@@ -142,7 +142,7 @@ export default function Gastos() {
 			const {
 				data: { user },
 			} = await supabase.auth.getUser();
-			const { error } = await supabase.from("gastos").insert([
+			const { error } = await supabase.from("despesas").insert([
 				{
 					usuario_id: user?.id,
 					descricao: form.descricao,
@@ -324,14 +324,14 @@ export default function Gastos() {
 				onClose={() => setEditModalVisible(false)}
 				onSave={async (id, novoValor) => {
 					await supabase
-						.from("gastos")
+						.from("despesas")
 						.update({ valor: Number(novoValor) })
 						.eq("id", id);
 					setEditModalVisible(false);
 					// loadData(); // Realtime cuida disso
 				}}
 				onDelete={async (id) => {
-					await supabase.from("gastos").delete().eq("id", id);
+					await supabase.from("despesas").delete().eq("id", id);
 					setEditModalVisible(false);
 					// loadData(); // Realtime cuida disso
 				}}

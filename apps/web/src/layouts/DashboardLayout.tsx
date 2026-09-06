@@ -14,6 +14,8 @@ import {
 	Sun,
 	Moon,
 	ChevronDown,
+	Brain, // Para Consultor IA
+	Wallet,
 } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
 import { authService } from "../../../../packages/services/auth.service";
@@ -28,7 +30,12 @@ export default function DashboardLayout() {
 	const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 	const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 	const [theme, setTheme] = useState(() => {
-		return localStorage.getItem("theme") || "light";
+		if (typeof window !== "undefined") {
+			const storedTheme = localStorage.getItem("theme");
+			if (storedTheme) return storedTheme;
+			return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+		}
+		return "light";
 	});
 
 	useEffect(() => {
@@ -96,10 +103,10 @@ export default function DashboardLayout() {
 					<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
 						<div className="flex items-center gap-3">
 							<div className="w-8 h-8 bg-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-indigo-200 dark:shadow-none">
-								<span className="text-white text-lg font-black">F</span>
+								<span className="text-white text-lg font-black">T</span>
 							</div>
 							<h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tighter">
-								FINANCE.
+								TECH FINANCE.
 							</h2>
 						</div>
 
@@ -185,6 +192,18 @@ export default function DashboardLayout() {
 									<span>Dashboard</span>
 								</Link>
 
+								{/* Link: Carteira (Contas) */}
+								<Link
+									to="/contas"
+									className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
+										location.pathname === "/contas"
+											? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100 dark:shadow-none"
+											: "text-slate-500 dark:text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-800 dark:hover:text-slate-200"
+									}`}>
+									<Wallet size={14} />
+									<span>Carteira</span>
+								</Link>
+
 								{/* Select: Fluxo de Caixa */}
 								<div className="relative">
 									<select
@@ -200,7 +219,7 @@ export default function DashboardLayout() {
 										<option value="/entradas" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-bold">📈 Entradas</option>
 										<option value="/gastos" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-bold">📉 Gastos</option>
 										<option value="/cartoes" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-bold">💳 Cartões</option>
-										<option value="/devedores" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-bold">👥 Devedores</option>
+										<option value="/devedores" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-bold">👥 Devedores & Credores</option>
 									</select>
 									<div className={`pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 ${isGroupActive(fluxoPaths) ? "text-white" : "text-slate-400"}`}>
 										<ChevronDown size={12} />
@@ -227,6 +246,18 @@ export default function DashboardLayout() {
 										<ChevronDown size={12} />
 									</div>
 								</div>
+
+								{/* Link: Consultor IA */}
+								<Link
+									to="/consultor"
+									className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
+										location.pathname === "/consultor"
+											? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100 dark:shadow-none"
+											: "text-slate-500 dark:text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-800 dark:hover:text-slate-200"
+									}`}>
+									<Brain size={14} className="text-pink-500" />
+									<span>Consultor IA</span>
+								</Link>
 
 								{/* Link: Importar */}
 								<Link

@@ -13,55 +13,101 @@ const getCardBranding = (name: string) => {
 	const lower = name.toLowerCase();
 	if (lower.includes("nubank")) {
 		return {
-			color: "#820ad1",
+			color: "linear-gradient(135deg, #820ad1 0%, #5c089b 100%)",
 			logo: (
 				<span className="font-black text-xl tracking-tighter text-white select-none">
 					nu<span className="text-pink-300">bank</span>
 				</span>
-			)
+			),
+			accentColor: "#a78bfa"
 		};
 	}
 	if (lower.includes("inter")) {
 		return {
-			color: "#ff7a00",
+			color: "linear-gradient(135deg, #ff7a00 0%, #cc6200 100%)",
 			logo: (
 				<span className="font-extrabold text-xl tracking-wide text-white select-none">
 					inter
 				</span>
-			)
+			),
+			accentColor: "#fdba74"
 		};
 	}
 	if (lower.includes("itau") || lower.includes("itaú")) {
 		return {
-			color: "#ec7000",
+			color: "linear-gradient(135deg, #ec7000 0%, #d56000 100%)",
 			logo: (
 				<span className="bg-[#003399] px-2 py-0.5 rounded font-black text-sm text-white select-none border border-white">
 					Itaú
 				</span>
-			)
+			),
+			accentColor: "#93c5fd"
 		};
 	}
 	if (lower.includes("bradesco")) {
 		return {
-			color: "#cc092f",
+			color: "linear-gradient(135deg, #cc092f 0%, #99001a 100%)",
 			logo: (
 				<span className="font-black text-lg text-white tracking-tight select-none">
 					bradesco
 				</span>
-			)
+			),
+			accentColor: "#fca5a5"
 		};
 	}
 	if (lower.includes("c6")) {
 		return {
-			color: "#1e1e1e",
+			color: "linear-gradient(135deg, #1e1e1e 0%, #000000 100%)",
 			logo: (
 				<span className="font-black text-xl tracking-tight text-white select-none">
 					C<span className="text-amber-500">6</span> Bank
 				</span>
-			)
+			),
+			accentColor: "#f59e0b"
 		};
 	}
-	return null;
+	if (lower.includes("santander")) {
+		return {
+			color: "linear-gradient(135deg, #cc092f 0%, #a30018 100%)",
+			logo: (
+				<span className="font-black text-lg text-white tracking-tight select-none">
+					Santander
+				</span>
+			),
+			accentColor: "#fca5a5"
+		};
+	}
+	if (lower.includes("brasil") || lower.includes("bb")) {
+		return {
+			color: "linear-gradient(135deg, #005ca9 0%, #003663 100%)",
+			logo: (
+				<span className="font-black text-lg text-white tracking-tight select-none">
+					BB <span className="text-yellow-400">Ourocard</span>
+				</span>
+			),
+			accentColor: "#fde047"
+		};
+	}
+	if (lower.includes("caixa")) {
+		return {
+			color: "linear-gradient(135deg, #005ca9 0%, #00457c 100%)",
+			logo: (
+				<span className="font-black text-lg text-white tracking-tight select-none">
+					<span className="text-orange-500 font-extrabold">X</span> CAIXA
+				</span>
+			),
+			accentColor: "#f97316"
+		};
+	}
+	return {
+		color: "linear-gradient(135deg, #4f46e5 0%, #312e81 100%)",
+		logo: (
+			<span className="font-black text-lg text-white tracking-tight select-none">
+				CARTÃO
+			</span>
+		),
+		accentColor: "#818cf8"
+	};
 };
 
 export default function Cartoes() {
@@ -94,10 +140,14 @@ export default function Cartoes() {
 				const saldoGasto = Math.max(0, totalGastos - totalPagamentos);
 				const disponivel = Math.max(0, Number(c.limite) - saldoGasto);
 
+				const todayStr = new Date().toISOString().split("T")[0];
+				const parcelasEmAberto = cardGastos.filter((g: any) => g.total_parcelas > 1 && g.data >= todayStr).length;
+
 				return {
 					...c,
 					saldoGasto,
-					disponivel
+					disponivel,
+					parcelasEmAberto
 				};
 			});
 
@@ -158,23 +208,27 @@ export default function Cartoes() {
 				<motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 					{cartoes.map((cartao) => {
 						const branding = getCardBranding(cartao.nome);
-						const cardBgColor = branding ? branding.color : (cartao.cor_hex || "#ec4899");
+						const cardBg = branding ? branding.color : (cartao.cor_hex || "#ec4899");
 						const cardLogo = branding ? branding.logo : <CreditCardIcon opacity={0.5} size={28} />;
+						const cardAccent = branding ? branding.accentColor : "#f472b6";
 						const melhorDia = cartao.fechamento_dia;
 
 						return (
 							<div key={cartao.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm p-5 sm:p-6 relative overflow-hidden flex flex-col h-full hover:shadow-md transition-shadow duration-300">
 								{/* Card appearance */}
 								<div 
-									className="h-40 rounded-2xl p-5 text-white flex flex-col justify-between mb-6 shadow-md transition-all duration-300"
-									style={{ backgroundColor: cardBgColor }}
+									className="h-44 rounded-2xl p-5 text-white flex flex-col justify-between mb-6 shadow-md transition-all duration-300 relative"
+									style={{ background: cardBg }}
 								>
-									<div className="flex justify-between items-center">
+									<div className="absolute right-0 bottom-0 p-8 opacity-10 pointer-events-none scale-125">
+										<CreditCardIcon size={120} />
+									</div>
+									<div className="flex justify-between items-start z-10">
 										<div className="flex items-center gap-2">
-											<p className="font-black tracking-widest text-base uppercase opacity-90 truncate max-w-[130px]">{cartao.nome}</p>
+											<p className="font-black tracking-widest text-base uppercase opacity-95 truncate max-w-[140px]">{cartao.nome}</p>
 											<button 
 												onClick={() => setCartaoParaEditar(cartao)} 
-												className="p-1 opacity-50 hover:opacity-100 hover:bg-white/20 rounded-full transition-all cursor-pointer"
+												className="p-1 opacity-60 hover:opacity-100 hover:bg-white/20 rounded-full transition-all cursor-pointer"
 												title="Editar Cartão"
 											>
 												<Edit3 size={14} />
@@ -182,16 +236,22 @@ export default function Cartoes() {
 										</div>
 										{cardLogo}
 									</div>
-									<div className="flex justify-between items-end">
+									<div className="z-10">
+										<p className="text-[9px] uppercase font-bold tracking-widest opacity-80 mb-0.5">Saldo Utilizado / Gasto</p>
+										<p className="font-black text-2xl">
+											R$ {Number(cartao.saldoGasto || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+										</p>
+									</div>
+									<div className="flex justify-between items-end z-10 border-t border-white/20 pt-2.5">
 										<div>
-											<p className="text-[10px] uppercase font-bold tracking-widest opacity-75 mb-0.5">Limite Total</p>
-											<p className="font-black text-xl">
+											<p className="text-[8px] uppercase font-bold tracking-widest opacity-75 mb-0.5">Limite Total</p>
+											<p className="font-bold text-sm">
 												R$ {Number(cartao.limite).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 											</p>
 										</div>
 										<div className="text-right">
-											<p className="text-[10px] uppercase font-bold tracking-widest opacity-75 mb-0.5">Vence dia</p>
-											<p className="font-bold text-lg">{cartao.vencimento_dia}</p>
+											<p className="text-[8px] uppercase font-bold tracking-widest opacity-75 mb-0.5">Vence dia</p>
+											<p className="font-black text-sm">{cartao.vencimento_dia}</p>
 										</div>
 									</div>
 								</div>
@@ -199,15 +259,15 @@ export default function Cartoes() {
 								{/* Limites e Ciclo */}
 								<div className="space-y-4 mb-6 px-1">
 									<div className="flex justify-between items-center text-sm">
-										<span className="font-medium text-slate-500 dark:text-slate-400">Saldo Gasto</span>
-										<span className="font-black text-slate-800 dark:text-slate-100">
-											R$ {Number(cartao.saldoGasto || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-										</span>
-									</div>
-									<div className="flex justify-between items-center text-sm">
 										<span className="font-medium text-slate-500 dark:text-slate-400">Limite Disponível</span>
 										<span className="font-black text-emerald-600 dark:text-emerald-400">
 											R$ {Number(cartao.disponivel || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+										</span>
+									</div>
+									<div className="flex justify-between items-center text-sm">
+										<span className="font-medium text-slate-500 dark:text-slate-400">Parcelas em Aberto</span>
+										<span className="font-black text-indigo-600 dark:text-indigo-400" style={{ color: cardAccent }}>
+											{cartao.parcelasEmAberto} parcelas ativas
 										</span>
 									</div>
 									

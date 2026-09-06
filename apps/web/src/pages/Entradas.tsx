@@ -50,6 +50,12 @@ export default function EntradasWeb() {
 	const [monthFilter, setMonthFilter] = useState<number | "all">("all");
 	const [isAddOpen, setIsAddOpen] = useState(false);
 	const [isEditOpen, setIsEditOpen] = useState(false);
+	const [editSearchTerm, setEditSearchTerm] = useState("");
+
+	const handleEditRow = (descricao: string) => {
+		setEditSearchTerm(descricao);
+		setIsEditOpen(true);
+	};
 
 	const loadData = useCallback(async () => {
 		setLoading(true);
@@ -58,7 +64,7 @@ export default function EntradasWeb() {
 		} = await supabase.auth.getUser();
 		if (user) {
 			const { data: list } = await supabase
-				.from("entradas")
+				.from("receitas")
 				.select("*")
 				.eq("usuario_id", user.id)
 				.gte("data", `${year}-01-01`)
@@ -77,7 +83,7 @@ export default function EntradasWeb() {
 		async function setupRealtime() {
 			const { data: { user } } = await supabase.auth.getUser();
 			if (user) {
-				channel = financeService.subscribeToChanges("entradas", user.id, loadData);
+				channel = financeService.subscribeToChanges("receitas", user.id, loadData);
 			}
 		}
 		setupRealtime();
@@ -100,19 +106,23 @@ export default function EntradasWeb() {
 	);
 
 	const matrixData = useMemo(() => {
-		const matrix: any = {};
+		const matrix: Record<string, { cat: string, desc: string, valores: number[] }> = {};
 		data.forEach((item) => {
 			const mesIdx = new Date(item.data + "T12:00:00").getUTCMonth();
-			if (!matrix[item.descricao]) matrix[item.descricao] = Array(12).fill(0);
-			matrix[item.descricao][mesIdx] += Number(item.valor);
+			const key = `${item.categoria}___${item.descricao}`;
+			if (!matrix[key]) {
+				matrix[key] = { cat: item.categoria || "Outros", desc: item.descricao, valores: Array(12).fill(0) };
+			}
+			matrix[key].valores[mesIdx] += Number(item.valor);
 		});
-		return Object.keys(matrix).map((desc) => {
-			const valores = matrix[desc];
-			const total = valores.reduce((a: number, b: number) => a + b, 0);
-			const mesesComValor = valores.filter((v) => v > 0).length;
+		
+		return Object.values(matrix).map((obj) => {
+			const total = obj.valores.reduce((a: number, b: number) => a + b, 0);
+			const mesesComValor = obj.valores.filter((v) => v > 0).length;
 			return {
-				descricao: desc,
-				valores,
+				categoria: obj.cat,
+				descricao: obj.desc,
+				valores: obj.valores,
 				total,
 				media: total / (mesesComValor || 1),
 			};
@@ -328,64 +338,97 @@ export default function EntradasWeb() {
 			</div>
 
 			{/* SECTION: MATRIX TABLE */}
-			<div className="bg-white dark:bg-slate-900 rounded-3xl sm:rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden transition-colors">
-				<div className="p-5 sm:p-8 border-b border-gray-50 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-					<h3 className="font-black text-[#2D2424] dark:text-slate-100 flex items-center gap-2">
-						<LayoutGrid size={18} className="text-green-500" /> Matriz de
-						Receitas Recorrentes
+			<div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden transition-colors mt-6">
+				<div className="p-5 sm:p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+					<h3 className="font-black text-slate-800 dark:text-slate-100 flex items-center gap-2 text-lg">
+						<LayoutGrid size={20} className="text-emerald-500" /> Matriz de Receitas
 					</h3>
-					<span className="text-[10px] bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400 px-3 py-1 rounded-full font-black self-start sm:self-auto">
-						ANUAL {year}
+					<span className="text-xs bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-4 py-1.5 rounded-full font-black uppercase tracking-wider self-start sm:self-auto shadow-sm">
+						Visão Anual - {year}
 					</span>
 				</div>
-				<div className="overflow-x-auto">
-					<table className="w-full text-left border-collapse">
+				<div className="overflow-x-auto w-full pb-2 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700">
+					<table className="w-full text-left border-collapse min-w-[800px]">
 						<thead>
-							<tr className="bg-gray-50/50 dark:bg-slate-800/30">
-								<th className="p-6 font-black text-[#2D2424] dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-20 border-r border-slate-100 dark:border-slate-800 w-64">
+							<tr className="bg-slate-50 dark:bg-slate-850/50">
+								<th className="p-4 sm:p-5 font-extrabold text-slate-700 dark:text-slate-300 sticky left-0 bg-slate-50 dark:bg-slate-850 z-20 border-r border-slate-200 dark:border-slate-700/50 w-56 text-sm">
 									Descrição
 								</th>
 								{MESES.map((m, i) => (
 									<th
 										key={m}
-										className={`p-4 text-center text-[10px] font-black uppercase transition-all ${monthFilter === i ? "text-green-600 bg-green-50/50 dark:bg-green-950/20" : "text-gray-400 dark:text-slate-400"}`}>
-										{m}
+										className={`p-3 text-center text-xs font-black uppercase transition-all ${monthFilter === i ? "text-emerald-600 bg-emerald-100/50 dark:bg-emerald-900/20" : "text-slate-500 dark:text-slate-400"}`}>
+										{m.substring(0, 3)}
 									</th>
 								))}
-								<th className="p-6 text-right font-black text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30">
+								<th className="p-4 sm:p-5 text-right font-black text-emerald-700 dark:text-emerald-400 bg-emerald-100/50 dark:bg-emerald-900/30 text-sm">
 									Total
 								</th>
 							</tr>
 						</thead>
-						<tbody className="divide-y divide-gray-50 dark:divide-slate-800">
+						<tbody className="divide-y divide-slate-100 dark:divide-slate-800">
 							{loading ? (
 								<tr>
 									<td
 										colSpan={14}
-										className="p-20 text-center animate-pulse font-black text-gray-300 dark:text-slate-700">
-										CARREGANDO DADOS...
+										className="p-16 text-center font-black text-slate-300 dark:text-slate-600">
+										<div className="flex flex-col items-center gap-2">
+											<div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+											<span>CARREGANDO DADOS...</span>
+										</div>
+									</td>
+								</tr>
+							) : matrixData.length === 0 ? (
+								<tr>
+									<td
+										colSpan={14}
+										className="p-16 text-center font-bold text-slate-400 dark:text-slate-500">
+										Nenhuma receita encontrada para este ano.
 									</td>
 								</tr>
 							) : (
 								matrixData.map((row, i) => (
 									<tr
 										key={i}
-										className="hover:bg-gray-50 dark:hover:bg-slate-800/40 transition-colors group">
-										<td className="p-6 font-bold text-gray-700 dark:text-slate-300 sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-gray-50 dark:group-hover:bg-slate-800/40 z-10 border-r border-slate-100 dark:border-slate-800">
-											{row.descricao}
+										className="hover:bg-slate-50 dark:hover:bg-slate-850 transition-colors group cursor-pointer">
+										<td 
+											onClick={() => handleEditRow(row.descricao)}
+											className="p-4 sm:p-5 font-bold text-slate-700 dark:text-slate-200 sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-850 z-10 border-r border-slate-100 dark:border-slate-800 text-sm transition-colors w-64 min-w-[280px]">
+											<div className="flex items-center justify-between gap-2">
+												<div className="flex items-center gap-2 overflow-hidden">
+													<span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-wider rounded-md whitespace-nowrap shadow-sm border border-indigo-100 dark:border-indigo-800">
+														{row.categoria}
+													</span>
+													<span className="group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors truncate max-w-[120px]" title={row.descricao}>{row.descricao}</span>
+												</div>
+												<button
+													onClick={(e) => {
+														e.stopPropagation();
+														handleEditRow(row.descricao);
+													}}
+													className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-emerald-100 dark:hover:bg-slate-700 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg transition-all cursor-pointer shadow-sm"
+													title="Editar lançamentos"
+												>
+													<Edit3 size={14} />
+												</button>
+											</div>
 										</td>
 										{row.valores.map((v, idx) => (
 											<td
 												key={idx}
-												className={`p-4 text-center text-sm border-b border-slate-100 dark:border-slate-800/50 ${monthFilter === idx ? "bg-green-50/30 dark:bg-green-950/10 font-black text-green-600 dark:text-green-400" : v > 0 ? "font-bold text-gray-600 dark:text-slate-350" : "text-gray-200 dark:text-slate-800"}`}>
+												onClick={() => handleEditRow(row.descricao)}
+												className={`p-3 text-center text-xs sm:text-sm border-r border-slate-50 dark:border-slate-800/50 ${monthFilter === idx ? "bg-emerald-50/50 dark:bg-emerald-900/10 font-black text-emerald-600 dark:text-emerald-400" : v > 0 ? "font-bold text-slate-600 dark:text-slate-350" : "text-slate-200 dark:text-slate-700 font-medium"}`}>
 												{v > 0
-													? v.toLocaleString(undefined, {
-															minimumFractionDigits: 0,
-														})
+													? `R$ ${v.toLocaleString(undefined, {
+															minimumFractionDigits: 2,
+															maximumFractionDigits: 2,
+														})}`
 													: "—"}
 											</td>
 										))}
-										<td className="p-6 text-right font-black text-green-600 dark:text-green-400 bg-green-50/40 dark:bg-green-950/20">
+										<td 
+											onClick={() => handleEditRow(row.descricao)}
+											className="p-4 sm:p-5 text-right font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-900/10 border-l border-emerald-100 dark:border-emerald-900/30 text-sm">
 											R$ {row.total.toLocaleString()}
 										</td>
 									</tr>
@@ -405,10 +448,14 @@ export default function EntradasWeb() {
 			/>
 			<EditEntradaWeb
 				isOpen={isEditOpen}
-				onClose={() => setIsEditOpen(false)}
+				onClose={() => {
+					setIsEditOpen(false);
+					setEditSearchTerm("");
+				}}
 				onSuccess={loadData}
 				dataSnapshot={data}
 				categorias={categoriasExistentes}
+				initialSearchTerm={editSearchTerm}
 			/>
 		</div>
 	);

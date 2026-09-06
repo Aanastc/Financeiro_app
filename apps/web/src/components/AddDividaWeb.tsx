@@ -11,6 +11,7 @@ interface AddDividaProps {
 
 export default function AddDividaWeb({ onClose, onSuccess }: AddDividaProps) {
 	const [loading, setLoading] = useState(false);
+	const [emailAmigo, setEmailAmigo] = useState("");
 	const [form, setForm] = useState({
 		descricao: "",
 		valor_total: "",
@@ -35,6 +36,25 @@ export default function AddDividaWeb({ onClose, onSuccess }: AddDividaProps) {
 			const { data: { user } } = await supabase.auth.getUser();
 			if (!user) throw new Error("Usuário não autenticado");
 
+			// Lógica de vínculo com outro usuário
+			let devedor_id = null;
+			let credor_id = null;
+			if (emailAmigo.trim()) {
+				const amigoId = await financeService.getUserIdByEmail(emailAmigo.trim());
+				if (!amigoId) {
+					toast.error("Nenhum usuário encontrado com esse e-mail.");
+					setLoading(false);
+					return;
+				}
+				if (amigoId === user.id) {
+					toast.error("Você não pode colocar você mesmo como devedor.");
+					setLoading(false);
+					return;
+				}
+				devedor_id = amigoId;
+				credor_id = user.id; // O usuário atual é o credor (quem recebe)
+			}
+
 			// Calcula vencimento total baseado no início + parcelas
 			const date = new Date(form.data_inicio + "T12:00:00");
 			date.setMonth(date.getMonth() + (parseInt(form.parcelas) || 1));
@@ -51,7 +71,9 @@ export default function AddDividaWeb({ onClose, onSuccess }: AddDividaProps) {
 				status: "pendente",
 				banco: form.banco || null,
 				tipo_divida: form.tipo_divida,
-				data_inicio: form.data_inicio
+				data_inicio: form.data_inicio,
+				credor_id,
+				devedor_id
 			});
 
 			toast.success("Dívida registrada com sucesso!");
@@ -145,6 +167,21 @@ export default function AddDividaWeb({ onClose, onSuccess }: AddDividaProps) {
 								onChange={e => setForm({...form, juros: e.target.value})}
 							/>
 						</div>
+					</div>
+
+					<div className="space-y-1.5 pt-2">
+						<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1 flex items-center justify-between">
+							<span>Vincular Amigo (E-mail do Devedor)</span>
+							<span className="text-[9px] opacity-60">(opcional)</span>
+						</label>
+						<input 
+							type="email" 
+							className="w-full bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/50 rounded-2xl px-5 py-3.5 font-bold text-indigo-700 dark:text-indigo-400 outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition-colors"
+							placeholder="e-mail do amigo que te deve"
+							value={emailAmigo}
+							onChange={e => setEmailAmigo(e.target.value)}
+						/>
+						<p className="text-[10px] text-slate-400 ml-1">Se preenchido, a dívida aparecerá automaticamente para o seu amigo pagar.</p>
 					</div>
 
 					<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

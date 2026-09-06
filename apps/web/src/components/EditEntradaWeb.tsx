@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { X, Trash2, Save, Calendar, Search, Edit3 } from "lucide-react";
+import { X, Trash2, Save, Calendar, Search, Edit3, AlertCircle } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
+import { financeService } from "../../../../packages/services/finance.service";
 import toast from "react-hot-toast";
 
 export function EditEntradaWeb({
@@ -9,13 +10,17 @@ export function EditEntradaWeb({
 	onSuccess,
 	dataSnapshot,
 	categorias,
+	initialSearchTerm,
 }: any) {
 	const [filtroDesc, setFiltroDesc] = useState("");
 	const [itemSelecionado, setItemSelecionado] = useState<any>(null);
 	const [valorEdit, setValorEdit] = useState("");
 	const [dataEdit, setDataEdit] = useState("");
 	const [descEdit, setDescEdit] = useState("");
+	const [contaEdit, setContaEdit] = useState("");
 	const [novoNomeCategoria, setNovoNomeCategoria] = useState("");
+
+	const [contas, setContas] = useState<any[]>([]);
 
 	const ocorrencias = dataSnapshot
 		.filter((i: any) => i.descricao === filtroDesc)
@@ -24,18 +29,32 @@ export function EditEntradaWeb({
 				new Date(b.data).getTime() - new Date(a.data).getTime(),
 		);
 
+	const carregarContas = async () => {
+		const { data: { user } } = await supabase.auth.getUser();
+		if (user) {
+			const contasData = await financeService.getContasBancarias(user.id);
+			setContas(contasData || []);
+		}
+	};
+
 	useEffect(() => {
-		if (!isOpen) {
+		if (isOpen) {
+			carregarContas();
+			if (initialSearchTerm) {
+				setFiltroDesc(initialSearchTerm);
+			}
+		} else {
 			setFiltroDesc("");
 			setItemSelecionado(null);
 		}
-	}, [isOpen]);
+	}, [isOpen, initialSearchTerm]);
 
 	const selecionarRegistro = (item: any) => {
 		setItemSelecionado(item);
 		setValorEdit(item.valor.toString());
 		setDataEdit(item.data);
 		setDescEdit(item.descricao);
+		setContaEdit(item.conta_id || "");
 	};
 
 	const handleUpdate = async () => {
@@ -44,12 +63,17 @@ export function EditEntradaWeb({
 			alert("Informe uma categoria.");
 			return;
 		}
+		if (!contaEdit) {
+			alert("Informe uma conta bancária.");
+			return;
+		}
 		await supabase
-			.from("entradas")
+			.from("transacoes")
 			.update({
 				descricao: descEdit.trim(),
 				valor: parseFloat(valorEdit),
 				data: dataEdit,
+				conta_id: contaEdit,
 			})
 			.eq("id", itemSelecionado.id);
 		toast.success("Lançamento atualizado!");
@@ -67,10 +91,11 @@ export function EditEntradaWeb({
 
 		try {
 			const { error } = await supabase
-				.from("entradas")
+				.from("transacoes")
 				.update({ descricao: novoNomeCategoria.trim() })
 				.eq("usuario_id", user.id)
-				.eq("descricao", filtroDesc);
+				.eq("descricao", filtroDesc)
+				.eq("tipo", "RECEITA");
 
 			if (error) throw error;
 			
@@ -89,7 +114,7 @@ export function EditEntradaWeb({
 			!confirm("Deseja apagar este registro permanentemente?")
 		)
 			return;
-		await supabase.from("entradas").delete().eq("id", itemSelecionado.id);
+		await supabase.from("transacoes").delete().eq("id", itemSelecionado.id);
 		onSuccess();
 		onClose();
 	};
@@ -149,24 +174,34 @@ export function EditEntradaWeb({
 							<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 block">
 								2. Selecione o Lançamento
 							</label>
-							{ocorrencias.map((item: any) => (
+							{ocorrencias.map((item: any) => {
+								const isOrphan = !item.conta_id;
+								return (
 								<button
 									key={item.id}
 									onClick={() => selecionarRegistro(item)}
 									className={`w-full p-4 rounded-2xl flex justify-between items-center transition-all border-2 cursor-pointer ${itemSelecionado?.id === item.id ? "border-emerald-500 bg-white dark:bg-slate-800 shadow-md" : "border-transparent bg-white/40 dark:bg-slate-900/40 hover:bg-white/80 dark:hover:bg-slate-800/80"}`}>
-									<div className="text-left">
+									<div className="text-left w-full">
 										<p className="font-black text-slate-800 dark:text-slate-200 text-sm">
 											R$ {Number(item.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 										</p>
-										<p className="text-[10px] text-slate-400 dark:text-slate-550 flex items-center gap-1 font-bold mt-0.5">
-											<Calendar size={10} />{" "}
-											{new Date(item.data + "T12:00:00").toLocaleDateString(
-												"pt-BR",
+										<div className="flex justify-between items-center mt-0.5">
+											<p className="text-[10px] text-slate-400 dark:text-slate-550 flex items-center gap-1 font-bold">
+												<Calendar size={10} />{" "}
+												{new Date(item.data + "T12:00:00").toLocaleDateString(
+													"pt-BR",
+												)}
+											</p>
+											{isOrphan && (
+												<span className="bg-rose-500/10 text-rose-500 px-1.5 py-0.5 rounded flex items-center gap-1 text-[8px]" title="Não vinculado à conta">
+													<AlertCircle size={10} /> S/ CONTA
+												</span>
 											)}
-										</p>
+										</div>
 									</div>
 								</button>
-							))}
+								);
+							})}
 						</div>
 					</div>
 				</div>
@@ -245,6 +280,19 @@ export function EditEntradaWeb({
 										value={dataEdit}
 										onChange={(e) => setDataEdit(e.target.value)}
 									/>
+								</div>
+
+								<div className="space-y-1.5">
+									<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">Conta de Destino</label>
+									<select
+										className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 border border-slate-205 dark:border-slate-700 focus:border-emerald-500 outline-none text-sm cursor-pointer"
+										value={contaEdit}
+										onChange={(e) => setContaEdit(e.target.value)}>
+										<option value="">Selecione a conta...</option>
+										{contas.map((c) => (
+											<option key={c.id} value={c.id}>{c.nome}</option>
+										))}
+									</select>
 								</div>
 
 								<div className="flex gap-3 pt-4 shrink-0">

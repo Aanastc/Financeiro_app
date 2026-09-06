@@ -13,10 +13,12 @@ import Cartoes from "./pages/Cartoes";
 import DividasWeb from "./pages/Dividas";
 import MetasWeb from "./pages/Metas";
 import InvestimentosWeb from "./pages/Investimentos";
+import Contas from "./pages/Contas";
 import ImportadorWeb from "./pages/Importador";
 import Devedores from "./pages/Devedores";
 import Faturas from "./pages/Faturas";
 import LandingPage from "./pages/LandingPage";
+import ConsultorInteligente from "./pages/ConsultorInteligente";
 
 export default function App() {
 	return (
@@ -52,6 +54,7 @@ export default function App() {
 					<Route path="/home" element={<HomeWeb />} />
 					<Route path="/entradas" element={<EntradasWeb />} />
 					<Route path="/gastos" element={<GastosWeb />} />
+					<Route path="/contas" element={<Contas />} />
 					<Route path="/cartoes" element={<Cartoes />} />
 					<Route path="/faturas/:cartao_id" element={<Faturas />} />
 					<Route path="/devedores" element={<Devedores />} />
@@ -59,6 +62,7 @@ export default function App() {
 					<Route path="/metas" element={<MetasWeb />} />
 					<Route path="/investimentos" element={<InvestimentosWeb />} />
 					<Route path="/importar" element={<ImportadorWeb />} />
+					<Route path="/consultor" element={<ConsultorInteligente />} />
 				</Route>
 
 				{/* Redirecionamento se a rota não for encontrada */}

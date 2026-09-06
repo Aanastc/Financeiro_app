@@ -6,7 +6,7 @@ export const entradasService = {
     const lastDay = `${year}-12-31`;
 
     const { data, error } = await supabase
-      .from('entradas')
+      .from("receitas")
       .select('descricao, valor, data')
       .eq('usuario_id', userId)
       .gte('data', firstDay)
@@ -16,14 +16,22 @@ export const entradasService = {
     return data;
   },
 
-  async addEntrada(descricao: string, valor: number, data: string) {
+  async addEntrada(descricao: string, valor: number, data: string, conta_id: string | null = null, categoria: string = "Outros") {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("Não autenticado");
+    if (!user) throw new Error("Usuário não autenticado");
 
     const { error } = await supabase
-      .from('entradas')
-      .insert([{ usuario_id: user.id, descricao, valor, data }]);
+      .from("transacoes")
+      .insert([{
+        usuario_id: user.id,
+        tipo: 'RECEITA',
+        descricao,
+        valor,
+        data,
+        conta_id,
+        observacao: `[LEGADO] Categoria: ${categoria}`
+      }]);
 
     if (error) throw error;
-  }
+  },
 };

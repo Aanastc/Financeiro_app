@@ -51,12 +51,21 @@ export class ErrorBoundary extends Component<Props, State> {
               </pre>
             </div>
 
-            <button 
-              onClick={() => window.location.reload()} 
-              className="mt-6 px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition-colors"
-            >
-              Recarregar a página
-            </button>
+            <div className="flex flex-col sm:flex-row gap-3 mt-6">
+              <button 
+                onClick={() => window.location.reload()} 
+                className="px-6 py-3 bg-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-300 transition-colors flex-1"
+              >
+                Recarregar a página
+              </button>
+              
+              <a 
+                href={`mailto:analeticia_ac@outlook.com?subject=Relatório%20de%20Erro%20-%20Tech%20Finance&body=${encodeURIComponent("Olá, encontrei o seguinte erro na aplicação:\n\n" + (this.state.error?.toString() || "") + "\n\nPilha de Componentes:\n" + (this.state.errorInfo?.componentStack || ""))}`}
+                className="px-6 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors flex-1 text-center shadow-lg shadow-red-200 flex items-center justify-center gap-2"
+              >
+                Enviar erro para o suporte
+              </a>
+            </div>
           </div>
         </div>
       );
