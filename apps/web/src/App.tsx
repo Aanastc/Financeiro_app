@@ -56,6 +56,7 @@ export default function App() {
 					<Route path="/gastos" element={<GastosWeb />} />
 					<Route path="/contas" element={<Contas />} />
 					<Route path="/cartoes" element={<Cartoes />} />
+					<Route path="/faturas" element={<Faturas />} />
 					<Route path="/faturas/:cartao_id" element={<Faturas />} />
 					<Route path="/devedores" element={<Devedores />} />
 					<Route path="/dividas" element={<DividasWeb />} />

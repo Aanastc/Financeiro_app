@@ -16,15 +16,27 @@ export function ExportExcelButton() {
 			}
 
 			// 🔹 buscar dados
-			const { data: entradas } = await supabase
-				.from("receitas")
-				.select("*")
-				.eq("usuario_id", user.id);
+			const [resEntradas, resGastos] = await Promise.all([
+				supabase
+					.from("transacoes")
+					.select("*, categorias(nome)")
+					.eq("usuario_id", user.id)
+					.eq("tipo", "RECEITA"),
+				supabase
+					.from("transacoes")
+					.select("*, categorias(nome)")
+					.eq("usuario_id", user.id)
+					.in("tipo", ["DESPESA", "ESTORNO"])
+			]);
 
-			const { data: gastos } = await supabase
-				.from("despesas")
-				.select("*")
-				.eq("usuario_id", user.id);
+			const entradas = (resEntradas.data || []).map((e: any) => ({
+				...e,
+				categoria: e.categorias?.nome || e.categoria || "Outros"
+			}));
+			const gastos = (resGastos.data || []).map((g: any) => ({
+				...g,
+				categoria: g.categorias?.nome || g.categoria || "Outros"
+			}));
 
 			// Helper para converter coluna index em letra (ex: 2 -> B, 14 -> N)
 			const getColumnLetter = (colIndex: number): string => {

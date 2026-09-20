@@ -108,7 +108,7 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 							required
 							value={form.nome}
 							onChange={e => setForm({...form, nome: e.target.value})}
-							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-sm"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-sm"
 							placeholder="Ex: Nubank, Itaú..."
 						/>
 					</div>
@@ -121,7 +121,7 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 							required
 							value={form.limite}
 							onChange={e => setForm({...form, limite: formatCurrency(e.target.value)})}
-							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all font-bold text-emerald-600 dark:text-emerald-450 text-2xl"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all font-bold text-emerald-600 dark:text-emerald-400 text-2xl"
 							placeholder="0,00"
 						/>
 					</div>
@@ -138,7 +138,7 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 								max="31"
 								value={form.vencimento_dia}
 								onChange={e => handleDayChange("vencimento_dia", e.target.value)}
-								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-center text-sm"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-center text-sm"
 							/>
 						</div>
 						<div className="space-y-1.5">
@@ -151,7 +151,7 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 								max="31"
 								value={form.fechamento_dia}
 								onChange={e => handleDayChange("fechamento_dia", e.target.value)}
-								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-200 text-center text-sm outline-none focus:border-indigo-500 transition-colors"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-200 text-center text-sm outline-none focus:border-indigo-500 transition-colors"
 							/>
 						</div>
 					</div>
@@ -176,7 +176,7 @@ export default function AddCartaoModal({ isOpen, onClose, onSuccess }: AddCartao
 						<label className="text-xs font-bold text-slate-600 dark:text-slate-350 ml-2 flex items-center gap-1">
 							<Palette size={12} /> Cor do Cartão
 						</label>
-						<div className="flex flex-wrap gap-2.5 p-1.5 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-100 dark:border-slate-800">
+						<div className="flex flex-wrap gap-2.5 p-1.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-800">
 							{PREDEFINED_COLORS.map(color => (
 								<button
 									key={color}

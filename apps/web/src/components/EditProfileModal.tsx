@@ -15,6 +15,7 @@ export default function EditProfileModal({ isOpen, onClose, onUpdate }: EditProf
 	const [password, setPassword] = useState("");
 	const [telefone, setTelefone] = useState("");
 	const [cpf, setCpf] = useState("");
+	const [acompanhaMei, setAcompanhaMei] = useState(false);
 	const [avatarUrl, setAvatarUrl] = useState("");
 	const [avatarFile, setAvatarFile] = useState<File | null>(null);
 	const [avatarPreview, setAvatarPreview] = useState("");
@@ -33,6 +34,7 @@ export default function EditProfileModal({ isOpen, onClose, onUpdate }: EditProf
 					setEmail(user.email || "");
 					setTelefone(user.telefone || "");
 					setCpf(user.cpf || "");
+					setAcompanhaMei(user.acompanha_mei || false);
 					setAvatarUrl(user.avatar_url || "");
 					setAvatarPreview(user.avatar_url || "");
 				}
@@ -89,7 +91,7 @@ export default function EditProfileModal({ isOpen, onClose, onUpdate }: EditProf
 				}
 			}
 
-			await authService.updateProfile(nome, finalAvatarUrl || undefined, email, password || undefined, telefone, cpf);
+			await authService.updateProfile(nome, finalAvatarUrl || undefined, email, password || undefined, telefone, cpf, acompanhaMei);
 			toast.success("Perfil atualizado com sucesso!");
 			onUpdate();
 			onClose();
@@ -105,7 +107,7 @@ export default function EditProfileModal({ isOpen, onClose, onUpdate }: EditProf
 			<div className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-3xl sm:rounded-[40px] shadow-2xl w-full max-w-lg border border-slate-100 dark:border-slate-800 relative animate-in fade-in zoom-in duration-200 flex flex-col max-h-[95vh] sm:max-h-[90vh] transition-colors duration-200">
 				<button
 					onClick={onClose}
-					className="absolute top-6 right-6 text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 transition-colors bg-slate-50 dark:bg-slate-800 p-2 rounded-full cursor-pointer z-10"
+					className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors bg-slate-50 dark:bg-slate-800 p-2 rounded-full cursor-pointer z-10"
 				>
 					<X size={20} />
 				</button>
@@ -193,6 +195,25 @@ export default function EditProfileModal({ isOpen, onClose, onUpdate }: EditProf
 								className="w-full p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all text-slate-800 dark:text-slate-100 font-bold text-sm rounded-xl"
 								placeholder="••••••••"
 							/>
+						</div>
+
+						<div className="space-y-1.5 sm:col-span-2 mt-2">
+							<label className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 ml-1 block">Tipo de Acompanhamento</label>
+							<div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl">
+								<div>
+									<h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">Acompanhar dados de MEI/ME</h4>
+									<p className="text-xs text-slate-500 dark:text-slate-400">Ative para visualizar informações da sua empresa</p>
+								</div>
+								<label className="relative inline-flex items-center cursor-pointer">
+									<input 
+										type="checkbox" 
+										className="sr-only peer" 
+										checked={acompanhaMei}
+										onChange={() => setAcompanhaMei(!acompanhaMei)}
+									/>
+									<div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
+								</label>
+							</div>
 						</div>
 					</div>
 

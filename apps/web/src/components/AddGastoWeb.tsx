@@ -167,7 +167,7 @@ export function AddGastoWeb({
 						<input
 							list="descricao-sugestoes"
 							placeholder="O que você comprou?"
-							className="w-full p-4 bg-slate-50 dark:bg-slate-850 text-slate-700 dark:text-slate-200 rounded-2xl font-bold border border-slate-200 dark:border-slate-700 focus:border-rose-500 transition-colors outline-none text-sm"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-2xl font-bold border border-slate-200 dark:border-slate-700 focus:border-rose-500 transition-colors outline-none text-sm"
 							value={form.descricao}
 							onChange={(e) => setForm({ ...form, descricao: e.target.value })}
 						/>
@@ -179,7 +179,7 @@ export function AddGastoWeb({
 
 						<input
 							type="date"
-							className="w-full p-4 bg-slate-50 dark:bg-slate-850 text-slate-700 dark:text-slate-200 rounded-2xl font-bold border border-slate-200 dark:border-slate-700 focus:border-rose-500 transition-colors outline-none text-sm"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-2xl font-bold border border-slate-200 dark:border-slate-700 focus:border-rose-500 transition-colors outline-none text-sm"
 							value={form.data}
 							onChange={(e) => setForm({ ...form, data: e.target.value })}
 						/>
@@ -200,7 +200,7 @@ export function AddGastoWeb({
 									className={`flex-1 p-3 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer text-sm ${
 										form.metodo_pagamento === m.id
 											? "bg-rose-500 text-white shadow-lg shadow-rose-200/20 dark:shadow-none scale-[1.01]"
-											: "bg-slate-50 dark:bg-slate-850 text-slate-400 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700"
+											: "bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700"
 									}`}>
 									{m.icon} <span>{m.id}</span>
 								</button>
@@ -218,7 +218,7 @@ export function AddGastoWeb({
 									<div className="space-y-1.5">
 										<label className="text-[9px] font-black uppercase text-rose-500 dark:text-rose-400 ml-2">Selecione o Cartão</label>
 										<select
-											className="w-full p-3.5 rounded-2xl font-bold bg-white dark:bg-slate-850 text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 text-sm cursor-pointer"
+											className="w-full p-3.5 rounded-2xl font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 text-sm cursor-pointer"
 											value={form.cartao_id}
 											onChange={(e) => setForm({ ...form, cartao_id: e.target.value })}>
 											<option value="">Selecione...</option>
@@ -234,7 +234,7 @@ export function AddGastoWeb({
 											type="number"
 											min="1"
 											placeholder="Ex: 12"
-											className="w-full p-3.5 rounded-2xl font-bold bg-white dark:bg-slate-850 text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 text-sm"
+											className="w-full p-3.5 rounded-2xl font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 text-sm"
 											value={form.parcelas}
 											onChange={(e) => setForm({ ...form, parcelas: e.target.value })}
 										/>
@@ -245,7 +245,7 @@ export function AddGastoWeb({
 									<label className="text-[9px] font-black uppercase text-rose-500 dark:text-rose-400 ml-2">Valor Total do Gasto</label>
 									<input
 										placeholder="Valor Total R$ 0,00"
-										className="w-full p-4.5 bg-white dark:bg-slate-850 rounded-2xl font-black text-rose-500 dark:text-rose-400 text-2xl border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none"
+										className="w-full p-4.5 bg-white dark:bg-slate-800 rounded-2xl font-black text-rose-500 dark:text-rose-400 text-2xl border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none"
 										value={form.valor}
 										onChange={(e) => setForm({ ...form, valor: formatCurrency(e.target.value) })}
 									/>
@@ -273,7 +273,7 @@ export function AddGastoWeb({
 								<div className="space-y-1.5">
 									<label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">Conta Bancária Origem</label>
 									<select
-										className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
+										className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
 										value={form.conta_id}
 										onChange={(e) => setForm({ ...form, conta_id: e.target.value })}>
 										<option value="">Selecione de onde saiu o dinheiro...</option>
@@ -287,7 +287,7 @@ export function AddGastoWeb({
 									<label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">Valor do Gasto</label>
 									<input
 										placeholder="Valor R$ 0,00"
-										className="w-full p-5 bg-slate-50 dark:bg-slate-850 rounded-3xl font-black text-rose-500 dark:text-rose-400 text-3xl border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none text-center"
+										className="w-full p-5 bg-slate-50 dark:bg-slate-800 rounded-3xl font-black text-rose-500 dark:text-rose-400 text-3xl border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none text-center"
 										value={form.valor}
 										onChange={(e) => setForm({ ...form, valor: formatCurrency(e.target.value) })}
 									/>
@@ -301,7 +301,7 @@ export function AddGastoWeb({
 						<p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">4. Categorização</p>
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 							<select
-								className="p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
+								className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
 								value={form.categoria}
 								onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
 								<option value="Outros">Categoria (Opcional)</option>
@@ -311,7 +311,7 @@ export function AddGastoWeb({
 							</select>
 
 							<select
-								className="p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
+								className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
 								value={form.tipo}
 								onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
 								<option value="">Tipo do Gasto (Opcional)</option>
@@ -325,7 +325,7 @@ export function AddGastoWeb({
 					{/* 5. RESPONSÁVEL PELO GASTO */}
 					<div className="space-y-3">
 						<p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">5. Responsável pelo Gasto</p>
-						<div className="bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+						<div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
 							<label className="flex items-center gap-3 cursor-pointer">
 								<input 
 									type="checkbox" 
@@ -333,7 +333,7 @@ export function AddGastoWeb({
 									checked={form.terceiro} 
 									onChange={(e) => setForm({ ...form, terceiro: e.target.checked })} 
 								/>
-								<span className="font-bold text-sm text-slate-750 dark:text-slate-200">Este gasto foi de outra pessoa? (Terceiro deve)</span>
+								<span className="font-bold text-sm text-slate-700 dark:text-slate-200">Este gasto foi de outra pessoa? (Terceiro deve)</span>
 							</label>
 							
 							{form.terceiro && (

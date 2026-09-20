@@ -52,9 +52,10 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 
 		try {
 			const { error } = await supabase
-				.from("receitas")
+				.from("transacoes")
 				.update({ descricao: newName.trim() })
 				.eq("usuario_id", user.id)
+				.eq("tipo", "RECEITA")
 				.eq("descricao", oldName);
 
 			if (error) throw error;
@@ -91,15 +92,39 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 			return;
 		}
 
-		await supabase.from("receitas").insert([
-			{
-				usuario_id: user.id,
-				descricao: descFinal,
-				valor: valorNumerico,
-				data: form.data,
-				conta_id: form.conta_id,
-			},
-		]);
+		const { data: transacao, error: errTransacao } = await supabase
+			.from("transacoes")
+			.insert([
+				{
+					usuario_id: user.id,
+					tipo: "RECEITA",
+					descricao: descFinal,
+					valor: valorNumerico,
+					data: form.data,
+					conta_id: form.conta_id,
+					status: "confirmada"
+				},
+			])
+			.select()
+			.single();
+
+		if (errTransacao) {
+			alert("Erro ao salvar receita: " + errTransacao.message);
+			return;
+		}
+
+		if (form.conta_id && transacao) {
+			await supabase.from("movimentacoes").insert([
+				{
+					usuario_id: user.id,
+					transacao_id: transacao.id,
+					conta_id: form.conta_id,
+					tipo: "ENTRADA",
+					valor: valorNumerico,
+					data: form.data,
+				},
+			]);
+		}
 
 		setForm({
 			descricao: "",
@@ -135,7 +160,7 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 						<input
 							list="categorias-list"
 							placeholder="Digite a categoria ou escolha da lista..."
-							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 outline-none focus:border-emerald-500 font-bold text-slate-700 dark:text-slate-200 text-sm transition-colors"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 outline-none focus:border-emerald-500 font-bold text-slate-700 dark:text-slate-200 text-sm transition-colors"
 							value={form.descricao}
 							onChange={(e) => setForm({ ...form, descricao: e.target.value })}
 						/>
@@ -148,7 +173,7 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 						{/* LIST OF CATEGORIES WITH EDIT BUTTONS */}
 						<div className="space-y-1.5">
 							<span className="text-[9px] font-black uppercase text-slate-450 dark:text-slate-500 ml-2">Categorias Existentes</span>
-							<div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto p-2 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-100 dark:border-slate-800 custom-scrollbar">
+							<div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto p-2 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-800 custom-scrollbar">
 								{categorias.length === 0 ? (
 									<span className="text-xs text-slate-400 dark:text-slate-500 italic font-medium p-1">Nenhuma categoria registrada</span>
 								) : (
@@ -158,7 +183,7 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 											className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
 												form.descricao === c
 													? "bg-emerald-600 text-white"
-													: "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750"
+													: "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
 											}`}
 											onClick={() => setForm({ ...form, descricao: c })}
 										>
@@ -188,7 +213,7 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 							Conta de Destino
 						</label>
 						<select
-							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-emerald-500 cursor-pointer text-sm"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-emerald-500 cursor-pointer text-sm"
 							value={form.conta_id}
 							onChange={(e) => setForm({ ...form, conta_id: e.target.value })}>
 							<option value="">Selecione onde o dinheiro entrou...</option>
@@ -207,7 +232,7 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 								type="text"
 								inputMode="numeric"
 								placeholder="0,00"
-								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-black text-emerald-600 dark:text-emerald-450 text-2xl outline-none border border-slate-200 dark:border-slate-700 focus:border-emerald-500 transition-colors"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-black text-emerald-600 dark:text-emerald-400 text-2xl outline-none border border-slate-200 dark:border-slate-700 focus:border-emerald-500 transition-colors"
 								value={form.valor}
 								onChange={(e) =>
 									setForm({ ...form, valor: formatCurrency(e.target.value) })
@@ -220,7 +245,7 @@ export function AddEntradaWeb({ isOpen, onClose, onSuccess, categorias }: any) {
 							</label>
 							<input
 								type="date"
-								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-650 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-emerald-500 transition-colors text-sm"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-600 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-emerald-500 transition-colors text-sm"
 								value={form.data}
 								onChange={(e) => setForm({ ...form, data: e.target.value })}
 							/>

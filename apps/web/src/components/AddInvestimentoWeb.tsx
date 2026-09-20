@@ -104,7 +104,7 @@ export default function AddInvestimentoWeb({ onClose, onSuccess }: AddInvestimen
 							<input 
 								type="text" 
 								required
-								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-green-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-sm"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-green-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-sm"
 								placeholder="Ex: Tesouro Selic, PETR4"
 								value={form.titulo}
 								onChange={e => setForm({...form, titulo: e.target.value})}
@@ -114,7 +114,7 @@ export default function AddInvestimentoWeb({ onClose, onSuccess }: AddInvestimen
 						<div className="space-y-1.5">
 							<label className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-2">Categoria</label>
 							<select 
-								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-green-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-sm cursor-pointer"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-green-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-sm cursor-pointer"
 								value={form.tipo}
 								onChange={e => setForm({...form, tipo: e.target.value})}
 							>
@@ -134,7 +134,7 @@ export default function AddInvestimentoWeb({ onClose, onSuccess }: AddInvestimen
 							</label>
 							<input 
 								type="text" 
-								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-green-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-sm"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-green-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-sm"
 								placeholder="Ex: XP, Rico, NuInvest"
 								value={form.corretora}
 								onChange={e => setForm({...form, corretora: e.target.value})}
@@ -146,7 +146,7 @@ export default function AddInvestimentoWeb({ onClose, onSuccess }: AddInvestimen
 								<Target size={12} /> Vincular a uma Meta (Opcional)
 							</label>
 							<select 
-								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-green-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-sm cursor-pointer"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-green-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-sm cursor-pointer"
 								value={form.meta_id}
 								onChange={e => setForm({...form, meta_id: e.target.value})}
 							>
@@ -164,7 +164,7 @@ export default function AddInvestimentoWeb({ onClose, onSuccess }: AddInvestimen
 							<input 
 								type="text" 
 								required
-								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-green-500 outline-none transition-all font-black text-green-650 dark:text-green-400 text-sm"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-green-500 outline-none transition-all font-black text-green-650 dark:text-green-400 text-sm"
 								placeholder="0,00"
 								value={form.valor_investido}
 								onChange={e => setForm({...form, valor_investido: e.target.value})}
@@ -176,7 +176,7 @@ export default function AddInvestimentoWeb({ onClose, onSuccess }: AddInvestimen
 							<input 
 								type="date" 
 								required
-								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-green-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-sm"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-green-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200 text-sm"
 								value={form.data_inicio}
 								onChange={e => setForm({...form, data_inicio: e.target.value})}
 							/>

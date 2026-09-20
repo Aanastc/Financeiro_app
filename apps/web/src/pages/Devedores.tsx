@@ -40,18 +40,26 @@ export default function Devedores() {
 			const user = await authService.getCurrentUser();
 			if (!user) return;
 
-			const { data: gastos, error } = await supabase
-				.from("despesas")
-				.select("*, contatos(*)")
-				.eq("usuario_id", user.id)
-				.or("descricao.ilike.%claudney%,descricao.ilike.%claudiney%,observacao.ilike.%claudney%,observacao.ilike.%claudiney%");
+			const [gastosRes, contatosRes] = await Promise.all([
+				supabase
+					.from("transacoes")
+					.select("*")
+					.eq("usuario_id", user.id)
+					.or("descricao.ilike.%claudney%,descricao.ilike.%claudiney%,observacao.ilike.%claudney%,observacao.ilike.%claudiney%"),
+				supabase.from("contatos").select("*").eq("usuario_id", user.id)
+			]);
 
-			if (error) throw error;
+			const gastos = gastosRes.data || [];
+			const contatos = contatosRes.data || [];
 
 			const credoresMap = new Map();
-			(gastos || []).forEach((g: any) => {
-				const contactName = g.contatos?.nome || "Claudiney";
-				const contactId = g.contatos?.id || "claudiney-fallback-id";
+			gastos.forEach((g: any) => {
+				const contatoEncontrado = contatos.find((c: any) => 
+					(g.observacao && g.observacao.includes(c.id)) ||
+					(c.nome && g.descricao.toLowerCase().includes(c.nome.toLowerCase()))
+				);
+				const contactName = contatoEncontrado?.nome || "Claudiney";
+				const contactId = contatoEncontrado?.id || "claudiney-fallback-id";
 
 				if (!credoresMap.has(contactId)) {
 					credoresMap.set(contactId, {
@@ -213,7 +221,7 @@ export default function Devedores() {
 			};
 
 			const { error } = await supabase
-				.from("despesas")
+				.from("transacoes")
 				.update({
 					terceiro_pago: isTotal,
 					observacao: JSON.stringify(metadata)
@@ -238,7 +246,7 @@ export default function Devedores() {
 		if (!confirm("Deseja realmente desfazer o pagamento deste item?")) return;
 		try {
 			const { error } = await supabase
-				.from("despesas")
+				.from("transacoes")
 				.update({
 					terceiro_pago: false,
 					observacao: null
@@ -332,7 +340,7 @@ export default function Devedores() {
 							<div key={devedor.contato.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
 								{/* CARD HEADER */}
 								<div 
-									className="p-5 sm:p-6 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+									className="p-5 sm:p-6 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
 									onClick={() => setExpandedId(expandedId === devedor.contato.id ? null : devedor.contato.id)}
 								>
 									<div className="flex items-center gap-4">
@@ -390,7 +398,7 @@ export default function Devedores() {
 														const restante = isPartial ? Number(item.valor) - payInfo.valor_pago : 0;
 
 														return (
-															<div key={item.id} className={`flex flex-col sm:flex-row sm:justify-between sm:items-center p-4 rounded-2xl gap-3 ${item.terceiro_pago ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : isPartial ? 'bg-amber-50/50 dark:bg-amber-955/10 border border-amber-100 dark:border-amber-900/30' : 'bg-slate-50 dark:bg-slate-850/40'}`}>
+															<div key={item.id} className={`flex flex-col sm:flex-row sm:justify-between sm:items-center p-4 rounded-2xl gap-3 ${item.terceiro_pago ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : isPartial ? 'bg-amber-50/50 dark:bg-amber-955/10 border border-amber-100 dark:border-amber-900/30' : 'bg-slate-50 dark:bg-slate-800/40'}`}>
 																<div>
 																	<div className="flex items-center flex-wrap gap-2">
 																		<p className={`font-bold ${item.terceiro_pago ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
@@ -476,7 +484,7 @@ export default function Devedores() {
 							<div key={credor.contato.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
 								{/* CARD HEADER */}
 								<div 
-									className="p-5 sm:p-6 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+									className="p-5 sm:p-6 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
 									onClick={() => setExpandedId(expandedId === credor.contato.id ? null : credor.contato.id)}
 								>
 									<div className="flex items-center gap-4">
@@ -525,7 +533,7 @@ export default function Devedores() {
 														};
 
 														return (
-															<div key={item.id} className={`flex flex-col sm:flex-row sm:justify-between sm:items-center p-4 rounded-2xl gap-3 ${item.quitado ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : 'bg-slate-50 dark:bg-slate-850/40'}`}>
+															<div key={item.id} className={`flex flex-col sm:flex-row sm:justify-between sm:items-center p-4 rounded-2xl gap-3 ${item.quitado ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : 'bg-slate-50 dark:bg-slate-800/40'}`}>
 																<div>
 																	<div className="flex items-center flex-wrap gap-2">
 																		<p className={`font-bold ${item.quitado ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
@@ -585,8 +593,8 @@ export default function Devedores() {
 
 			{/* PAYMENT REGISTRATION MODAL */}
 			{paymentModalOpen && selectedItemForPayment && (
-				<div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[110] flex items-center justify-center p-4">
-					<div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in duration-300 border border-slate-100">
+				<div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[110] flex items-center justify-center p-4">
+					<div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in duration-300 border border-slate-100 dark:border-slate-800">
 						<div className="p-8 bg-indigo-600 text-white relative">
 							<h3 className="text-2xl font-black flex items-center gap-2">
 								<DollarSign size={24} /> Registrar Pagamento
@@ -608,12 +616,12 @@ export default function Devedores() {
 						<div className="p-8 space-y-6">
 							{/* Data do Pagamento */}
 							<div className="space-y-2">
-								<label className="text-[10px] font-black uppercase text-slate-400 ml-1">
+								<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">
 									Data do Pagamento
 								</label>
 								<input
 									type="date"
-									className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-indigo-500 transition-colors"
+									className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none focus:border-indigo-500 transition-colors"
 									value={paymentDate}
 									onChange={(e) => setPaymentDate(e.target.value)}
 								/>
@@ -621,7 +629,7 @@ export default function Devedores() {
 
 							{/* Tipo de Pagamento */}
 							<div className="space-y-2">
-								<label className="text-[10px] font-black uppercase text-slate-400 ml-1">
+								<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">
 									Tipo de Pagamento
 								</label>
 								<div className="grid grid-cols-2 gap-2">
@@ -630,8 +638,8 @@ export default function Devedores() {
 										onClick={() => setPaymentType("total")}
 										className={`py-3 px-4 rounded-xl font-bold text-sm transition-all border ${
 											paymentType === "total"
-												? "bg-indigo-50 border-indigo-200 text-indigo-700"
-												: "bg-slate-50 border-slate-100 text-slate-500 hover:bg-slate-100"
+												? "bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300"
+												: "bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
 										}`}
 									>
 										Valor Total
@@ -648,8 +656,8 @@ export default function Devedores() {
 										}}
 										className={`py-3 px-4 rounded-xl font-bold text-sm transition-all border ${
 											paymentType === "parcial"
-												? "bg-indigo-50 border-indigo-200 text-indigo-700"
-												: "bg-slate-50 border-slate-100 text-slate-500 hover:bg-slate-100"
+												? "bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300"
+												: "bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
 										}`}
 									>
 										Valor Parcial
@@ -660,7 +668,7 @@ export default function Devedores() {
 							{/* Valor Parcial Input */}
 							{paymentType === "parcial" && (
 								<div className="space-y-2 animate-in slide-in-from-top-2 duration-300">
-									<label className="text-[10px] font-black uppercase text-slate-400 ml-1">
+									<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">
 										Valor Pago (R$)
 									</label>
 									<input
@@ -669,11 +677,11 @@ export default function Devedores() {
 										min="0.01"
 										max={selectedItemForPayment.valor - 0.01}
 										placeholder="0,00"
-										className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-black text-indigo-600 text-xl outline-none focus:border-indigo-500 transition-colors"
+										className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl font-black text-indigo-600 dark:text-indigo-400 text-xl outline-none focus:border-indigo-500 transition-colors"
 										value={partialAmount}
 										onChange={(e) => setPartialAmount(e.target.value)}
 									/>
-									<span className="text-[9px] font-bold text-slate-400 ml-1 block">
+									<span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 ml-1 block">
 										Deve ser menor que R$ {Number(selectedItemForPayment.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 									</span>
 								</div>
@@ -681,7 +689,7 @@ export default function Devedores() {
 
 							<button
 								onClick={handleConfirmarPagamento}
-								className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-100"
+								className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-100 dark:shadow-none"
 							>
 								Confirmar Pagamento
 							</button>

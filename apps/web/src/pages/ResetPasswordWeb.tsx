@@ -69,7 +69,7 @@ export default function ResetPasswordWeb() {
 
 	if (checkingSession) {
 		return (
-			<div className="min-h-screen bg-slate-50 dark:bg-slate-955 flex flex-col items-center justify-center p-4 font-sans transition-colors duration-200">
+			<div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col items-center justify-center p-4 font-sans transition-colors duration-200">
 				<div className="bg-white dark:bg-slate-900 p-10 rounded-3xl shadow-2xl text-center max-w-sm w-full border border-slate-100 dark:border-slate-800 transition-colors duration-200">
 					<RefreshCw className="w-10 h-10 animate-spin text-[#4CAF50] dark:text-emerald-400 mx-auto mb-4" />
 					<h3 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">Verificando Link</h3>
@@ -80,7 +80,7 @@ export default function ResetPasswordWeb() {
 	}
 
 	return (
-		<div className="min-h-screen bg-slate-50 dark:bg-slate-955 flex items-center justify-center p-4 font-sans transition-colors duration-200">
+		<div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-4 font-sans transition-colors duration-200">
 			<form
 				onSubmit={handleResetPassword}
 				className="bg-white dark:bg-slate-900 p-6 sm:p-10 md:p-14 rounded-3xl sm:rounded-[40px] md:rounded-[50px] shadow-2xl w-full max-w-md border border-slate-100 dark:border-slate-800 transition-colors duration-200 relative overflow-hidden"
@@ -89,7 +89,7 @@ export default function ResetPasswordWeb() {
 				<div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-emerald-500 via-[#4CAF50] to-[#5D4037]" />
 
 				<div className="text-center mb-10">
-					<div className="relative w-16 h-16 bg-slate-50 dark:bg-slate-850 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100 dark:border-slate-800 shadow-inner group">
+					<div className="relative w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100 dark:border-slate-800 shadow-inner group">
 						<Lock className="w-6 h-6 text-[#4CAF50] dark:text-emerald-400 transition-transform duration-500 group-hover:scale-110" />
 					</div>
 					<h2 className="text-3xl font-black text-slate-800 dark:text-slate-100 mb-2 tracking-tight">Nova Senha</h2>
@@ -103,7 +103,7 @@ export default function ResetPasswordWeb() {
 						</label>
 						<div className="relative">
 							<input
-								className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
+								className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
 								type={showPassword ? "text" : "password"}
 								placeholder="No mínimo 8 caracteres"
 								required
@@ -126,7 +126,7 @@ export default function ResetPasswordWeb() {
 						</label>
 						<div className="relative">
 							<input
-								className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
+								className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
 								type={showConfirmPassword ? "text" : "password"}
 								placeholder="Repita a nova senha"
 								required

@@ -7,10 +7,11 @@ interface Props {
   isOpen: boolean;
   userId: string;
   onComplete: () => void;
+  initialStep?: "intro" | "form";
 }
 
-export default function OnboardingContasModal({ isOpen, userId, onComplete }: Props) {
-  const [step, setStep] = useState<"intro" | "form" | "success">("intro");
+export default function OnboardingContasModal({ isOpen, userId, onComplete, initialStep = "intro" }: Props) {
+  const [step, setStep] = useState<"intro" | "form" | "success">(initialStep);
   const [loading, setLoading] = useState(false);
   const [contasAdicionadas, setContasAdicionadas] = useState(0);
 
@@ -28,6 +29,13 @@ export default function OnboardingContasModal({ isOpen, userId, onComplete }: Pr
   const [hasDependente, setHasDependente] = useState(false);
   const [dependenteNome, setDependenteNome] = useState("");
   const [dependenteLimite, setDependenteLimite] = useState("");
+
+  // Reseta o estado quando abre
+  React.useEffect(() => {
+    if (isOpen) {
+      setStep(initialStep);
+    }
+  }, [isOpen, initialStep]);
 
   if (!isOpen) return null;
 
@@ -312,7 +320,7 @@ export default function OnboardingContasModal({ isOpen, userId, onComplete }: Pr
                                 type="text"
                                 inputMode="numeric"
                                 placeholder="R$ (Mesmo limite se vazio)"
-                                className="w-full p-3 bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-xl outline-none focus:border-indigo-500 font-bold text-emerald-600 dark:text-emerald-450"
+                                className="w-full p-3 bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-xl outline-none focus:border-indigo-500 font-bold text-emerald-600 dark:text-emerald-400"
                                 value={dependenteLimite}
                                 onChange={(e) => setDependenteLimite(formatCurrency(e.target.value))}
                               />

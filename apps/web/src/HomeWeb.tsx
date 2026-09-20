@@ -6,29 +6,43 @@ import {
 import {
 	ArrowUpRight, ArrowDownRight, Wallet, TrendingUp, TrendingDown, Sparkles, AlertCircle, Phone, CreditCard, ChevronDown, Calendar, Brain, HandCoins, Users, Bell, ArrowRight
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useOutletContext } from "react-router-dom";
 import { authService } from "../../../packages/services/auth.service";
 import { financeService } from "../../../packages/services/finance.service";
 import { ExportExcelButton } from "./components/ExportExcelButton";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import OnboardingContasModal from "./components/OnboardingContasModal";
+import MeiOnboardingModal from "./components/MeiOnboardingModal";
 import { getFaturaMesReferencia } from "../../../packages/utils/cartao.utils";
 
 const NOME_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
 export default function HomeWeb() {
 	const navigate = useNavigate();
+	const { userProfile } = useOutletContext<any>() || {};
 	const [stats, setStats] = useState({ entradasMes: 0, gastosMes: 0, saldoTotal: 0 });
 	const [nome, setNome] = useState("");
 	const [userId, setUserId] = useState("");
+	const [acompanhaMei, setAcompanhaMei] = useState<boolean | null>(null);
+	const [viewMode, setViewMode] = useState<"PF" | "MEI">("PF");
 	const [isClient, setIsClient] = useState(false);
 	const [isFetchingData, setIsFetchingData] = useState(true);
 
 	useEffect(() => { setIsClient(true); }, []);
 	
+	useEffect(() => {
+		if (userProfile && userProfile.acompanha_mei !== undefined) {
+			setAcompanhaMei(userProfile.acompanha_mei);
+			if (userProfile.acompanha_mei === false && viewMode === "MEI") {
+				setViewMode("PF");
+			}
+		}
+	}, [userProfile]);
+	
 	const [rawEntradas, setRawEntradas] = useState<any[]>([]);
 	const [rawGastos, setRawGastos] = useState<any[]>([]);
+	const [rawEstornos, setRawEstornos] = useState<any[]>([]);
 	const [rawFaturas, setRawFaturas] = useState<any[]>([]);
 	const [rawInvestimentos, setRawInvestimentos] = useState<any[]>([]);
 	const [rawDividas, setRawDividas] = useState<any[]>([]);
@@ -40,6 +54,7 @@ export default function HomeWeb() {
 	
 	const [contasBancarias, setContasBancarias] = useState<any[]>([]);
 	const [showOnboarding, setShowOnboarding] = useState(false);
+	const [showMeiModal, setShowMeiModal] = useState(false);
 	const [showOrphanAlert, setShowOrphanAlert] = useState(false);
 
 	const hoje = new Date();
@@ -60,29 +75,48 @@ export default function HomeWeb() {
 
 		try {
 			const [
-				saldoAtual, resEntradas, resGastos, resFaturas, resInv, resDiv, resDevedores, resCartoes, resLastEntrada, resLastGasto, resCountEntradas, resCountGastos, resContas
+				saldoAtual, resTransacoes, resInv, resDiv, resDevedores, resCartoes, resLastTransacao, resCountTransacoes, resContas
 			] = await Promise.all([
 				financeService.getGlobalBalance(user.id).catch(() => 0),
-				supabase.from("receitas").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
-				supabase.from("despesas").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
-				supabase.from("pagamentos_faturas").select("*").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
+				supabase.from("transacoes").select("*, categorias(nome), contas_bancarias(nome)").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
 				supabase.from("investimentos").select("*").eq("usuario_id", user.id),
-				supabase.from("passivos").select("*").eq("usuario_id", user.id),
+				financeService.getDividas(user.id).catch(() => []),
 				financeService.getDevedores(user.id).catch(() => []),
 				financeService.getCartoes(user.id).catch(() => []),
-				supabase.from("receitas").select("data").eq("usuario_id", user.id).lte("data", todayStr).order("data", { ascending: false }).limit(1),
-				supabase.from("despesas").select("data").eq("usuario_id", user.id).lte("data", todayStr).order("data", { ascending: false }).limit(1),
-				supabase.from("receitas").select("id", { count: "exact", head: true }).eq("usuario_id", user.id).gte("data", currentMonthStart),
-				supabase.from("despesas").select("id", { count: "exact", head: true }).eq("usuario_id", user.id).gte("data", currentMonthStart),
+				supabase.from("transacoes").select("data").eq("usuario_id", user.id).lte("data", todayStr).order("data", { ascending: false }).limit(1),
+				supabase.from("transacoes").select("id", { count: "exact", head: true }).eq("usuario_id", user.id).gte("data", currentMonthStart),
 				financeService.getContasBancarias(user.id).catch(() => []),
 			]);
 
+			const txList = (resTransacoes?.data || []).map((t: any) => ({
+				...t,
+				categoria: t.categorias?.nome || t.categoria || "Outros",
+				considerar_soma: t.considerar_soma !== false
+			}));
+			const entradas = txList.filter((t: any) => t.tipo === "RECEITA");
+			const gastos = txList.filter((t: any) => t.tipo === "DESPESA");
+			const faturas = txList.filter((t: any) => t.tipo === "PAGAMENTO_FATURA");
+			const estornos = txList.filter((t: any) => t.tipo === "ESTORNO");
+
 			setStats(prev => ({ ...prev, saldoTotal: saldoAtual }));
-			setRawEntradas(resEntradas?.data || []);
-			setRawGastos(resGastos?.data || []);
-			setRawFaturas(resFaturas?.data || []);
+			setRawEntradas(entradas);
+			setRawGastos(gastos);
+			setRawEstornos(estornos);
+			setRawFaturas(faturas);
 			setRawInvestimentos(resInv?.data || []);
-			setRawDividas(resDiv?.data || []);
+
+			const mappedDividas = (resDiv || []).map((d: any) => {
+				const proximaParcela = (d.parcelas_divida || []).find((p: any) => p.status !== 'paga');
+				const valorParcela = proximaParcela ? Number(proximaParcela.valor) : (Number(d.valor_atual || d.valor_original || 0) / (d.quantidade_parcelas || 1));
+				return {
+					...d,
+					valor_total: Number(d.valor_atual || d.valor_original || 0),
+					parcelas: d.quantidade_parcelas || 1,
+					vencimento_parcela: proximaParcela?.data_vencimento || d.criado_em?.split('T')[0] || "",
+					valor_parcela: valorParcela
+				};
+			});
+			setRawDividas(mappedDividas);
 			setDevedores(resDevedores || []);
 			setCartoes(resCartoes || []);
 			
@@ -94,23 +128,16 @@ export default function HomeWeb() {
 				setShowOnboarding(true);
 			} else {
 				// Verifica se tem lançamentos órfãos
-				const hasOrphanEntradas = (resEntradas?.data || []).some(e => !e.conta_id);
-				const hasOrphanGastos = (resGastos?.data || []).some(g => !g.conta_id && g.metodo_pagamento !== "Crédito");
+				const hasOrphanEntradas = entradas.some((e: any) => !e.conta_id);
+				const hasOrphanGastos = gastos.some((g: any) => !g.conta_id && !g.cartao_id);
 				if (hasOrphanEntradas || hasOrphanGastos) {
 					setShowOrphanAlert(true);
 				}
 			}
 
-			const lastEntradaDate = resLastEntrada?.data?.[0]?.data;
-			const lastGastoDate = resLastGasto?.data?.[0]?.data;
-			let lastLaunch: string | null = null;
-			if (lastEntradaDate && lastGastoDate) {
-				lastLaunch = lastEntradaDate > lastGastoDate ? lastEntradaDate : lastGastoDate;
-			} else {
-				lastLaunch = lastEntradaDate || lastGastoDate || null;
-			}
+			const lastLaunch = resLastTransacao?.data?.[0]?.data || null;
 			setLastLaunchDate(lastLaunch);
-			setHasLaunchesThisMonth(((resCountEntradas?.count || 0) + (resCountGastos?.count || 0)) > 0);
+			setHasLaunchesThisMonth((resCountTransacoes?.count || 0) > 0);
 
 			if (resCartoes && resCartoes.length > 0) {
 				const lastMonths = [];
@@ -141,25 +168,31 @@ export default function HomeWeb() {
 		async function initData() {
 			await loadDashboardData();
 			const u = await authService.getCurrentUser();
-			if (u) setNome(u.nome.split(" ")[0]);
+			if (u) {
+				setNome(u.nome.split(" ")[0]);
+				setAcompanhaMei(u.acompanha_mei ?? null);
+				if (u.acompanha_mei === null) {
+					setShowMeiModal(true);
+				}
+			}
 			setIsFetchingData(false);
 		}
 		initData();
 
-		let channelEntradas: any;
-		let channelGastos: any;
+		let channelTx: any;
+		let channelDividas: any;
 
 		async function setupRealtime() {
 			const { data: { user } } = await supabase.auth.getUser();
 			if (user) {
-				channelEntradas = financeService.subscribeToChanges("receitas", user.id, loadDashboardData);
-				channelGastos = financeService.subscribeToChanges("despesas", user.id, loadDashboardData);
+				channelTx = financeService.subscribeToChanges("transacoes", user.id, loadDashboardData);
+				channelDividas = financeService.subscribeToChanges("dividas", user.id, loadDashboardData);
 			}
 		}
 		setupRealtime();
 		return () => {
-			if (channelEntradas) supabase.removeChannel(channelEntradas);
-			if (channelGastos) supabase.removeChannel(channelGastos);
+			if (channelTx) supabase.removeChannel(channelTx);
+			if (channelDividas) supabase.removeChannel(channelDividas);
 		};
 	}, [loadDashboardData]);
 
@@ -172,7 +205,8 @@ export default function HomeWeb() {
 
 	const dashboardData = useMemo(() => {
 		let filteredEntradas = rawEntradas;
-		let filteredGastos = rawGastos.filter(g => g.considerar_soma === true);
+		let filteredGastos = rawGastos.filter(g => g.considerar_soma !== false);
+		let filteredEstornos = rawEstornos;
 		let filteredFaturas = rawFaturas;
 		let filteredInvestimentos = rawInvestimentos;
 		let filteredDividas = rawDividas;
@@ -181,13 +215,18 @@ export default function HomeWeb() {
 			const prefix = `${filterYear}-${String(filterMonth).padStart(2, '0')}`;
 			filteredEntradas = filteredEntradas.filter(e => e.data.startsWith(prefix));
 			filteredGastos = filteredGastos.filter(g => g.data.startsWith(prefix));
+			filteredEstornos = filteredEstornos.filter(e => e.data.startsWith(prefix));
 			filteredFaturas = filteredFaturas.filter(f => f.data.startsWith(prefix));
 			filteredDividas = filteredDividas.filter(d => d.vencimento_parcela?.startsWith(prefix) || d.data?.startsWith(prefix));
 		}
 
+		const totalDespesas = filteredGastos.reduce((acc, cur) => acc + Number(cur.valor), 0);
+		const totalEstornos = filteredEstornos.reduce((acc, cur) => acc + Number(cur.valor), 0);
+		const totalGastosLiquido = Math.max(0, totalDespesas - totalEstornos);
+
 		const totaisMes = {
 			entradas: filteredEntradas.reduce((acc, cur) => acc + Number(cur.valor), 0),
-			gastos: filteredGastos.reduce((acc, cur) => acc + Number(cur.valor), 0) + filteredFaturas.reduce((acc, cur) => acc + Number(cur.valor), 0),
+			gastos: totalGastosLiquido,
 			faturas: filteredFaturas.reduce((acc, cur) => acc + Number(cur.valor), 0),
 			investimentos: filteredInvestimentos.reduce((acc, cur) => acc + Number(cur.valor_investido), 0),
 			dividas: filteredDividas.reduce((acc, cur) => acc + Number(cur.valor_total), 0),
@@ -199,11 +238,13 @@ export default function HomeWeb() {
 		for (let i = 0; i < 12; i++) {
 			const prefix = `${filterYear}-${String(i + 1).padStart(2, "0")}`;
 			const ent = rawEntradas.filter(e => e.data.startsWith(prefix)).reduce((a, c) => a + Number(c.valor), 0);
-			const gas = rawGastos.filter(g => g.considerar_soma === true && g.data.startsWith(prefix)).reduce((a, c) => a + Number(c.valor), 0);
+			const gasDespesas = rawGastos.filter(g => g.considerar_soma === true && g.data.startsWith(prefix)).reduce((a, c) => a + Number(c.valor), 0);
+			const gasEstornos = rawEstornos.filter(e => e.data.startsWith(prefix)).reduce((a, c) => a + Number(c.valor), 0);
+			const gas = Math.max(0, gasDespesas - gasEstornos);
 			const fat = rawFaturas.filter(e => e.data.startsWith(prefix)).reduce((a, c) => a + Number(c.valor), 0);
 			const inv = rawInvestimentos.reduce((a, c) => a + Number(c.valor_investido), 0) / 12;
 			const div = rawDividas.filter(e => (e.vencimento_parcela?.startsWith(prefix) || e.data?.startsWith(prefix))).reduce((a, c) => a + Number(c.valor_total), 0);
-			dadosGrafico.push({ mes: mesesNomes[i], entradas: ent, gastos: gas + fat, cartoes: fat, investimentos: inv, dividas: div });
+			dadosGrafico.push({ mes: mesesNomes[i], entradas: ent, gastos: gas, cartoes: fat, investimentos: inv, dividas: div });
 		}
 
 		const parseDate = (d: any) => new Date(d).getTime();
@@ -218,7 +259,7 @@ export default function HomeWeb() {
 				dividas: [...filteredDividas].sort((a, b) => parseDate(b.vencimento_parcela) - parseDate(a.vencimento_parcela)).slice(0, 5)
 			}
 		};
-	}, [rawEntradas, rawGastos, rawFaturas, rawInvestimentos, rawDividas, filterYear, filterMonth]);
+	}, [rawEntradas, rawGastos, rawEstornos, rawFaturas, rawInvestimentos, rawDividas, filterYear, filterMonth]);
 
 	const cartoesResumo = useMemo(() => {
 		if (cartoes.length === 0) return [];
@@ -228,7 +269,11 @@ export default function HomeWeb() {
 			const fechamentoDia = c.fechamento_dia || 1;
 			const vencimentoDia = c.vencimento_dia || 1;
 			const gastosCartao = rawGastos.filter(g => g.cartao_id === c.id && (!g.data ? false : getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia) === activeMonthStr));
-			const totalFatura = gastosCartao.reduce((sum, item) => sum + Number(item.valor), 0);
+			const estornosCartao = rawEstornos.filter(e => e.cartao_id === c.id && (!e.data ? false : getFaturaMesReferencia(e.data, fechamentoDia, vencimentoDia) === activeMonthStr));
+			const totalDespesasCartao = gastosCartao.reduce((sum, item) => sum + Number(item.valor), 0);
+			const totalEstornosCartao = estornosCartao.reduce((sum, item) => sum + Number(item.valor), 0);
+			const totalFatura = Math.max(0, totalDespesasCartao - totalEstornosCartao);
+
 			const pagamentosFatura = rawFaturas.filter(p => p.cartao_id === c.id && p.mes_referencia === activeMonthStr);
 			const totalPago = pagamentosFatura.reduce((sum, item) => sum + Number(item.valor), 0);
 			const pendente = Math.max(0, totalFatura - totalPago);
@@ -236,7 +281,7 @@ export default function HomeWeb() {
 			const percentualUso = Number(c.limite) > 0 ? (totalFatura / Number(c.limite)) * 100 : 0;
 			return { cartao: c, totalFatura, totalPago, pendente, limiteDisponivel, percentualUso, mesStr: activeMonthStr };
 		});
-	}, [cartoes, rawGastos, rawFaturas, filterMonth, filterYear]);
+	}, [cartoes, rawGastos, rawEstornos, rawFaturas, filterMonth, filterYear]);
 
 	const entradaPieData = useMemo(() => {
 		let filtered = rawEntradas;
@@ -253,7 +298,7 @@ export default function HomeWeb() {
 	}, [rawEntradas, filterYear, filterMonth]);
 
 	const gastoPieData = useMemo(() => {
-		let filtered = rawGastos.filter(g => g.considerar_soma === true);
+		let filtered = rawGastos.filter(g => g.considerar_soma !== false);
 		if (filterMonth !== "all") {
 			const prefix = `${filterYear}-${String(filterMonth).padStart(2, '0')}`;
 			filtered = filtered.filter(g => g.data.startsWith(prefix));
@@ -342,11 +387,33 @@ export default function HomeWeb() {
 		<motion.div className="space-y-6 sm:space-y-8 pb-20" initial={{ opacity: 0 }} animate={{ opacity: 1, transition: { staggerChildren: 0.05 } }}>
 			
 			{/* 1. SAUDAÇÃO & BOTÕES */}
-			<div className="flex flex-col gap-4">
+			<div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
 				<h2 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
 					<span>{getGreeting()}, {nome}!</span>
 					<span className="animate-bounce">👋</span>
 				</h2>
+
+				{acompanhaMei === true && (
+					<div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-1.5 rounded-xl shadow-sm shrink-0">
+						<button 
+							onClick={() => setViewMode("PF")} 
+							className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${viewMode === "PF" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800"}`}
+						>
+							PESSOAL
+						</button>
+						<button 
+							onClick={() => setViewMode("MEI")} 
+							className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${viewMode === "MEI" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800"}`}
+						>
+							MEI / NEGÓCIO
+						</button>
+					</div>
+				)}
+			</div>
+			
+			{viewMode === "PF" ? (
+				<>
+					<div className="flex flex-col gap-4">
 				<div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 w-full">
 					<button onClick={() => navigate("/gastos?add=true")} className="col-span-2 sm:col-span-1 flex items-center justify-center gap-2 w-full sm:w-auto px-5 py-3 sm:py-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-bold text-sm sm:text-xs shadow-sm transition-all cursor-pointer">
 						<TrendingDown size={16} className="sm:w-3.5 sm:h-3.5" /> <span>Nova Despesa</span>
@@ -525,7 +592,7 @@ export default function HomeWeb() {
 							) : (
 								cartoesResumo.map((res: any) => {
 									return (
-										<div key={res.cartao.id} className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-850/40 rounded-xl border border-slate-100 dark:border-slate-800 flex flex-col gap-3 transition-colors hover:border-slate-200 dark:hover:border-slate-700">
+										<div key={res.cartao.id} className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800 flex flex-col gap-3 transition-colors hover:border-slate-200 dark:hover:border-slate-700">
 											<div className="flex justify-between items-center">
 												<div className="flex flex-col">
 													<p className="font-extrabold text-slate-800 dark:text-slate-100 text-sm sm:text-base">{res.cartao.nome}</p>
@@ -541,7 +608,7 @@ export default function HomeWeb() {
 												<div className="mt-1">
 													<div className="flex justify-between text-[11px] sm:text-xs mb-1.5">
 														<span className="font-bold text-slate-500 dark:text-slate-400">
-															L. Disp: <span className="text-emerald-600 dark:text-emerald-450">R$ {res.limiteDisponivel.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+															L. Disp: <span className="text-emerald-600 dark:text-emerald-400">R$ {res.limiteDisponivel.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
 														</span>
 														<span className="font-bold text-slate-400">{Math.round(res.percentualUso)}% Usado</span>
 													</div>
@@ -566,7 +633,7 @@ export default function HomeWeb() {
 						</div>
 						<div className="space-y-4 flex-1">
 							{devedoresAtivos.map((devedor: any) => (
-								<div key={devedor.contato.id} className="flex justify-between items-center p-4 sm:p-5 bg-slate-50 dark:bg-slate-850/40 rounded-xl border border-slate-100 dark:border-slate-800">
+								<div key={devedor.contato.id} className="flex justify-between items-center p-4 sm:p-5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800">
 									<div>
 										<p className="font-extrabold text-slate-800 dark:text-slate-100 text-sm sm:text-base">{devedor.contato.nome}</p>
 										<p className="text-xs font-medium text-slate-500 dark:text-slate-450">{devedor.contato.telefone || "Sem Telefone"}</p>
@@ -618,7 +685,23 @@ export default function HomeWeb() {
 				{filterCategory === "cartoes" && <RecentSection title="Últimos Pagtos Fatura" items={dashboardData.recentes.cartoes} colorClass="text-purple-500 dark:text-purple-450" bgIconClass="bg-purple-50 text-purple-600 dark:bg-purple-950/20 dark:text-purple-400" icon={<ArrowDownRight size={16} />} onMore={() => navigate("/cartoes")} dateField="data" />}
 				{filterCategory === "investimentos" && <RecentSection title="Últimos Investimentos" items={dashboardData.recentes.investimentos} colorClass="text-blue-500 dark:text-blue-450" bgIconClass="bg-blue-50 text-blue-600 dark:bg-blue-950/20 dark:text-blue-400" icon={<TrendingUp size={16} />} onMore={() => navigate("/investimentos")} titleField="titulo" dateField={null} />}
 				{filterCategory === "dividas" && <RecentSection title="Últimas Dívidas" items={dashboardData.recentes.dividas} colorClass="text-orange-500 dark:text-orange-450" bgIconClass="bg-orange-50 text-orange-600 dark:bg-orange-950/20 dark:text-orange-400" icon={<TrendingDown size={16} />} onMore={() => navigate("/dividas")} dateField="vencimento_parcela" />}
-			</div>
+				</div>
+				</>
+			) : (
+				<motion.div 
+					initial={{ opacity: 0, scale: 0.95 }}
+					animate={{ opacity: 1, scale: 1 }}
+					className="flex flex-col items-center justify-center p-12 bg-indigo-50/50 dark:bg-indigo-950/10 border border-indigo-100 dark:border-indigo-900/30 rounded-[40px] shadow-sm text-center mt-8 min-h-[50vh]"
+				>
+					<div className="w-24 h-24 bg-indigo-100 dark:bg-indigo-900/40 rounded-full flex items-center justify-center mb-6 text-indigo-500">
+						<Brain size={48} />
+					</div>
+					<h3 className="text-3xl font-black text-slate-800 dark:text-slate-100 mb-4 tracking-tight">Em breve! 🚀</h3>
+					<p className="text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed text-lg">
+						Estamos construindo o painel definitivo para o seu negócio. Logo você poderá gerenciar as finanças da sua empresa com as ferramentas mais avançadas.
+					</p>
+				</motion.div>
+			)}
 
 			{/* MODALS */}
 			<OnboardingContasModal 
@@ -628,6 +711,16 @@ export default function HomeWeb() {
 					setShowOnboarding(false);
 					loadDashboardData();
 				}} 
+			/>
+
+			<MeiOnboardingModal 
+				isOpen={showMeiModal}
+				userId={userId}
+				onClose={() => setShowMeiModal(false)}
+				onComplete={(escolha) => {
+					setAcompanhaMei(escolha);
+					setShowMeiModal(false);
+				}}
 			/>
 
 			<AnimatePresence>
@@ -661,7 +754,7 @@ function MetricCard({ title, value, icon, bgClass, colorClass, borderClass }: an
 				<div className="flex items-center gap-3 mb-4"><div className={`p-3 rounded-xl ${bgClass} ${colorClass}`}>{icon}</div><p className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-xs">{title}</p></div>
 				<h3 className="text-3xl sm:text-4xl font-black text-slate-800 dark:text-slate-100 flex items-baseline"><span className="text-slate-400 dark:text-slate-655 text-xl font-bold mr-1.5 opacity-80">R$</span><span>{value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span></h3>
 			</div>
-			<div className="h-1.5 w-full bg-slate-50 dark:bg-slate-850 rounded-full mt-6 overflow-hidden"><div className={`h-full ${borderClass} rounded-full`} style={{ width: "40%" }} /></div>
+			<div className="h-1.5 w-full bg-slate-50 dark:bg-slate-800 rounded-full mt-6 overflow-hidden"><div className={`h-full ${borderClass} rounded-full`} style={{ width: "40%" }} /></div>
 		</motion.div>
 	);
 }

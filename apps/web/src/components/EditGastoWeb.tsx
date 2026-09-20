@@ -175,6 +175,18 @@ export function EditGastoWeb({
 		}
 
 		try {
+			let categoria_id = null;
+			if (formEdit.categoria) {
+				const { data: cat } = await supabase
+					.from("categorias")
+					.select("id")
+					.eq("usuario_id", itemSelecionado.usuario_id)
+					.eq("nome", formEdit.categoria)
+					.eq("tipo", "DESPESA")
+					.single();
+				if (cat) categoria_id = cat.id;
+			}
+
 			const { error } = await supabase
 				.from("transacoes")
 				.update({
@@ -183,7 +195,8 @@ export function EditGastoWeb({
 					data: formEdit.data,
 					cartao_id: isCredito ? formEdit.cartao_id : null,
 					conta_id: !isCredito ? formEdit.conta_id : null,
-					observacao: `[LEGADO EDITADO] Categoria: ${formEdit.categoria} | Observação original: ${formEdit.observacao}`,
+					categoria_id,
+					observacao: `[LEGADO] Classificação: ${formEdit.classificacao || 'N/A'} | Tipo: ${formEdit.tipo || 'N/A'} | Parcela: ${itemSelecionado.parcela_atual || 1}/${itemSelecionado.total_parcelas || 1} | Terceiro: ${formEdit.terceiro || false} | Obs Original: ${formEdit.observacao || ''}`,
 				})
 				.eq("id", itemSelecionado.id);
 
@@ -222,7 +235,7 @@ export function EditGastoWeb({
 
 	return (
 		<div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-2 sm:p-4 overflow-y-auto" role="dialog" aria-modal="true">
-			<div className="bg-white dark:bg-slate-900 w-full max-w-6xl rounded-3xl sm:rounded-[40px] shadow-2xl flex flex-col md:flex-row overflow-hidden h-[95vh] md:h-[85vh] max-h-[95vh] md:max-h-[800px] border border-slate-105 dark:border-slate-850 transition-colors duration-200 animate-in zoom-in-95 duration-300">
+			<div className="bg-white dark:bg-slate-900 w-full max-w-6xl rounded-3xl sm:rounded-[40px] shadow-2xl flex flex-col md:flex-row overflow-hidden h-[95vh] md:h-[85vh] max-h-[95vh] md:max-h-[800px] border border-slate-105 dark:border-slate-800 transition-colors duration-200 animate-in zoom-in-95 duration-300">
 				{/* COLUNA ESQUERDA: EXPLORAR DE LANÇAMENTOS */}
 				<div className="w-full md:w-80 lg:w-96 bg-slate-55 dark:bg-slate-950 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 flex flex-col h-[40%] md:h-full shrink-0 overflow-hidden">
 					<div className="p-6 pb-3">
@@ -236,7 +249,7 @@ export function EditGastoWeb({
 								placeholder="Buscar despesa..."
 								value={searchTerm}
 								onChange={(e) => setSearchTerm(e.target.value)}
-								className="w-full p-3.5 bg-white dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-750 dark:text-slate-200 outline-none focus:border-rose-500 transition-colors pl-10"
+								className="w-full p-3.5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-700 dark:text-slate-200 outline-none focus:border-rose-500 transition-colors pl-10"
 							/>
 							<Search
 								size={16}
@@ -313,7 +326,7 @@ export function EditGastoWeb({
 
 					{!itemSelecionado ? (
 						<div className="h-full flex flex-col items-center justify-center text-center opacity-25">
-							<div className="w-20 h-20 bg-slate-50 dark:bg-slate-850 rounded-full flex items-center justify-center mb-4">
+							<div className="w-20 h-20 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
 								<ShoppingBag size={36} className="text-slate-400" />
 							</div>
 							<h2 className="text-xl font-black text-slate-700 dark:text-slate-200">
@@ -373,13 +386,13 @@ export function EditGastoWeb({
 										<label className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">
 											<ChevronRight size={12} className="text-rose-500" /> Valor
 										</label>
-										<div className="bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl flex items-center gap-3 border border-slate-200 dark:border-slate-700 focus-within:border-rose-500 transition-colors">
+										<div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl flex items-center gap-3 border border-slate-200 dark:border-slate-700 focus-within:border-rose-500 transition-colors">
 											<span className="text-lg font-black text-slate-450 dark:text-slate-500">
 												R$
 											</span>
 											<input
 												type="text"
-												className="bg-transparent w-full text-2xl font-black text-slate-850 dark:text-slate-100 outline-none"
+												className="bg-transparent w-full text-2xl font-black text-slate-800 dark:text-slate-100 outline-none"
 												value={formEdit.valor}
 												onChange={(e) =>
 													setFormEdit({ ...formEdit, valor: formatCurrency(e.target.value) })
@@ -394,7 +407,7 @@ export function EditGastoWeb({
 										</label>
 										<input
 											type="date"
-											className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-705 dark:text-slate-200 outline-none border border-slate-205 dark:border-slate-700 focus:border-rose-500 transition-colors text-sm"
+											className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-705 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 transition-colors text-sm"
 											value={formEdit.data}
 											onChange={(e) =>
 												setFormEdit({ ...formEdit, data: e.target.value })
@@ -418,7 +431,7 @@ export function EditGastoWeb({
 												className={`flex-1 p-3 rounded-2xl font-bold flex items-center justify-center gap-2 cursor-pointer transition-all text-sm ${
 													formEdit.metodo_pagamento === m.id
 														? "bg-rose-500 text-white shadow-md shadow-rose-200/25 dark:shadow-none"
-														: "bg-slate-50 dark:bg-slate-850 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700"
+														: "bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700"
 												}`}>
 												{m.icon} {m.id}
 											</button>
@@ -432,7 +445,7 @@ export function EditGastoWeb({
 										<div className="space-y-1.5">
 											<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">Cartão</label>
 											<select
-												className="w-full p-3.5 bg-white dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none text-sm cursor-pointer"
+												className="w-full p-3.5 bg-white dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none text-sm cursor-pointer"
 												value={formEdit.cartao_id}
 												onChange={(e) => setFormEdit({ ...formEdit, cartao_id: e.target.value })}>
 												<option value="">Qual cartão?</option>
@@ -446,7 +459,7 @@ export function EditGastoWeb({
 											<input
 												type="number"
 												min="1"
-												className="w-full p-3.5 bg-white dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none text-sm"
+												className="w-full p-3.5 bg-white dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none text-sm"
 												value={formEdit.parcelas}
 												onChange={(e) => setFormEdit({ ...formEdit, parcelas: e.target.value })}
 											/>
@@ -473,7 +486,7 @@ export function EditGastoWeb({
 									<div className="space-y-1.5 animate-in slide-in-from-top-2 duration-300">
 										<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">Conta Bancária Origem</label>
 										<select
-											className="w-full p-3.5 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none text-sm cursor-pointer"
+											className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none text-sm cursor-pointer"
 											value={formEdit.conta_id}
 											onChange={(e) => setFormEdit({ ...formEdit, conta_id: e.target.value })}>
 											<option value="">Selecione de onde saiu o dinheiro...</option>
@@ -491,7 +504,7 @@ export function EditGastoWeb({
 											Categoria
 										</label>
 										<select
-											className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
+											className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
 											value={formEdit.categoria}
 											onChange={(e) =>
 												setFormEdit({ ...formEdit, categoria: e.target.value })
@@ -509,7 +522,7 @@ export function EditGastoWeb({
 											Tipo de Orçamento
 										</label>
 										<select
-											className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-705 dark:text-slate-205 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
+											className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-705 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
 											value={formEdit.tipo}
 											onChange={(e) =>
 												setFormEdit({ ...formEdit, tipo: e.target.value })
@@ -526,7 +539,7 @@ export function EditGastoWeb({
 								{/* RESPONSÁVEL PELO GASTO */}
 								<div className="space-y-3">
 									<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 block">Responsável pelo Gasto</label>
-									<div className="bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+									<div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
 										<label className="flex items-center gap-3 cursor-pointer">
 											<input 
 												type="checkbox" 
@@ -534,7 +547,7 @@ export function EditGastoWeb({
 												checked={formEdit.terceiro} 
 												onChange={(e) => setFormEdit({ ...formEdit, terceiro: e.target.checked })} 
 											/>
-											<span className="font-bold text-sm text-slate-750 dark:text-slate-200">Este gasto foi de outra pessoa? (Terceiro deve)</span>
+											<span className="font-bold text-sm text-slate-700 dark:text-slate-200">Este gasto foi de outra pessoa? (Terceiro deve)</span>
 										</label>
 										
 										{formEdit.terceiro && (
@@ -561,7 +574,7 @@ export function EditGastoWeb({
 										Observação / Detalhes
 									</label>
 									<textarea
-										className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 transition-colors resize-none h-24 text-sm"
+										className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 transition-colors resize-none h-24 text-sm"
 										placeholder="Detalhes adicionais ou texto bruto do banco..."
 										value={formEdit.observacao}
 										onChange={(e) => setFormEdit({ ...formEdit, observacao: e.target.value })}

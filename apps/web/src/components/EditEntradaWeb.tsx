@@ -123,10 +123,10 @@ export function EditEntradaWeb({
 
 	return (
 		<div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-2 sm:p-4 overflow-y-auto" role="dialog" aria-modal="true">
-			<div className="bg-white dark:bg-slate-900 w-full max-w-5xl rounded-3xl sm:rounded-[40px] shadow-2xl flex flex-col md:flex-row overflow-hidden animate-in zoom-in duration-300 h-[95vh] md:h-[650px] max-h-[95vh] md:max-h-[650px] border border-slate-105 dark:border-slate-850 transition-colors duration-200">
+			<div className="bg-white dark:bg-slate-900 w-full max-w-5xl rounded-3xl sm:rounded-[40px] shadow-2xl flex flex-col md:flex-row overflow-hidden animate-in zoom-in duration-300 h-[95vh] md:h-[650px] max-h-[95vh] md:max-h-[650px] border border-slate-105 dark:border-slate-800 transition-colors duration-200">
 				{/* BUSCA */}
 				<div className="w-full md:w-2/5 bg-slate-50 dark:bg-slate-950 p-6 md:p-10 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 flex flex-col h-[45%] md:h-full shrink-0 overflow-hidden">
-					<h3 className="text-xl md:text-2xl font-black text-slate-850 dark:text-slate-100 mb-4 md:mb-8 flex items-center gap-2">
+					<h3 className="text-xl md:text-2xl font-black text-slate-800 dark:text-slate-100 mb-4 md:mb-8 flex items-center gap-2">
 						<Search size={20} className="text-emerald-500" /> Localizar
 					</h3>
 
@@ -136,7 +136,7 @@ export function EditEntradaWeb({
 								1. Escolha a Categoria
 							</label>
 							<select
-								className="w-full mt-2 p-3.5 bg-white dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-200 outline-none text-sm cursor-pointer"
+								className="w-full mt-2 p-3.5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-200 outline-none text-sm cursor-pointer"
 								value={filtroDesc}
 								onChange={(e) => {
 									setFiltroDesc(e.target.value);
@@ -155,7 +155,7 @@ export function EditEntradaWeb({
 								<div className="mt-3 flex gap-2 animate-in slide-in-from-top-2 duration-300">
 									<input
 										type="text"
-										className="flex-1 p-3 bg-white dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 text-sm"
+										className="flex-1 p-3 bg-white dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 text-sm"
 										value={novoNomeCategoria}
 										onChange={(e) => setNovoNomeCategoria(e.target.value)}
 										placeholder="Novo nome..."
@@ -210,7 +210,7 @@ export function EditEntradaWeb({
 				<div className="w-full md:w-3/5 p-6 md:p-12 relative flex flex-col justify-center bg-white dark:bg-slate-900 overflow-y-auto h-[55%] md:h-full">
 					<button
 						onClick={onClose}
-						className="absolute top-6 right-6 text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 transition-colors cursor-pointer">
+						className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer">
 						<X size={20} />
 					</button>
 
@@ -240,7 +240,7 @@ export function EditEntradaWeb({
 									<input
 										list="edit-entradas-categorias-list"
 										type="text"
-										className="w-full p-4 bg-slate-50 dark:bg-slate-850 border border-slate-205 dark:border-slate-700 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none text-sm focus:border-emerald-500 transition-colors"
+										className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none text-sm focus:border-emerald-500 transition-colors"
 										value={descEdit}
 										onChange={(e) => setDescEdit(e.target.value)}
 										placeholder="Digite ou selecione a categoria..."
@@ -256,14 +256,14 @@ export function EditEntradaWeb({
 									<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">
 										Novo Valor
 									</label>
-									<div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-205 dark:border-slate-700">
+									<div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
 										<span className="text-xl font-black text-slate-500 dark:text-slate-400">
 											R$
 										</span>
 										<input
 											type="number"
 											step="0.01"
-											className="bg-transparent w-full text-3xl font-black text-emerald-600 dark:text-emerald-450 outline-none"
+											className="bg-transparent w-full text-3xl font-black text-emerald-600 dark:text-emerald-400 outline-none"
 											value={valorEdit}
 											onChange={(e) => setValorEdit(e.target.value)}
 										/>
@@ -276,7 +276,7 @@ export function EditEntradaWeb({
 									</label>
 									<input
 										type="date"
-										className="w-full p-4 bg-slate-50 dark:bg-slate-850 border border-slate-205 dark:border-slate-700 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none text-sm focus:border-emerald-500 transition-colors"
+										className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none text-sm focus:border-emerald-500 transition-colors"
 										value={dataEdit}
 										onChange={(e) => setDataEdit(e.target.value)}
 									/>
@@ -285,7 +285,7 @@ export function EditEntradaWeb({
 								<div className="space-y-1.5">
 									<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">Conta de Destino</label>
 									<select
-										className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 border border-slate-205 dark:border-slate-700 focus:border-emerald-500 outline-none text-sm cursor-pointer"
+										className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 focus:border-emerald-500 outline-none text-sm cursor-pointer"
 										value={contaEdit}
 										onChange={(e) => setContaEdit(e.target.value)}>
 										<option value="">Selecione a conta...</option>

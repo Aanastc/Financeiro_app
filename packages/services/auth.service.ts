@@ -5,7 +5,7 @@ export const authService = {
    * CADASTRO DE USUÁRIO
    * Cria a conta no Auth e insere os dados na tabela pública 'usuarios'.
    */
-async register(email: string, password: string, nome: string) {
+async register(email: string, password: string, nome: string, acompanha_mei: boolean = false) {
   // 1. Registro no Auth
   const { data, error: authError } = await supabase.auth.signUp({
     email,
@@ -21,7 +21,7 @@ async register(email: string, password: string, nome: string) {
   if (data.user) {
     const { error: dbError } = await supabase
       .from("usuarios")
-      .insert([{ id: data.user.id, nome: nome, email: email }]);
+      .insert([{ id: data.user.id, nome: nome, email: email, acompanha_mei }]);
 
     if (dbError) {
       // Se for erro de RLS, apenas logamos no console e deixamos o fluxo seguir
@@ -92,7 +92,7 @@ async register(email: string, password: string, nome: string) {
    * ATUALIZAÇÃO DE PERFIL
    * Atualiza o nome, email, senha e foto na tabela pública e nos metadados do Auth.
    */
-  async updateProfile(nome: string, avatarUrl?: string, email?: string, password?: string, telefone?: string, cpf?: string) {
+  async updateProfile(nome: string, avatarUrl?: string, email?: string, password?: string, telefone?: string, cpf?: string, acompanha_mei?: boolean) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Usuário não autenticado");
 
@@ -118,6 +118,7 @@ async register(email: string, password: string, nome: string) {
     if (email && email !== user.email) dbUpdates.email = email;
     if (telefone !== undefined) dbUpdates.telefone = telefone;
     if (cpf !== undefined) dbUpdates.cpf = cpf;
+    if (acompanha_mei !== undefined) dbUpdates.acompanha_mei = acompanha_mei;
 
     const { error: dbError } = await supabase
       .from("usuarios")
@@ -137,7 +138,7 @@ async register(email: string, password: string, nome: string) {
 
     const { data, error } = await supabase
       .from("usuarios")
-      .select("id, nome, email, telefone, cpf")
+      .select("id, nome, email, telefone, cpf, acompanha_mei")
       .eq("id", user.id)
       .single();
 

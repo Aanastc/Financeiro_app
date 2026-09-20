@@ -96,7 +96,7 @@ export default function EditContaModal({ isOpen, onClose, conta, onUpdate, userI
 								</select>
 							</div>
 
-							<label className="flex items-center gap-3 p-4 border border-slate-200 dark:border-slate-800 rounded-xl cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-850 transition-colors">
+							<label className="flex items-center gap-3 p-4 border border-slate-200 dark:border-slate-800 rounded-xl cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
 								<input 
 									type="checkbox"
 									checked={temDebito}

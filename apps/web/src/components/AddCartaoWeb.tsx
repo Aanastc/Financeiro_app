@@ -131,7 +131,7 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 							Conta Vinculada
 						</label>
 						<select
-							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-750 focus:border-indigo-500 transition-colors text-sm cursor-pointer"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-indigo-500 transition-colors text-sm cursor-pointer"
 							value={form.conta_id}
 							onChange={(e) => setForm({ ...form, conta_id: e.target.value })}>
 							<option value="">Selecione uma conta...</option>
@@ -150,7 +150,7 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 						</label>
 						<input
 							placeholder="Ex: Nubank, Inter, Visa..."
-							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-750 focus:border-indigo-500 transition-colors text-sm"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-indigo-500 transition-colors text-sm"
 							value={form.nome}
 							onChange={(e) => setForm({ ...form, nome: e.target.value })}
 						/>
@@ -165,7 +165,7 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 							type="text"
 							inputMode="numeric"
 							placeholder="0,00"
-							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-black text-emerald-600 dark:text-emerald-450 text-2xl outline-none border border-slate-200 dark:border-slate-750 focus:border-emerald-500 transition-colors"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-black text-emerald-600 dark:text-emerald-400 text-2xl outline-none border border-slate-200 dark:border-slate-700 focus:border-emerald-500 transition-colors"
 							value={form.limite}
 							onChange={(e) =>
 								setForm({ ...form, limite: formatCurrency(e.target.value) })
@@ -182,7 +182,7 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 								type="number"
 								min="1"
 								max="31"
-								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-750 focus:border-indigo-500 transition-colors text-sm text-center"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-indigo-500 transition-colors text-sm text-center"
 								value={form.vencimento_dia}
 								onChange={(e) => handleDayChange("vencimento_dia", e.target.value)}
 							/>
@@ -197,7 +197,7 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 								max="31"
 								value={form.fechamento_dia}
 								onChange={(e) => handleDayChange("fechamento_dia", e.target.value)}
-								className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-750 font-bold text-slate-700 dark:text-slate-200 text-center text-sm outline-none focus:border-indigo-500 transition-colors"
+								className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-200 text-center text-sm outline-none focus:border-indigo-500 transition-colors"
 							/>
 						</div>
 					</div>
@@ -226,7 +226,7 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 								checked={form.hasDependente} 
 								onChange={(e) => setForm({ ...form, hasDependente: e.target.checked })} 
 							/>
-							<span className="font-bold text-sm text-slate-750 dark:text-slate-200 flex items-center gap-2">
+							<span className="font-bold text-sm text-slate-700 dark:text-slate-200 flex items-center gap-2">
 								<UserPlus size={16} /> Tem um cartão para dependente?
 							</span>
 						</label>
@@ -239,7 +239,7 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 									</label>
 									<input
 										placeholder="Ex: João, Maria..."
-										className="w-full p-3.5 bg-white dark:bg-slate-850 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-750 focus:border-indigo-500 transition-colors text-sm"
+										className="w-full p-3.5 bg-white dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-indigo-500 transition-colors text-sm"
 										value={form.dependente_nome}
 										onChange={(e) => setForm({ ...form, dependente_nome: e.target.value })}
 									/>
@@ -252,7 +252,7 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 										type="text"
 										inputMode="numeric"
 										placeholder="R$ (Mesmo limite se vazio)"
-										className="w-full p-3.5 bg-white dark:bg-slate-850 rounded-2xl font-bold text-emerald-600 dark:text-emerald-450 outline-none border border-slate-200 dark:border-slate-750 focus:border-emerald-500 transition-colors text-sm"
+										className="w-full p-3.5 bg-white dark:bg-slate-800 rounded-2xl font-bold text-emerald-600 dark:text-emerald-400 outline-none border border-slate-200 dark:border-slate-700 focus:border-emerald-500 transition-colors text-sm"
 										value={form.dependente_limite}
 										onChange={(e) => setForm({ ...form, dependente_limite: formatCurrency(e.target.value) })}
 									/>

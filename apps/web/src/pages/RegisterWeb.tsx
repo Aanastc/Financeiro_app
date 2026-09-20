@@ -9,6 +9,7 @@ export default function RegisterWeb() {
 		email: "",
 		password: "",
 		confirmPassword: "",
+		acompanhaMei: false,
 	});
 	const [loading, setLoading] = useState(false);
 	const [showPassword, setShowPassword] = useState(false);
@@ -24,7 +25,7 @@ export default function RegisterWeb() {
 
 		setLoading(true);
 		try {
-			await authService.register(form.email, form.password, form.nome);
+			await authService.register(form.email, form.password, form.nome, form.acompanhaMei);
 			navigate("/verify", { state: { email: form.email } });
 		} catch (err: any) {
 			alert(err.message);
@@ -34,7 +35,7 @@ export default function RegisterWeb() {
 	};
 
 	return (
-		<div className="min-h-screen bg-slate-50 dark:bg-slate-955 flex items-center justify-center p-4 font-sans transition-colors duration-200">
+		<div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-4 font-sans transition-colors duration-200">
 			<form
 				onSubmit={handleSubmit}
 				className="bg-white dark:bg-slate-900 p-6 sm:p-10 md:p-14 rounded-3xl sm:rounded-[40px] md:rounded-[50px] shadow-2xl w-full max-w-3xl border border-slate-100 dark:border-slate-800 transition-colors duration-200"
@@ -52,7 +53,7 @@ export default function RegisterWeb() {
 							NOME
 						</label>
 						<input
-							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
 							placeholder="Ex: João Silva"
 							required
 							onChange={(e) => setForm({ ...form, nome: e.target.value })}
@@ -64,7 +65,7 @@ export default function RegisterWeb() {
 							E-MAIL
 						</label>
 						<input
-							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
 							type="email"
 							placeholder="seu@email.com"
 							required
@@ -78,7 +79,7 @@ export default function RegisterWeb() {
 						</label>
 						<div className="relative">
 							<input
-								className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
+								className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
 								type={showPassword ? "text" : "password"}
 								placeholder="No mínimo 8 dígitos"
 								required
@@ -103,7 +104,7 @@ export default function RegisterWeb() {
 						</label>
 						<div className="relative">
 							<input
-								className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
+								className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
 								type={showConfirmPassword ? "text" : "password"}
 								placeholder="Repita sua senha"
 								required
@@ -125,6 +126,34 @@ export default function RegisterWeb() {
 									As senhas não são iguais!
 								</p>
 							)}
+					</div>
+					
+					<div className="space-y-1.5 md:col-span-2 mt-2">
+						<label className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-2">
+							O QUE VOCÊ DESEJA ACOMPANHAR?
+						</label>
+						<div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+							<label className={`cursor-pointer flex items-center justify-center p-4 border rounded-2xl transition-all ${!form.acompanhaMei ? 'border-[#4CAF50] bg-green-50 dark:bg-green-900/20 text-[#4CAF50] dark:text-emerald-400' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
+								<input 
+									type="radio" 
+									name="perfil_tipo" 
+									className="hidden" 
+									checked={!form.acompanhaMei} 
+									onChange={() => setForm({...form, acompanhaMei: false})} 
+								/>
+								<span className="font-bold text-sm">Apenas Pessoal (PF)</span>
+							</label>
+							<label className={`cursor-pointer flex items-center justify-center p-4 border rounded-2xl transition-all ${form.acompanhaMei ? 'border-[#4CAF50] bg-green-50 dark:bg-green-900/20 text-[#4CAF50] dark:text-emerald-400' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
+								<input 
+									type="radio" 
+									name="perfil_tipo" 
+									className="hidden" 
+									checked={form.acompanhaMei} 
+									onChange={() => setForm({...form, acompanhaMei: true})} 
+								/>
+								<span className="font-bold text-sm">Pessoal e MEI/ME</span>
+							</label>
+						</div>
 					</div>
 				</div>
 

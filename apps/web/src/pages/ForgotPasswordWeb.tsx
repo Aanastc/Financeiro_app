@@ -43,7 +43,7 @@ export default function ForgotPasswordWeb() {
 				<div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-emerald-500 via-[#4CAF50] to-[#5D4037]" />
 
 				<div className="text-center mb-10">
-					<div className="relative w-16 h-16 bg-slate-50 dark:bg-slate-850 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100 dark:border-slate-800 shadow-inner group">
+					<div className="relative w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100 dark:border-slate-800 shadow-inner group">
 						<Mail className="w-6 h-6 text-[#4CAF50] dark:text-emerald-400 transition-transform duration-500 group-hover:scale-110" />
 					</div>
 					<h2 className="text-3xl font-black text-slate-800 dark:text-slate-100 mb-2 tracking-tight">Esqueceu a Senha?</h2>
@@ -56,7 +56,7 @@ export default function ForgotPasswordWeb() {
 							E-MAIL DE CADASTRO
 						</label>
 						<input
-							className="w-full p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
+							className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
 							type="email"
 							placeholder="seu@email.com"
 							required

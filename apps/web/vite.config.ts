@@ -8,9 +8,11 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      // Força o Vite a resolver o Supabase dentro da node_modules da pasta web,
+      // Força o Vite a resolver dependências dentro da node_modules da pasta web,
       // mesmo quando o import vem de arquivos fora desta pasta (como o /packages)
       '@supabase/supabase-js': path.resolve(__dirname, 'node_modules/@supabase/supabase-js'),
+      '@google/generative-ai': path.resolve(__dirname, 'node_modules/@google/generative-ai'),
+      'exceljs': path.resolve(__dirname, 'node_modules/exceljs'),
     },
   },
   server: {
