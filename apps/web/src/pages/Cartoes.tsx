@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { authService } from "../../../../packages/services/auth.service";
 import { financeService } from "../../../../packages/services/finance.service";
+import { getFaturaMesReferencia } from "../../../../packages/utils/cartao.utils";
 import { motion } from "framer-motion";
-import { CreditCard as CreditCardIcon, Plus, Eye, ChevronRight, ShoppingBag, Edit3 } from "lucide-react";
+import { CreditCard as CreditCardIcon, Plus, Eye, ChevronRight, ShoppingBag, Edit3, AlertTriangle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import AddCartaoModal from "../components/AddCartaoModal";
@@ -124,14 +125,19 @@ export default function Cartoes() {
 			const user = await authService.getCurrentUser();
 			if (!user) return;
 			
-			const [cardsData, faturasData, gastosCredito, pagamentosFaturas] = await Promise.all([
+			const [cardsData, faturasData, gastosCredito, pagamentosFaturas, dividasData] = await Promise.all([
 				financeService.getCartoes(user.id),
 				financeService.getAllFaturas(user.id).catch(() => []),
 				financeService.getAllGastosCredito(user.id),
-				financeService.getPagamentosFaturas(user.id)
+				financeService.getPagamentosFaturas(user.id),
+				financeService.getDividas(user.id).catch(() => [])
 			]);
 
 			const enrichedCards = (cardsData || []).map((c: any) => {
+				const cardNomeLower = (c.nome || "").toLowerCase();
+				const isSantander = cardNomeLower.includes("santander");
+				const isNubank = cardNomeLower.includes("nubank");
+
 				const cardGastos = gastosCredito?.filter((g: any) => g.cartao_id === c.id) || [];
 				const totalGastos = cardGastos.reduce((sum: number, g: any) => sum + Number(g.valor), 0);
 
@@ -139,29 +145,84 @@ export default function Cartoes() {
 				const totalPagamentos = cardPagamentos.reduce((sum: number, p: any) => sum + Number(p.valor), 0);
 
 				const cardFaturas = (faturasData || []).filter((f: any) => f.cartao_id === c.id);
-				let saldoGasto = 0;
 
-				if (cardFaturas.length > 0) {
-					// Soma apenas o saldo restante das faturas não quitadas (abertas, fechadas, atrasadas)
-					const saldoFaturas = cardFaturas.reduce((sum: number, f: any) => {
-						return sum + Math.max(0, Number(f.valor_total || 0) - Number(f.valor_pago || 0));
-					}, 0);
-					// Mais compras do ciclo que ainda não foram atreladas a nenhuma fatura
-					const comprasSemFatura = cardGastos.filter((g: any) => !g.fatura_id);
-					const totalSemFatura = comprasSemFatura.reduce((sum: number, g: any) => sum + Number(g.valor), 0);
-					saldoGasto = Math.max(0, saldoFaturas + totalSemFatura);
-				} else {
-					// Fallback: Total gasto menos total pago no cartão
-					saldoGasto = Math.max(0, totalGastos - totalPagamentos);
-				}
+				// 1. Procura se há dívida ativa / renegociação associada a este cartão
+				const matchingDivida = (dividasData || []).find((d: any) => {
+					if (d.status === "quitada") return false;
+					if (d.cartao_id && d.cartao_id === c.id) return true;
+					if (d.fatura_origem_id && cardFaturas.some((f: any) => f.id === d.fatura_origem_id)) return true;
+					
+					const dInst = (d.instituicao || "").toLowerCase();
+					const dDesc = (d.descricao || "").toLowerCase();
 
-				const disponivel = Math.max(0, Number(c.limite) - saldoGasto);
+					if (isSantander && (dInst.includes("santander") || dDesc.includes("santander"))) return true;
+					if (isNubank && (dInst.includes("nubank") || dDesc.includes("nubank")) && (dDesc.includes("renegocia") || dDesc.includes("acordo") || dDesc.includes("cartão") || dDesc.includes("cartao"))) return true;
+					return false;
+				});
 
 				const todayStr = new Date().toISOString().split("T")[0];
 				const parcelasEmAberto = cardGastos.filter((g: any) => g.total_parcelas > 1 && g.data >= todayStr).length;
 
+				if (matchingDivida) {
+					const parcelas = matchingDivida.parcelas_divida || [];
+					const pendentes = parcelas.filter((p: any) => p.status === 'pendente');
+					const pagas = parcelas.filter((p: any) => p.status === 'paga');
+					const saldoDevedor = pendentes.length > 0
+						? pendentes.reduce((sum: number, p: any) => sum + Number(p.valor_esperado || 0), 0)
+						: Number(matchingDivida.valor_atual || matchingDivida.valor_original || 0);
+
+					const saldoGasto = saldoDevedor;
+					// DISPONÍVEL NEGATIVO CONFORME RENEGOCIAÇÃO REAL DO CARTÃO:
+					const disponivel = Number(c.limite) - saldoDevedor;
+
+					return {
+						...c,
+						isRenegociado: true,
+						saldoGasto,
+						disponivel,
+						parcelasEmAberto: pendentes.length,
+						dividaDetalhes: {
+							id: matchingDivida.id,
+							descricao: matchingDivida.descricao || "Renegociação de Cartão",
+							parcelasPagas: pagas.length,
+							totalParcelas: parcelas.length || matchingDivida.parcelas_totais || 1,
+							saldoDevedor
+						}
+					};
+				}
+
+				// 2. CÁLCULO 100% AUTOMÁTICO DO CARTÃO BASEADO NO EXTRATO / FATURAS
+				const fechamentoDia = Number(c.fechamento_dia || 1);
+				const vencimentoDia = Number(c.vencimento_dia || 1);
+				const currentMesRef = getFaturaMesReferencia(todayStr, fechamentoDia, vencimentoDia);
+
+				// Compras que comprometem o limite: compras da fatura aberta atual + parcelas futuras a faturar
+				const comprasComprometidas = cardGastos.filter((g: any) => {
+					if (!g.data) return false;
+					const gMesRef = getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia);
+					return gMesRef >= currentMesRef;
+				});
+
+				const totalComprasComprometidas = comprasComprometidas.reduce((sum: number, g: any) => sum + Number(g.valor || 0), 0);
+
+				// Faturas anteriores que porventura ainda estejam pendentes (não pagas)
+				const faturasAnterioresPendentes = cardFaturas.filter((f: any) => {
+					const fVenc = f.data_vencimento ? f.data_vencimento.substring(0, 7) : "";
+					return fVenc < currentMesRef && f.status !== "paga";
+				});
+
+				const saldoFaturasAnteriores = faturasAnterioresPendentes.reduce((sum: number, f: any) => {
+					const total = Number(f.valor_total || 0);
+					const pago = Number(f.valor_pago || 0);
+					return sum + Math.max(0, total - pago);
+				}, 0);
+
+				const saldoGasto = Math.round((totalComprasComprometidas + saldoFaturasAnteriores) * 100) / 100;
+				const disponivel = Math.round((Number(c.limite) - saldoGasto) * 100) / 100;
+
 				return {
 					...c,
+					isRenegociado: false,
 					saldoGasto,
 					disponivel,
 					parcelasEmAberto
@@ -245,10 +306,15 @@ export default function Cartoes() {
 											<p className="font-black tracking-wider text-sm sm:text-base uppercase opacity-95 truncate" title={cartao.nome}>
 												{cartao.nome}
 											</p>
+											{cartao.isRenegociado && (
+												<span className="bg-rose-500/90 text-[10px] uppercase font-black px-2 py-0.5 rounded-full tracking-wide shrink-0 shadow-sm">
+													Acordo Ativo
+												</span>
+											)}
 											<button 
 												onClick={() => setCartaoParaEditar(cartao)} 
 												className="p-1 opacity-70 hover:opacity-100 hover:bg-white/20 rounded-lg transition-all cursor-pointer shrink-0"
-												title="Editar Cartão"
+												title="Editar / Calibrar Cartão"
 											>
 												<Edit3 size={14} />
 											</button>
@@ -259,15 +325,17 @@ export default function Cartoes() {
 									</div>
 									<div className="z-10 w-full my-auto py-2">
 										<div className="flex items-baseline justify-between gap-2 mb-1.5">
-											<span className="text-[10px] uppercase font-bold tracking-wider opacity-85 truncate">Saldo Utilizado</span>
+											<span className="text-[10px] uppercase font-bold tracking-wider opacity-85 truncate">
+												{cartao.isRenegociado ? "Saldo Devedor Acordo" : "Saldo Utilizado"}
+											</span>
 											<span className="font-black text-lg sm:text-xl whitespace-nowrap">
 												R$ {Number(cartao.saldoGasto || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 											</span>
 										</div>
 										<div className="w-full bg-white/25 h-2 rounded-full overflow-hidden p-0.5">
 											<div 
-												className="bg-white h-full rounded-full transition-all duration-500 shadow-sm" 
-												style={{ width: `${Math.min(100, ((cartao.saldoGasto || 0) / (cartao.limite || 1)) * 100)}%` }} 
+												className={`h-full rounded-full transition-all duration-500 shadow-sm ${cartao.isRenegociado || cartao.disponivel < 0 ? "bg-rose-400" : "bg-white"}`} 
+												style={{ width: `${Math.min(100, Math.max(0, ((cartao.saldoGasto || 0) / (cartao.limite || 1)) * 100))}%` }} 
 											/>
 										</div>
 									</div>
@@ -289,10 +357,31 @@ export default function Cartoes() {
 								<div className="space-y-3 sm:space-y-4 mb-5 sm:mb-6 px-1">
 									<div className="flex justify-between items-center text-sm gap-2">
 										<span className="font-medium text-slate-500 dark:text-slate-400 truncate">Limite Disponível</span>
-										<span className="font-black text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-											R$ {Number(cartao.disponivel || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+										<span className={`font-black whitespace-nowrap ${cartao.disponivel < 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+											{cartao.disponivel < 0 ? "-" : ""}R$ {Math.abs(Number(cartao.disponivel || 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 										</span>
 									</div>
+
+									{cartao.isRenegociado && (
+										<div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 p-3.5 rounded-2xl text-xs space-y-1.5">
+											<div className="flex items-center justify-between text-rose-700 dark:text-rose-300 font-bold">
+												<span className="flex items-center gap-1.5">
+													<AlertTriangle size={14} className="text-rose-600 dark:text-rose-400" /> Cartão Renegociado
+												</span>
+												<span>{cartao.dividaDetalhes?.parcelasPagas}/{cartao.dividaDetalhes?.totalParcelas} pagas</span>
+											</div>
+											<p className="text-slate-600 dark:text-slate-400 leading-tight">
+												Acordo em andamento: saldo devedor de R$ {Number(cartao.dividaDetalhes?.saldoDevedor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}.
+											</p>
+											<button
+												onClick={() => navigate("/dividas")}
+												className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline flex items-center gap-1 pt-0.5 cursor-pointer"
+											>
+												Ver detalhes na aba de Dívidas <ChevronRight size={12} />
+											</button>
+										</div>
+									)}
+
 									<div className="flex justify-between items-center text-sm gap-2">
 										<span className="font-medium text-slate-500 dark:text-slate-400 truncate">Parcelas em Aberto</span>
 										<span className="font-black text-indigo-600 dark:text-indigo-400 whitespace-nowrap" style={{ color: cardAccent }}>

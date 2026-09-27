@@ -8,7 +8,8 @@ import {
 	CircleDashed,
 	TrendingDown,
 	Building,
-    Check
+    Check,
+	RefreshCw
 } from "lucide-react";
 import { Toaster, toast } from "react-hot-toast";
 import AddDividaModal from "../components/AddDividaModal";
@@ -97,11 +98,26 @@ export default function DividasWeb() {
 					<p className="text-gray-400 dark:text-slate-500 font-medium text-sm ml-12">Organize e quite seus contratos, empréstimos e parcelamentos</p>
 				</div>
 
-				<button 
-					onClick={() => setIsAddDividaOpen(true)}
-					className="px-8 py-4 bg-purple-600 text-white rounded-[25px] font-black flex items-center gap-2 hover:bg-purple-700 transition-all shadow-xl shadow-purple-200 dark:shadow-none relative z-10 w-full lg:w-auto justify-center cursor-pointer">
-					<Plus size={20} /> NOVA DÍVIDA
-				</button>
+				<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 relative z-10 w-full lg:w-auto">
+					<button 
+						onClick={async () => {
+							toast.loading("Sincronizando com extratos...", { id: "sync-dividas" });
+							await loadDividas();
+							toast.success("Dívidas sincronizadas com os extratos!", { id: "sync-dividas" });
+						}}
+						className="px-5 py-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-[25px] font-black flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap text-sm"
+						title="Cruza lançamentos e resgates de empréstimos do extrato com os contratos ativos"
+					>
+						<RefreshCw size={18} /> Sincronizar Extratos
+					</button>
+
+					<button 
+						onClick={() => setIsAddDividaOpen(true)}
+						className="px-8 py-4 bg-purple-600 text-white rounded-[25px] font-black flex items-center justify-center gap-2 hover:bg-purple-700 transition-all shadow-xl shadow-purple-200 dark:shadow-none cursor-pointer whitespace-nowrap"
+					>
+						<Plus size={20} /> NOVA DÍVIDA
+					</button>
+				</div>
 			</div>
 
 			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -159,7 +175,7 @@ export default function DividasWeb() {
                                                     <Building size={14}/> {d.instituicao || d.tipo.replace("_", " ").toUpperCase()}
                                                 </p>
                                             </div>
-                                            <div className="text-right">
+                                            <div className="text-right flex flex-col items-end">
                                                 <p className="text-[10px] font-black uppercase tracking-wider text-rose-500 dark:text-rose-400">
                                                     Falta pagar
                                                 </p>
@@ -169,6 +185,15 @@ export default function DividasWeb() {
                                                 <p className="text-xs font-bold text-slate-400 dark:text-slate-500">
                                                     Total: R$ {Number(d.valor_original).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                                 </p>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setDividaSelecionada(d);
+                                                    }}
+                                                    className="mt-2 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-600 hover:text-white text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-xl text-[11px] font-black transition-all flex items-center gap-1 cursor-pointer"
+                                                >
+                                                    <CheckCircle2 size={13} /> Quitar / Detalhes
+                                                </button>
                                             </div>
                                         </div>
 

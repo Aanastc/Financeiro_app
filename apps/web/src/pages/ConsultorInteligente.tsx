@@ -221,7 +221,16 @@ export default function ConsultorInteligente() {
 		totalDividas: 0,
 		devedoresTotal: 0,
 		topCategories: [] as { nome: string; valor: number }[],
-		cartoesResumo: [] as any[]
+		cartoesResumo: [] as any[],
+		dividasAtivasDetalhes: [] as {
+			id: string;
+			descricao: string;
+			instituicao: string;
+			valorOriginal: number;
+			valorRestante: number;
+			parcelasPagas: number;
+			totalParcelas: number;
+		}[]
 	});
 
 	// Chat com IA
@@ -248,13 +257,35 @@ export default function ConsultorInteligente() {
 				financeService.getDevedores(user.id).catch(() => [])
 			]);
 
+			const transacoes = ((resTx as any)?.data || []) as any[];
+
 			const totalReceitas = transacoes.filter(t => t.tipo === "RECEITA").reduce((acc, cur) => acc + Number(cur.valor || 0), 0);
 			const totalDespesas = transacoes.filter(t => t.tipo === "DESPESA").reduce((acc, cur) => acc + Number(cur.valor || 0), 0);
 			const totalEstornos = transacoes.filter(t => t.tipo === "ESTORNO").reduce((acc, cur) => acc + Number(cur.valor || 0), 0);
 			const totalGastos = Math.max(0, totalDespesas - totalEstornos);
 			const saldoContas = (contas || []).reduce((acc: number, c: any) => acc + Number(c.saldo_atual || 0), 0);
 			const totalInvestimentos = (investimentos || []).reduce((acc: number, i: any) => acc + Number(i.valor_investido || 0), 0);
-			const totalDividas = (dividas || []).filter((d: any) => d.status !== "quitada").reduce((acc: number, d: any) => acc + Number(d.valor_atual || d.valor_original || 0), 0);
+
+			const dividasAtivas = (dividas || []).filter((d: any) => d.status !== "quitada");
+			const dividasAtivasDetalhes = dividasAtivas.map((d: any) => {
+				const parcelas = d.parcelas_divida || [];
+				const pendentes = parcelas.filter((p: any) => p.status === "pendente");
+				const pagas = parcelas.filter((p: any) => p.status === "paga");
+				const valorRestante = pendentes.length > 0
+					? pendentes.reduce((acc: number, p: any) => acc + Number(p.valor_esperado || 0), 0)
+					: Number(d.valor_atual || d.valor_original || 0);
+				return {
+					id: d.id,
+					descricao: d.descricao || "Dívida",
+					instituicao: d.instituicao || "Banco",
+					valorOriginal: Number(d.valor_original || 0),
+					valorRestante,
+					parcelasPagas: pagas.length,
+					totalParcelas: parcelas.length
+				};
+			});
+
+			const totalDividas = dividasAtivasDetalhes.reduce((acc, d) => acc + d.valorRestante, 0);
 			const devedoresTotal = (devedores || []).reduce((acc: number, dev: any) => acc + Number(dev.total_devido || 0), 0);
 
 			const catMap: { [key: string]: number } = {};
@@ -275,7 +306,8 @@ export default function ConsultorInteligente() {
 				totalDividas,
 				devedoresTotal,
 				topCategories,
-				cartoesResumo: cartoes || []
+				cartoesResumo: cartoes || [],
+				dividasAtivasDetalhes
 			});
 		} catch (error) {
 			console.error("Erro ao carregar dados do usuário:", error);
@@ -399,7 +431,11 @@ export default function ConsultorInteligente() {
 		setLoadingAI(true);
 		try {
 			const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-			const { totalReceitas, totalGastos, saldoContas, totalInvestimentos, totalDividas, topCategories, devedoresTotal } = metrics;
+			const { totalReceitas, totalGastos, saldoContas, totalInvestimentos, totalDividas, topCategories, devedoresTotal, dividasAtivasDetalhes } = metrics;
+
+			const dividasContexto = dividasAtivasDetalhes && dividasAtivasDetalhes.length > 0
+				? dividasAtivasDetalhes.map(d => `${d.descricao} (${d.instituicao}): falta pagar R$ ${d.valorRestante.toFixed(2)} de R$ ${d.valorOriginal.toFixed(2)} (${d.parcelasPagas}/${d.totalParcelas} parcelas pagas)`).join("; ")
+				: "Nenhuma dívida ativa registrada";
 
 			if (!apiKey) {
 				// Fallback inteligente algorítmico caso a API Key não esteja configurada
@@ -407,11 +443,11 @@ export default function ConsultorInteligente() {
 				const taxaPoupanca = totalReceitas > 0 ? Math.round((saldoAno / totalReceitas) * 100) : 0;
 				const maiorCat = topCategories[0]?.nome || "Despesas Gerais";
 				const fallbackReport = `**Resumo Geral da Situação Atual:**
-No ano de ${filterYear}, você acumulou **${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalReceitas)}** em receitas e **${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalGastos)}** em despesas, resultando em um saldo líquido de **${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(saldoAno)}** (taxa de poupança de **${taxaPoupanca}%**). Suas reservas em contas somam **${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(saldoContas)}** e os investimentos totalizam **${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalInvestimentos)}**. O saldo devedor ativo está em **${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalDividas)}**.
+No ano de ${filterYear}, você acumulou **${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalReceitas)}** em receitas e **${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalGastos)}** em despesas, resultando em um saldo líquido de **${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(saldoAno)}** (taxa de poupança de **${taxaPoupanca}%**). Suas reservas em contas somam **${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(saldoContas)}** e os investimentos totalizam **${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalInvestimentos)}**. O saldo devedor ativo em aberto está em **${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalDividas)}** (${dividasContexto}).
 
 **Dicas e Recomendações:**
 • 💡 **Otimizar Gastos em ${maiorCat}:** Esta é sua categoria com maior volume financeiro (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(topCategories[0]?.valor || 0)}). Definir um teto mensal reduzirá a pressão sobre o orçamento.
-• 🎯 **Amortização e Gestão de Dívidas:** Com R$ ${totalDividas.toLocaleString('pt-BR')} em pendências ativas, priorize a quitação das parcelas mais onerosas e das faturas para estancar juros.
+• 🎯 **Amortização e Gestão de Dívidas:** ${totalDividas > 0 ? `Com R$ ${totalDividas.toLocaleString('pt-BR')} restantes em pendências ativas (${dividasContexto}), priorize a quitação das parcelas mais onerosas para estancar juros.` : "Você não possui dívidas ativas pendentes, mantenha o foco em poupar e investir!"}
 • 📈 **Construção de Reserva:** Direcione pelo menos 15% das entradas mensais para investimentos líquidos antes de realizar compras discricionárias.`;
 
 				setAiReport(fallbackReport);
@@ -430,18 +466,19 @@ Analise os seguintes dados financeiros reais do usuário para o ano ${filterYear
 - Despesas Totais no Ano: R$ ${totalGastos.toFixed(2)}
 - Saldo Líquido do Ano: R$ ${(totalReceitas - totalGastos).toFixed(2)}
 - Total Investido: R$ ${totalInvestimentos.toFixed(2)}
-- Total em Dívidas Ativas: R$ ${totalDividas.toFixed(2)}
+- Total em Dívidas Ativas (Saldo devedor restante): R$ ${totalDividas.toFixed(2)}
+- Detalhes de Dívidas e Empréstimos Ativos: ${dividasContexto}
 - Valores a Receber (Devedores): R$ ${devedoresTotal.toFixed(2)}
 - Maiores Categorias de Despesa: ${JSON.stringify(topCategories)}
 
 Elabore um relatório consultivo completo, objetivo e altamente prático em Português do Brasil com esta exata estrutura:
 
 1. Resumo Geral da Situação Atual:
-Faça um diagnóstico direto e sincero sobre receitas vs despesas, saúde do fluxo de caixa e segurança financeira.
+Faça um diagnóstico direto e sincero sobre receitas vs despesas, saúde do fluxo de caixa, dívidas e segurança financeira.
 
 2. Dicas e Recomendações:
 Forneça pelo menos 3 a 4 recomendações práticas priorizadas (com emojis como 🎯, 💡, 📈, ⚠️) abrangendo:
-- Amortização de dívidas e cartões;
+- Amortização de dívidas e cartões (se houver dívidas ativas, cite os contratos como ${dividasContexto});
 - Otimização da categoria com maior gasto;
 - Formação de reserva de emergência e investimentos.
 
@@ -495,7 +532,11 @@ Escreva o texto com títulos em negrito (**Título**) e bullets com emojis claro
 
 		try {
 			const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-			const { totalReceitas, totalGastos, saldoContas, totalInvestimentos, totalDividas, topCategories } = metrics;
+			const { totalReceitas, totalGastos, saldoContas, totalInvestimentos, totalDividas, topCategories, dividasAtivasDetalhes } = metrics;
+
+			const dividasContexto = dividasAtivasDetalhes && dividasAtivasDetalhes.length > 0
+				? dividasAtivasDetalhes.map(d => `${d.descricao} (${d.instituicao}): falta pagar R$ ${d.valorRestante.toFixed(2)} de R$ ${d.valorOriginal.toFixed(2)} (${d.parcelasPagas}/${d.totalParcelas} parcelas pagas)`).join("; ")
+				: "Nenhuma dívida ativa registrada (R$ 0,00)";
 
 			let aiResponse = "";
 
@@ -506,16 +547,18 @@ O usuário está no ano ${filterYear} e possui o seguinte contexto financeiro:
 - Saldo em contas: R$ ${saldoContas.toFixed(2)}
 - Receitas no ano: R$ ${totalReceitas.toFixed(2)}
 - Despesas no ano: R$ ${totalGastos.toFixed(2)}
-- Dívidas ativas: R$ ${totalDividas.toFixed(2)}
+- Saldo líquido no ano: R$ ${(totalReceitas - totalGastos).toFixed(2)}
+- Saldo devedor restante em dívidas ativas: R$ ${totalDividas.toFixed(2)}
+- Contratos de dívidas e empréstimos ativos: ${dividasContexto}
 - Investimentos: R$ ${totalInvestimentos.toFixed(2)}
 - Maiores categorias de gastos: ${topCategories.map(c => `${c.nome}: R$ ${c.valor.toFixed(2)}`).join(", ")}
 
 Mensagem do usuário: "${msgText}"
 
 HABILIDADE OPERACIONAL DE COMANDOS:
-Se o usuário solicitar criar, cadastrar ou adicionar contas bancárias e/ou cartões de crédito (ex: "Crie essas contas para mim:", "Cadastre o cartão X", "Adicione a conta Y"), você deve:
-1. Responder confirmando amigavelmente os itens que estão sendo cadastrados com seus respectivos detalhes (limite, datas de fechamento e vencimento).
-2. Incluir OBRIGATORIAMENTE no FINAL absoluto da sua resposta a tag de ação estruturada em JSON:
+1. Se o usuário solicitar criar, cadastrar ou adicionar contas bancárias e/ou cartões de crédito (ex: "Crie essas contas para mim:", "Cadastre o cartão X", "Adicione a conta Y"), você deve:
+- Responder confirmando amigavelmente os itens que estão sendo cadastrados com seus respectivos detalhes (limite, datas de fechamento e vencimento).
+- Incluir OBRIGATORIAMENTE no FINAL absoluto da sua resposta a tag de ação estruturada em JSON:
 <<<ACTION_JSON
 {
   "contas": [
@@ -524,6 +567,17 @@ Se o usuário solicitar criar, cadastrar ou adicionar contas bancárias e/ou car
   "cartoes": [
     { "nome": "Cartão Santander", "limite": 100, "fechamento_dia": 6, "vencimento_dia": 10, "cor_hex": "#EC0000", "conta_nome": "Santander" }
   ]
+}
+ACTION_JSON>>>
+
+2. Se o usuário informar que já quitou, pagou ou quer dar baixa em uma dívida ou empréstimo (ex: "já quitei esse empréstimo da nubank", "quitei a dívida do santander", "quite o empréstimo nubank", "já quitei esse empretimo"):
+- Você deve parabenizar calorosamente o usuário por quitar essa pendência financeira e informar que já está dando baixa e marcando a dívida como quitada no sistema.
+- Incluir OBRIGATORIAMENTE no FINAL absoluto da sua resposta a tag de ação estruturada em JSON:
+<<<ACTION_JSON
+{
+  "quitar_divida": {
+    "termo": "nubank" // identifique a dívida que ele mencionou (ex: nubank, santander ou o nome da dívida)
+  }
 }
 ACTION_JSON>>>
 
@@ -537,7 +591,7 @@ Cores recomendadas por banco:
 - Banco do Brasil: #FCFD01
 - C6: #242424
 
-Se não for um comando de criação, responda normalmente como consultor financeiro.`;
+Se não for um comando de criação ou quitação, responda normalmente como consultor financeiro com base nos dados reais acima.`;
 
 				const modelsToTry = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-pro", "gemini-2.5-flash-lite"];
 				for (const modelName of modelsToTry) {
@@ -554,7 +608,7 @@ Se não for um comando de criação, responda normalmente como consultor finance
 
 			if (!aiResponse) {
 				// Resposta simulada inteligente caso offline
-				aiResponse = `Analisando sua pergunta: com receitas de ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalReceitas)} e despesas de ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalGastos)}, a prioridade número 1 é garantir que as parcelas de dívidas (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalDividas)}) e a maior categoria de consumo (${topCategories[0]?.nome || 'Gastos'}) tenham limites bem definidos neste mês.`;
+				aiResponse = `Analisando sua pergunta: com receitas de ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalReceitas)} e despesas de ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalGastos)}, a prioridade número 1 é garantir que as pendências de dívidas (${totalDividas > 0 ? `saldo restante de ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalDividas)}: ${dividasContexto}` : 'nenhuma pendência ativa'}) e a maior categoria de consumo (${topCategories[0]?.nome || 'Gastos'}) tenham limites bem definidos neste mês.`;
 			}
 
 			// Processa Ações Automáticas se detectadas na resposta da IA
@@ -566,6 +620,23 @@ Se não for um comando de criação, responda normalmente como consultor finance
 
 					if (user) {
 						const createdContasMap: { [nome: string]: string } = {};
+
+						// Quitar Dívida
+						if (actionData.quitar_divida) {
+							const termo = (actionData.quitar_divida.termo || actionData.quitar_divida.descricao || actionData.quitar_divida.nome || actionData.quitar_divida).toString().toLowerCase();
+							const todasDividas = await financeService.getDividas(user.id);
+							const alvo = (todasDividas || []).find((d: any) => 
+								d.status !== 'quitada' && (
+									(d.instituicao && d.instituicao.toLowerCase().includes(termo)) ||
+									(d.descricao && d.descricao.toLowerCase().includes(termo))
+								)
+							);
+							if (alvo) {
+								await financeService.quitarDividaManual(alvo.id, true);
+								toast.success(`Dívida "${alvo.descricao}" marcada como quitada com sucesso! 🎉`);
+								await loadUserData();
+							}
+						}
 
 						// Cria Contas
 						if (actionData.contas && Array.isArray(actionData.contas)) {
@@ -640,7 +711,9 @@ Se não for um comando de criação, responda normalmente como consultor finance
 							}
 						}
 
-						toast.success("Contas e cartões processados e salvos com sucesso!");
+						if (actionData.contas || actionData.cartoes) {
+							toast.success("Contas e cartões processados e salvos com sucesso!");
+						}
 						await loadUserData();
 					}
 				} catch (actionErr) {

@@ -807,6 +807,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					                          t.subtipo === "PAGAMENTO_FATURA";
 
 					const isLimiteConvertido = descLower.includes("limite convertido") || t.subtipo === "CONVERSAO_LIMITE_CARTAO";
+					const isResgateEmprestimo = descLower.includes("resgate de empréstimo") || descLower.includes("resgate de emprestimo") || descLower.includes("pagamento de empréstimo") || descLower.includes("pagamento de emprestimo");
 
 					let tipoTransacao: TransacaoPreview['tipo_transacao'] = "Gasto";
 					const isTransfBanco = (t.tipo === "TRANSFERENCIA" || t.subtipo === "TRANSFERENCIA_PROPRIA") && !descLower.includes("claudiney") && !(t.favorecido && t.favorecido.toLowerCase().includes("claudiney"));
@@ -818,13 +819,18 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					else if (t.tipo === "RECEITA" || descLower.includes("pix recebido")) tipoTransacao = "Entrada";
 					else tipoTransacao = "Gasto";
 
+					let finalCat = t.categoria_sugerida;
+					if (isLimiteConvertido) finalCat = "Financiamento / Ajuste de Limite";
+					else if (isResgateEmprestimo) finalCat = "Emprestimo";
+
 					return {
 						...t,
 						tipo_transacao: tipoTransacao,
 						metodo_pagamento: "Débito",
 						conta_id: detectedContaId,
 						cartao_id: null,
-						categoria_sugerida: isLimiteConvertido ? "Financiamento / Ajuste de Limite" : t.categoria_sugerida
+						categoria_sugerida: finalCat,
+						observacao: isResgateEmprestimo ? "Quitação / Pagamento de Empréstimo" : t.observacao
 					};
 				});
 			} else if (isFatura) {
@@ -1381,6 +1387,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			}
 
 			await financeService.syncMetasInvestimentos(user.id).catch(() => {});
+			await financeService.autoSyncDividasComTransacoes(user.id).catch(() => {});
 			toast.success(`${importados} lançamentos importados com sucesso!`);
 			await carregarDadosBase();
 			resetImport();

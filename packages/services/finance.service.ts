@@ -393,6 +393,7 @@ export const financeService = {
    * BUSCA PAGAMENTOS PARA LIBERAÇÃO DE LIMITE
    */
   async getPagamentosFaturas(usuario_id: string) {
+    await this.autoSyncPagamentosCartaoComTransacoes(usuario_id);
     const { data, error } = await supabase
       .from("transacoes")
       .select("*")
@@ -1229,6 +1230,29 @@ export const financeService = {
     const valor = Math.abs(Number(params.valor));
     if (valor <= 0) return null;
 
+    // Se cartao_id não foi informado (ex: extrato bancário de pagamento de fatura), tenta inferir
+    let targetCartaoId = params.cartao_id;
+    if (!targetCartaoId) {
+      const { data: cards } = await supabase.from("cartoes").select("*").eq("usuario_id", usuario_id);
+      if (cards && cards.length > 0) {
+        const descLower = (params.descricao || "").toLowerCase();
+        let matched = cards.find(c => descLower.includes((c.nome || "").toLowerCase()));
+        if (!matched && params.conta_id) {
+          const { data: conta } = await supabase.from("contas_bancarias").select("nome").eq("id", params.conta_id).maybeSingle();
+          if (conta) {
+            const contaLower = (conta.nome || "").toLowerCase();
+            matched = cards.find(c => (c.nome || "").toLowerCase().includes(contaLower) || contaLower.includes((c.nome || "").toLowerCase()));
+          }
+        }
+        if (!matched && cards.length === 1) {
+          matched = cards[0];
+        }
+        if (matched) {
+          targetCartaoId = matched.id;
+        }
+      }
+    }
+
     // 1. Transação de PAGAMENTO_FATURA (Liquidação de obrigação - NUNCA despesa de consumo)
     const { data: tx, error: txErr } = await supabase
       .from("transacoes")
@@ -1239,7 +1263,7 @@ export const financeService = {
         valor,
         data: params.data,
         conta_id: params.conta_id || null,
-        cartao_id: params.cartao_id || null,
+        cartao_id: targetCartaoId || null,
         fatura_id: params.fatura_id || null,
         documento_importado_id: params.documento_importado_id || null,
         status: "confirmada"
@@ -1263,12 +1287,12 @@ export const financeService = {
 
     // 3. Atualiza fatura se fornecida ou localiza fatura correspondente do cartão
     let targetFaturaId = params.fatura_id;
-    if (!targetFaturaId && params.cartao_id) {
+    if (!targetFaturaId && targetCartaoId) {
       const { data: faturas } = await supabase
         .from("faturas")
         .select("id, data_vencimento, data_fechamento, valor_total, valor_pago, status")
         .eq("usuario_id", usuario_id)
-        .eq("cartao_id", params.cartao_id)
+        .eq("cartao_id", targetCartaoId)
         .order("data_vencimento", { ascending: false });
 
       if (faturas && faturas.length > 0) {
@@ -1377,7 +1401,95 @@ export const financeService = {
   // NOVO MOTOR DE DÍVIDAS (Etapa 4)
   // ==========================================
 
+  async autoSyncDividasComTransacoes(usuario_id: string) {
+    try {
+      // 1. Buscar dívidas ativas
+      const { data: dividasAtivas, error } = await supabase
+        .from("dividas")
+        .select("*, parcelas_divida(*)")
+        .eq("usuario_id", usuario_id)
+        .neq("status", "quitada");
+
+      if (error || !dividasAtivas || dividasAtivas.length === 0) return;
+
+      // 2. Buscar transações do usuário que possam corresponder a quitações ou resgates de empréstimos
+      const { data: txs } = await supabase
+        .from("transacoes")
+        .select("id, valor, data, descricao, conta_id")
+        .eq("usuario_id", usuario_id);
+
+      if (!txs || txs.length === 0) return;
+
+      for (const divida of dividasAtivas) {
+        const instLower = (divida.instituicao || "").toLowerCase();
+        const descDividaLower = (divida.descricao || "").toLowerCase();
+        const isNubank = instLower.includes("nubank") || descDividaLower.includes("nubank");
+
+        // No extrato do Nubank, quitações ou débitos de empréstimo vêm descritos como "Resgate de empréstimo"
+        const matchingTxs = txs.filter(t => {
+          const tDesc = (t.descricao || "").toLowerCase();
+          if (isNubank) {
+            return (
+              tDesc.includes("resgate de empréstimo") ||
+              tDesc.includes("resgate de emprestimo") ||
+              (tDesc.includes("empréstimo") && tDesc.includes("nubank")) ||
+              (tDesc.includes("emprestimo") && tDesc.includes("nubank"))
+            );
+          }
+          return (instLower && tDesc.includes(instLower) && (tDesc.includes("empr") || tDesc.includes("parcela"))) || 
+                 (descDividaLower && tDesc.includes(descDividaLower));
+        });
+
+        if (matchingTxs.length > 0) {
+          const totalPagoTxs = matchingTxs.reduce((acc, cur) => acc + Math.abs(Number(cur.valor || 0)), 0);
+          const parcelas = (divida.parcelas_divida || []).sort((a: any, b: any) => a.numero_parcela - b.numero_parcela);
+          const pendentes = parcelas.filter((p: any) => p.status === 'pendente');
+          const saldoRestante = pendentes.reduce((acc: number, p: any) => acc + Number(p.valor_esperado || 0), 0);
+
+          // Se há transações explícitas de "Resgate de empréstimo" ou se o total pago cobre o saldo devedor restante
+          const hasResgateEmprestimo = matchingTxs.some(t => /resgate\s+de\s+empr[eé]stimo/i.test(t.descricao));
+          if (hasResgateEmprestimo || totalPagoTxs >= (saldoRestante > 0 ? saldoRestante * 0.9 : 1)) {
+            // Marcar todas as parcelas como pagas
+            await supabase
+              .from("parcelas_divida")
+              .update({ status: 'paga' })
+              .eq("divida_id", divida.id);
+
+            // Marcar dívida como quitada
+            await supabase
+              .from("dividas")
+              .update({ status: 'quitada', valor_atual: 0 })
+              .eq("id", divida.id);
+
+            // Registrar vínculo em pagamentos_divida para manter rastreabilidade
+            for (const tx of matchingTxs) {
+              const { data: jaExiste } = await supabase
+                .from("pagamentos_divida")
+                .select("id")
+                .eq("transacao_id", tx.id)
+                .maybeSingle();
+
+              if (!jaExiste) {
+                await supabase.from("pagamentos_divida").insert([{
+                  divida_id: divida.id,
+                  transacao_id: tx.id,
+                  valor_pago: Math.abs(Number(tx.valor)),
+                  data_pagamento: tx.data,
+                  tipo_pagamento: 'quitacao'
+                }]).catch(() => {});
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Aviso na sincronização automática de dívidas com extrato:", e);
+    }
+  },
+
   async getDividas(usuario_id: string) {
+    await this.autoSyncDividasComTransacoes(usuario_id);
+
     const { data: dividas, error } = await supabase
       .from("dividas")
       .select("*, parcelas_divida(*)")
@@ -1482,8 +1594,25 @@ export const financeService = {
     return tx;
   },
 
-  async quitarDividaManual(divida_id: string) {
-    const { error } = await supabase.from("dividas").update({ status: 'quitada' }).eq("id", divida_id);
+  async quitarDividaManual(divida_id: string, marcarParcelasComoPagas: boolean = true) {
+    if (marcarParcelasComoPagas) {
+      await supabase
+        .from("parcelas_divida")
+        .update({ status: 'paga' })
+        .eq("divida_id", divida_id);
+    }
+    const { error } = await supabase
+      .from("dividas")
+      .update({ status: 'quitada', valor_atual: 0 })
+      .eq("id", divida_id);
+    if (error) throw error;
+  },
+
+  async reabrirDivida(divida_id: string) {
+    const { error } = await supabase
+      .from("dividas")
+      .update({ status: 'ativa' })
+      .eq("id", divida_id);
     if (error) throw error;
   },
 
@@ -1866,11 +1995,71 @@ export const financeService = {
   },
 
   /**
+   * SINCRONIZA AUTOMATICAMENTE PAGAMENTOS DE FATURA SEM CARTÃO IDENTIFICADO
+   * Vincula pagamentos importados do extrato bancário diretamente ao cartão correspondente
+   */
+  async autoSyncPagamentosCartaoComTransacoes(usuario_id: string) {
+    try {
+      const [cardsRes, contasRes, txRes] = await Promise.all([
+        supabase.from("cartoes").select("*").eq("usuario_id", usuario_id),
+        supabase.from("contas_bancarias").select("*").eq("usuario_id", usuario_id),
+        supabase.from("transacoes").select("*").eq("usuario_id", usuario_id)
+      ]);
+
+      const cards = cardsRes.data || [];
+      const contas = contasRes.data || [];
+      const txs = txRes.data || [];
+      if (cards.length === 0 || txs.length === 0) return;
+
+      const contasMap = new Map(contas.map(c => [c.id, c]));
+
+      for (const tx of txs) {
+        const descLower = (tx.descricao || "").toLowerCase();
+        const isPagamentoFatura = tx.tipo === "PAGAMENTO_FATURA" ||
+          /pagamento\s*(?:de\s*)?fatura|pagamento\s*cart[aã]o|pgto\s*fatura|pagamento\s*recebido/i.test(descLower);
+
+        if (!isPagamentoFatura) continue;
+
+        if (tx.cartao_id) {
+          if (tx.tipo !== "PAGAMENTO_FATURA") {
+            await supabase.from("transacoes").update({ tipo: "PAGAMENTO_FATURA" }).eq("id", tx.id);
+          }
+          continue;
+        }
+
+        // Tentar identificar o cartão correto
+        let targetCard = null;
+        const conta = tx.conta_id ? contasMap.get(tx.conta_id) : null;
+        const contaNomeLower = conta ? (conta.nome || "").toLowerCase() : "";
+
+        if (descLower.includes("nubank") || contaNomeLower.includes("nubank")) {
+          targetCard = cards.find(c => (c.nome || "").toLowerCase().includes("nubank"));
+        } else if (descLower.includes("santander") || contaNomeLower.includes("santander")) {
+          targetCard = cards.find(c => (c.nome || "").toLowerCase().includes("santander"));
+        } else if (cards.length === 1) {
+          targetCard = cards[0];
+        }
+
+        if (targetCard) {
+          await supabase.from("transacoes").update({
+            cartao_id: targetCard.id,
+            tipo: "PAGAMENTO_FATURA"
+          }).eq("id", tx.id);
+        }
+      }
+    } catch (err) {
+      console.warn("Aviso na auto-sincronização de pagamentos de cartão:", err);
+    }
+  },
+
+  /**
    * SINCRONIZA E GERA AUTOMATICAMENTE AS FATURAS DOS CARTÕES
    * Agrupa as transações de cartão por ciclo mensal e garante registros na tabela faturas
    */
   async syncCardFaturas(usuario_id: string) {
     try {
+      await this.autoSyncPagamentosCartaoComTransacoes(usuario_id);
+
       const [cardsRes, txRes] = await Promise.all([
         supabase.from("cartoes").select("*").eq("usuario_id", usuario_id),
         supabase.from("transacoes").select("*").eq("usuario_id", usuario_id).not("cartao_id", "is", null)
