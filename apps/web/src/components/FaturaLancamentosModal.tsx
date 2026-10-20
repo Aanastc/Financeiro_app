@@ -162,11 +162,23 @@ export default function FaturaLancamentosModal({ isOpen, onClose, fatura }: { is
                                                     {isPagamento ? "- " : isEstorno ? "- " : ""}
                                                     {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(parcelaAtiva ? (parcelaAtiva.valor ?? t.valor) : t.valor)}
                                                 </p>
-                                                {parcelaAtiva && (
+                                                {parcelaAtiva ? (
                                                     <p className="text-xs font-bold text-indigo-500 dark:text-indigo-400 mt-0.5">
                                                         Parcela {parcelaAtiva.numero_parcela}
                                                     </p>
-                                                )}
+                                                ) : (() => {
+                                                    const matchParc = (t.descricao || "").match(/(?:parcela\s*|parc\.?\s*)?(\d{1,2})\s*[/]\s*(\d{1,2})|\b(\d{1,2})\s+de\s+(\d{1,2})\b/i);
+                                                    if (matchParc) {
+                                                        const pNum = matchParc[1] || matchParc[3];
+                                                        const pTot = matchParc[2] || matchParc[4];
+                                                        return (
+                                                            <p className="text-xs font-bold text-indigo-500 dark:text-indigo-400 mt-0.5">
+                                                                Parcela {pNum}/{pTot}
+                                                            </p>
+                                                        );
+                                                    }
+                                                    return null;
+                                                })()}
                                             </div>
                                         </div>
                                     </div>

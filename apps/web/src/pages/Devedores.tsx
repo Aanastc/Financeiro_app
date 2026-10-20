@@ -1,17 +1,58 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { authService } from "../../../../packages/services/auth.service";
 import { financeService } from "../../../../packages/services/finance.service";
 import { supabase } from "../../../../packages/services/supabase";
 import { motion, AnimatePresence } from "framer-motion";
-import { Users, Phone, CheckCircle2, AlertCircle, ChevronDown, ChevronUp, RotateCcw, X, DollarSign } from "lucide-react";
+import { 
+	Users, 
+	Phone, 
+	CheckCircle2, 
+	AlertCircle, 
+	ChevronDown, 
+	ChevronUp, 
+	RotateCcw, 
+	X, 
+	DollarSign, 
+	Plus, 
+	Split, 
+	Sparkles, 
+	Mail, 
+	Share2, 
+	Search, 
+	UserCheck, 
+	MessageSquare,
+	ArrowUpRight,
+	ArrowDownLeft
+} from "lucide-react";
 import toast from "react-hot-toast";
+import AddContatoWeb from "../components/AddContatoWeb";
+import AddSplitDespesaModal from "../components/AddSplitDespesaModal";
+import ConviteAmigoModal from "../components/ConviteAmigoModal";
+import ChatAcordosIaModal from "../components/ChatAcordosIaModal";
+
+import EmBreveView from "../components/EmBreveView";
 
 export default function Devedores() {
+	return <EmBreveView modulo="SPLITWISE" />;
+}
+
+function _DevedoresLegacy() {
+	const [userId, setUserId] = useState<string>("");
+	const [userName, setUserName] = useState<string>("");
 	const [devedores, setDevedores] = useState<any[]>([]);
 	const [credores, setCredores] = useState<any[]>([]);
-	const [activeTab, setActiveTab] = useState<"devedores" | "credores">("devedores");
+	const [contatos, setContatos] = useState<any[]>([]);
+	const [usuariosComConta, setUsuariosComConta] = useState<Set<string>>(new Set());
+	const [activeTab, setActiveTab] = useState<"devedores" | "credores" | "contatos">("devedores");
 	const [loading, setLoading] = useState(true);
 	const [expandedId, setExpandedId] = useState<string | null>(null);
+	const [termoBusca, setTermoBusca] = useState("");
+
+	// Modais
+	const [isAddSplitOpen, setIsAddSplitOpen] = useState(false);
+	const [isAddContatoOpen, setIsAddContatoOpen] = useState(false);
+	const [isChatIaOpen, setIsChatIaOpen] = useState(false);
+	const [contatoParaConvite, setContatoParaConvite] = useState<any>(null);
 
 	// States for payment registration modal
 	const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -20,131 +61,149 @@ export default function Devedores() {
 	const [paymentType, setPaymentType] = useState<"total" | "parcial">("total");
 	const [partialAmount, setPartialAmount] = useState("");
 
-	const loadDevedores = async () => {
+	const loadAllData = async () => {
 		setLoading(true);
 		try {
 			const user = await authService.getCurrentUser();
 			if (!user) return;
-			const data = await financeService.getDevedores(user.id);
-			setDevedores(data);
+			setUserId(user.id);
+			setUserName(user.user_metadata?.full_name || user.email?.split("@")[0] || "Usuário");
+
+			const [devedoresData, contatosRes, transacoesCredoresRes] = await Promise.all([
+				financeService.getDevedores(user.id),
+				supabase.from("contatos").select("*").eq("usuario_id", user.id).order("nome"),
+				supabase.from("transacoes")
+					.select("id, descricao, data, valor, terceiro_pago, observacao")
+					.eq("usuario_id", user.id)
+					.or("observacao.ilike.%parceria_credor_id%,descricao.ilike.%claudney%,descricao.ilike.%claudiney%")
+			]);
+
+			setDevedores(devedoresData || []);
+			const contatosList = contatosRes.data || [];
+			setContatos(contatosList);
+
+			// Mapeia e-mails que possuem conta no sistema de forma segura e escalável (somente os contatos do usuário)
+			const emailsDosContatos = Array.from(new Set(
+				contatosList
+					.map((c: any) => (c.email || "").toLowerCase().trim())
+					.filter(Boolean)
+			));
+
+			const usuariosEmails = new Set<string>();
+			if (emailsDosContatos.length > 0) {
+				const { data: usersFound } = await supabase
+					.from("usuarios")
+					.select("id, email")
+					.in("email", emailsDosContatos);
+
+				(usersFound || []).forEach((u: any) => {
+					if (u.email) usuariosEmails.add(u.email.toLowerCase().trim());
+				});
+			}
+			setUsuariosComConta(usuariosEmails);
+
+			// Processamento dos credores
+			const txs = transacoesCredoresRes.data || [];
+			const credoresMap = new Map();
+
+			txs.forEach((g: any) => {
+				let contatoEncontrado = null;
+				let isCredorItem = false;
+				let valorParcela = Number(g.valor || 0);
+				let valorOriginal = valorParcela;
+
+				// Verifica se é item de parceria / split onde o usuário deve
+				if (g.observacao) {
+					try {
+						if (g.observacao.trim().startsWith("{")) {
+							const meta = JSON.parse(g.observacao);
+							if (meta.parceria_credor_id) {
+								contatoEncontrado = contatosList.find((c: any) => c.id === meta.parceria_credor_id);
+								isCredorItem = true;
+								valorOriginal = meta.valor_total || valorParcela;
+							}
+						}
+					} catch (e) {}
+				}
+
+				// Fallback histórico para descrições de parcerias antigas ("claudiney")
+				if (!isCredorItem) {
+					const descLower = (g.descricao || "").toLowerCase();
+					if (descLower.includes("claudney") || descLower.includes("claudiney")) {
+						contatoEncontrado = contatosList.find((c: any) => 
+							(c.nome && descLower.includes(c.nome.toLowerCase()))
+						) || { id: "claudiney-fallback", nome: "Claudiney", telefone: "" };
+						isCredorItem = true;
+						valorOriginal = valorParcela * 2;
+					}
+				}
+
+				if (isCredorItem && contatoEncontrado) {
+					const cId = contatoEncontrado.id;
+					if (!credoresMap.has(cId)) {
+						credoresMap.set(cId, {
+							contato: contatoEncontrado,
+							total_devido: 0,
+							itens: []
+						});
+					}
+
+					const credor = credoresMap.get(cId);
+					credor.itens.push({
+						id: g.id,
+						descricao: g.descricao,
+						data: g.data,
+						valor_parcela_usuario: valorParcela,
+						valor_original: valorOriginal,
+						quitado: g.terceiro_pago || false,
+						observacao: g.observacao
+					});
+				}
+			});
+
+			const credoresList = Array.from(credoresMap.values()).map(c => {
+				const total_devido = c.itens
+					.filter((i: any) => !i.quitado)
+					.reduce((sum: number, i: any) => sum + Number(i.valor_parcela_usuario), 0);
+				return { ...c, total_devido };
+			});
+
+			setCredores(credoresList);
 		} catch (error) {
 			console.error(error);
-			toast.error("Erro ao carregar devedores");
+			toast.error("Erro ao carregar devedores e credores");
 		} finally {
 			setLoading(false);
 		}
 	};
 
-	const loadCredores = async () => {
-		try {
-			const user = await authService.getCurrentUser();
-			if (!user) return;
-
-			const [gastosRes, contatosRes] = await Promise.all([
-				supabase
-					.from("transacoes")
-					.select("*")
-					.eq("usuario_id", user.id)
-					.or("descricao.ilike.%claudney%,descricao.ilike.%claudiney%,observacao.ilike.%claudney%,observacao.ilike.%claudiney%"),
-				supabase.from("contatos").select("*").eq("usuario_id", user.id)
-			]);
-
-			const gastos = gastosRes.data || [];
-			const contatos = contatosRes.data || [];
-
-			const credoresMap = new Map();
-			gastos.forEach((g: any) => {
-				const contatoEncontrado = contatos.find((c: any) => 
-					(g.observacao && g.observacao.includes(c.id)) ||
-					(c.nome && g.descricao.toLowerCase().includes(c.nome.toLowerCase()))
-				);
-				const contactName = contatoEncontrado?.nome || "Claudiney";
-				const contactId = contatoEncontrado?.id || "claudiney-fallback-id";
-
-				if (!credoresMap.has(contactId)) {
-					credoresMap.set(contactId, {
-						contato: {
-							id: contactId,
-							nome: contactName,
-							telefone: g.contatos?.telefone || ""
-						},
-						total_devido: 0,
-						itens: []
-					});
-				}
-
-				const credor = credoresMap.get(contactId);
-				credor.itens.push(g);
-			});
-
-			const credoresList = Array.from(credoresMap.values()).map(c => {
-				const itemGroups: { [key: string]: any[] } = {};
-				c.itens.forEach((item: any) => {
-					const baseName = item.descricao
-						.replace(/\s*-\s*claudney/gi, "")
-						.replace(/\s*-\s*claudiney/gi, "")
-						.trim();
-					if (!itemGroups[baseName]) {
-						itemGroups[baseName] = [];
-					}
-					itemGroups[baseName].push(item);
-				});
-
-				const activeItens = Object.entries(itemGroups).map(([name, occurrences]) => {
-					occurrences.sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
-					const latest = occurrences[0];
-					const totalParcelas = latest.total_parcelas || 1;
-					const parcelaAtual = latest.parcela_atual || 1;
-					const valor = Number(latest.valor);
-					const valorTotalOriginal = valor * 2;
-
-					return {
-						id: latest.id,
-						descricao: name,
-						parcela_atual: parcelaAtual,
-						total_parcelas: totalParcelas,
-						valor_original: valorTotalOriginal,
-						valor_parcela_usuario: valor,
-						data: latest.data,
-						quitado: latest.terceiro_pago || false
-					};
-				});
-
-				const total_devido = activeItens
-					.filter(i => !i.quitado)
-					.reduce((sum, i) => sum + i.valor_parcela_usuario, 0);
-
-				return {
-					...c,
-					itens: activeItens,
-					total_devido
-				};
-			});
-
-			setCredores(credoresList);
-		} catch (err) {
-			console.error("Erro ao carregar credores:", err);
-		}
-	};
-
-	const loadAllData = async () => {
-		setLoading(true);
-		await Promise.all([loadDevedores(), loadCredores()]);
-		setLoading(false);
-	};
-
 	useEffect(() => {
+		let isMounted = true;
+		let channelTxs: any = null;
+		let channelContatos: any = null;
+
 		loadAllData();
 
-		let channel: any;
+		// Supabase Realtime: escuta alterações nas tabelas 'transacoes' e 'contatos' para sincronização dinâmica
 		async function setupRealtime() {
 			const { data: { user } } = await supabase.auth.getUser();
-			if (user) {
-				channel = financeService.subscribeToChanges("despesas", user.id, loadAllData);
+			if (user && isMounted) {
+				channelTxs = financeService.subscribeToChanges("transacoes", user.id, () => {
+					if (isMounted) loadAllData();
+				});
+				channelContatos = financeService.subscribeToChanges("contatos", user.id, () => {
+					if (isMounted) loadAllData();
+				});
 			}
 		}
+
 		setupRealtime();
-		return () => { if (channel) supabase.removeChannel(channel); };
+
+		return () => {
+			isMounted = false;
+			if (channelTxs) supabase.removeChannel(channelTxs);
+			if (channelContatos) supabase.removeChannel(channelContatos);
+		};
 	}, []);
 
 	const getPaymentInfo = (observacao: string) => {
@@ -153,15 +212,12 @@ export default function Devedores() {
 			if (observacao.trim().startsWith("{")) {
 				return JSON.parse(observacao);
 			}
-		} catch (e) {
-			// Plain text observation, ignore
-		}
+		} catch (e) {}
 		return null;
 	};
 
 	const handleCobrarWhatsApp = (devedor: any) => {
-		const telefone = devedor.contato.telefone?.replace(/\D/g, ""); // Remove tudo que não é número
-		
+		const telefone = devedor.contato.telefone?.replace(/\D/g, "");
 		if (!telefone || telefone.length < 10) {
 			toast.error("Telefone inválido ou não cadastrado.");
 			return;
@@ -181,11 +237,10 @@ export default function Devedores() {
 				return `• ${i.descricao} (${dataFormatada}): R$ ${Number(i.valor).toFixed(2)} (Falta pagar: R$ ${restante.toFixed(2)})`;
 			}
 			return `• ${i.descricao} (${dataFormatada}): R$ ${Number(i.valor).toFixed(2)}`;
-		}).join("%0A"); // %0A é quebra de linha em URL
+		}).join("%0A");
 
 		const total = Number(devedor.total_devido).toFixed(2);
-		
-		const mensagem = `Olá, ${devedor.contato.nome}! Tudo bem?%0A%0ASegue o demonstrativo detalhado dos valores em aberto:%0A%0A${itensText}%0A%0A*Total pendente:* R$ ${total}%0A%0AQuando puder realizar o acerto, por favor me envie o comprovante. Muito obrigado!`;
+		const mensagem = `Olá, ${devedor.contato.nome}! Tudo bem?%0A%0ASegue o demonstrativo das despesas divididas e em aberto:%0A%0A${itensText}%0A%0A*Total pendente:* R$ ${total}%0A%0AQuando puder realizar o acerto via Pix, por favor me envie o comprovante. Muito obrigado!`;
 
 		window.open(`https://wa.me/${telefone}?text=${mensagem}`, "_blank");
 	};
@@ -200,21 +255,23 @@ export default function Devedores() {
 
 	const handleConfirmarPagamento = async () => {
 		if (!selectedItemForPayment) return;
-		const valorOriginal = Number(selectedItemForPayment.valor);
+		const valorOriginal = Number(selectedItemForPayment.valor || selectedItemForPayment.valor_parcela_usuario || 0);
 		let valorPago = valorOriginal;
 		let isTotal = paymentType === "total";
 
 		if (!isTotal) {
 			const parsedPartial = parseFloat(partialAmount);
 			if (isNaN(parsedPartial) || parsedPartial <= 0 || parsedPartial >= valorOriginal) {
-				toast.error(`Para pagamento parcial, informe um valor maior que 0 e menor que R$ ${valorOriginal.toFixed(2)}`);
+				toast.error(`Informe um valor maior que zero e menor que R$ ${valorOriginal.toFixed(2)}`);
 				return;
 			}
 			valorPago = parsedPartial;
 		}
 
 		try {
+			const currentObservacao = selectedItemForPayment.observacao ? getPaymentInfo(selectedItemForPayment.observacao) || {} : {};
 			const metadata = {
+				...currentObservacao,
 				valor_pago: valorPago,
 				data_pagamento: paymentDate,
 				total: isTotal
@@ -235,7 +292,7 @@ export default function Devedores() {
 			setSelectedItemForPayment(null);
 			setPartialAmount("");
 			setPaymentType("total");
-			loadDevedores();
+			loadAllData();
 		} catch (error) {
 			console.error(error);
 			toast.error("Erro ao registrar pagamento");
@@ -243,421 +300,563 @@ export default function Devedores() {
 	};
 
 	const handleDesfazerPagamento = async (gastoId: string) => {
-		if (!confirm("Deseja realmente desfazer o pagamento deste item?")) return;
+		if (!confirm("Deseja realmente desfazer este pagamento?")) return;
 		try {
 			const { error } = await supabase
 				.from("transacoes")
 				.update({
-					terceiro_pago: false,
-					observacao: null
+					terceiro_pago: false
 				})
 				.eq("id", gastoId);
 
 			if (error) throw error;
 
 			toast.success("Pagamento desfeito com sucesso!");
-			loadDevedores();
+			loadAllData();
 		} catch (error) {
 			console.error(error);
 			toast.error("Erro ao desfazer pagamento");
 		}
 	};
 
-	const containerVariants = {
-		hidden: { opacity: 0 },
-		visible: { opacity: 1, transition: { staggerChildren: 0.1 } }
-	};
+	// Totais KPIs
+	const totalAReceber = devedores.reduce((sum, d) => sum + Number(d.total_devido || 0), 0);
+	const totalAPagar = credores.reduce((sum, c) => sum + Number(c.total_devido || 0), 0);
+	const saldoLiquido = totalAReceber - totalAPagar;
 
-	const itemVariants = {
-		hidden: { y: 20, opacity: 0 },
-		visible: { y: 0, opacity: 1 }
-	};
+	// Filtros de busca
+	const devedoresFiltrados = useMemo(() => {
+		if (!termoBusca.trim()) return devedores;
+		const query = termoBusca.toLowerCase();
+		return devedores.filter(d => 
+			(d.contato?.nome || "").toLowerCase().includes(query) ||
+			d.itens.some((i: any) => (i.descricao || "").toLowerCase().includes(query))
+		);
+	}, [devedores, termoBusca]);
+
+	const credoresFiltrados = useMemo(() => {
+		if (!termoBusca.trim()) return credores;
+		const query = termoBusca.toLowerCase();
+		return credores.filter(c => 
+			(c.contato?.nome || "").toLowerCase().includes(query) ||
+			c.itens.some((i: any) => (i.descricao || "").toLowerCase().includes(query))
+		);
+	}, [credores, termoBusca]);
+
+	const contatosFiltrados = useMemo(() => {
+		if (!termoBusca.trim()) return contatos;
+		const query = termoBusca.toLowerCase();
+		return contatos.filter(c => 
+			(c.nome || "").toLowerCase().includes(query) ||
+			(c.email || "").toLowerCase().includes(query) ||
+			(c.telefone || "").includes(query)
+		);
+	}, [contatos, termoBusca]);
 
 	return (
-		<motion.div 
-			className="space-y-6 sm:space-y-8 pb-20 text-slate-800 dark:text-slate-100"
-			variants={containerVariants}
-			initial="hidden"
-			animate="visible"
-		>
-			{/* HEADER */}
-			<motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+		<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 sm:space-y-8 pb-20">
+			{/* CABEÇALHO */}
+			<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-3xl sm:rounded-[36px] shadow-sm border border-slate-100 dark:border-slate-800">
 				<div>
-					<h2 className="text-4xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-3">
-						<Users className="text-indigo-600 dark:text-indigo-400" size={40} />
-						Devedores & Credores
-					</h2>
-					<p className="text-slate-500 dark:text-slate-400 font-medium text-lg mt-1">
-						Gerencie empréstimos e acertos de contas bilaterais.
-					</p>
+					<div className="flex items-center gap-3">
+						<div className="bg-emerald-100 dark:bg-emerald-950/40 p-2.5 rounded-2xl text-emerald-600 dark:text-emerald-400">
+							<Split size={28} />
+						</div>
+						<div>
+							<h1 className="text-3xl font-black text-slate-800 dark:text-slate-100">
+								Devedores & Divisão de Contas
+							</h1>
+							<p className="text-slate-400 dark:text-slate-500 font-medium text-sm mt-0.5">
+								Divisão inteligente de despesas estilo Splitwise com sincronização dinâmica entre contas.
+							</p>
+						</div>
+					</div>
 				</div>
-			</motion.div>
 
-			{/* TAB SELECTOR */}
-			<motion.div variants={itemVariants} className="flex border-b border-slate-100 dark:border-slate-800 gap-6">
-				<button
-					onClick={() => {
-						setActiveTab("devedores");
-						setExpandedId(null);
-					}}
-					className={`pb-4 text-sm font-black uppercase tracking-wider transition-all border-b-2 cursor-pointer ${
-						activeTab === "devedores"
-							? "border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
-							: "border-transparent text-slate-400 dark:text-slate-500 hover:text-slate-600"
-					}`}
-				>
-					A Receber (Devedores)
-				</button>
-				<button
-					onClick={() => {
-						setActiveTab("credores");
-						setExpandedId(null);
-					}}
-					className={`pb-4 text-sm font-black uppercase tracking-wider transition-all border-b-2 cursor-pointer ${
-						activeTab === "credores"
-							? "border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
-							: "border-transparent text-slate-400 dark:text-slate-500 hover:text-slate-600"
-					}`}
-				>
-					A Pagar (Credores)
-				</button>
-			</motion.div>
+				<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+					<button
+						onClick={() => setIsChatIaOpen(true)}
+						className="px-5 py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-2xl font-black flex items-center justify-center gap-2 shadow-lg shadow-purple-200 dark:shadow-none transition-all cursor-pointer text-sm whitespace-nowrap"
+					>
+						<Sparkles size={18} /> ASSISTENTE IA DE ACORDOS
+					</button>
 
+					<button
+						onClick={() => setIsAddContatoOpen(true)}
+						className="px-5 py-3.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer text-sm whitespace-nowrap"
+					>
+						<Users size={18} /> Novo Contato
+					</button>
+
+					<button
+						onClick={() => setIsAddSplitOpen(true)}
+						className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-200 dark:shadow-none transition-all cursor-pointer text-sm whitespace-nowrap"
+					>
+						<Split size={18} /> DIVIDIR GASTO (SPLIT)
+					</button>
+				</div>
+			</div>
+
+			{/* KPIS GERAIS */}
+			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+				<div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
+					<p className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+						<ArrowDownLeft size={14} /> Total a Receber
+					</p>
+					<h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+						R$ {totalAReceber.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+					</h3>
+					<span className="text-xs text-slate-400 mt-1 block font-medium">Devedores pendentes</span>
+				</div>
+
+				<div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
+					<p className="text-[10px] font-black uppercase tracking-wider text-rose-500 flex items-center gap-1">
+						<ArrowUpRight size={14} /> Total a Pagar
+					</p>
+					<h3 className="text-2xl font-black text-rose-500 mt-1">
+						R$ {totalAPagar.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+					</h3>
+					<span className="text-xs text-slate-400 mt-1 block font-medium">Sua parte em contas conjuntas</span>
+				</div>
+
+				<div className="bg-gradient-to-br from-indigo-600 to-purple-600 text-white p-5 rounded-3xl shadow-md">
+					<p className="text-[10px] font-black uppercase tracking-wider text-indigo-200">Saldo Líquido Geral</p>
+					<h3 className="text-2xl font-black mt-1">
+						{saldoLiquido >= 0 ? "+" : "-"}R$ {Math.abs(saldoLiquido).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+					</h3>
+					<span className="text-xs text-indigo-100 mt-1 block font-medium">
+						{saldoLiquido >= 0 ? "Você tem saldo a receber" : "Você tem saldo a acertar"}
+					</span>
+				</div>
+
+				<div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
+					<p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Contatos & Parcerias</p>
+					<h3 className="text-2xl font-black text-slate-800 dark:text-slate-100 mt-1">
+						{contatos.length} contatos
+					</h3>
+					<span className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 block font-bold">
+						{contatos.filter(c => c.email && usuariosComConta.has(c.email.toLowerCase())).length} com conta no app
+					</span>
+				</div>
+			</div>
+
+			{/* FILTROS E ABAS */}
+			<div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4">
+				<div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl border border-slate-200 dark:border-slate-700">
+					<button
+						onClick={() => setActiveTab("devedores")}
+						className={`px-5 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
+							activeTab === "devedores"
+								? "bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm"
+								: "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+						}`}
+					>
+						A Receber ({devedores.length})
+					</button>
+
+					<button
+						onClick={() => setActiveTab("credores")}
+						className={`px-5 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
+							activeTab === "credores"
+								? "bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-sm"
+								: "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+						}`}
+					>
+						A Pagar ({credores.length})
+					</button>
+
+					<button
+						onClick={() => setActiveTab("contatos")}
+						className={`px-5 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
+							activeTab === "contatos"
+								? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm"
+								: "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+						}`}
+					>
+						Amigos & Convites ({contatos.length})
+					</button>
+				</div>
+
+				<div className="relative min-w-[280px]">
+					<Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+					<input
+						type="text"
+						value={termoBusca}
+						onChange={e => setTermoBusca(e.target.value)}
+						placeholder="Buscar por amigo ou despesa..."
+						className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+					/>
+				</div>
+			</div>
+
+			{/* CONTEÚDO PRINCIPAL */}
 			{loading ? (
 				<div className="flex justify-center py-20">
-					<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+					<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
 				</div>
 			) : activeTab === "devedores" ? (
-				devedores.length === 0 ? (
-					<motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm text-center">
-						<AlertCircle size={48} className="mx-auto text-emerald-400 mb-4" />
-						<h3 className="text-xl font-bold text-slate-700 dark:text-slate-200">Tudo limpo por aqui!</h3>
-						<p className="text-slate-500 dark:text-slate-400 mt-2">Ninguém te deve dinheiro no momento.</p>
-					</motion.div>
+				devedoresFiltrados.length === 0 ? (
+					<div className="bg-white dark:bg-slate-900 p-12 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 text-center">
+						<CheckCircle2 size={48} className="mx-auto text-emerald-400 mb-3" />
+						<h3 className="text-xl font-black text-slate-700 dark:text-slate-200">Tudo limpo por aqui!</h3>
+						<p className="text-slate-400 text-sm max-w-sm mx-auto mt-1">
+							Ninguém te deve dinheiro no momento. Clique em "+ Dividir Gasto" para partilhar uma conta.
+						</p>
+					</div>
 				) : (
-					<motion.div variants={itemVariants} className="space-y-4">
-						{devedores.map((devedor) => (
-							<div key={devedor.contato.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
-								{/* CARD HEADER */}
-								<div 
-									className="p-5 sm:p-6 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-									onClick={() => setExpandedId(expandedId === devedor.contato.id ? null : devedor.contato.id)}
-								>
-									<div className="flex items-center gap-4">
-										<div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-950 rounded-full flex justify-center items-center shrink-0">
-											<span className="text-indigo-600 dark:text-indigo-400 font-black text-xl">
-												{devedor.contato.nome.charAt(0).toUpperCase()}
-											</span>
-										</div>
-										<div>
-											<h3 className="font-bold text-lg text-slate-800 dark:text-slate-100">{devedor.contato.nome}</h3>
-											<p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1">
-												{devedor.contato.telefone || "Sem telefone"}
-											</p>
-										</div>
-									</div>
-									
-									<div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-100 dark:border-slate-800">
-										<div className="text-left sm:text-right">
-											<p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">Total Devido</p>
-											<p className="text-xl font-black text-rose-500 dark:text-rose-400">
-												R$ {Number(devedor.total_devido).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-											</p>
-										</div>
-										<div className="text-slate-400 dark:text-slate-500">
-											{expandedId === devedor.contato.id ? <ChevronUp size={24} /> : <ChevronDown size={24} />}
-										</div>
-									</div>
-								</div>
+					<div className="space-y-4">
+						{devedoresFiltrados.map((devedor) => {
+							const temConta = devedor.contato?.email && usuariosComConta.has(devedor.contato.email.toLowerCase());
+							const isExpanded = expandedId === devedor.contato?.id;
 
-								{/* ACCORDION CONTENT */}
-								<AnimatePresence>
-									{expandedId === devedor.contato.id && (
-										<motion.div 
-											initial={{ height: 0, opacity: 0 }}
-											animate={{ height: "auto", opacity: 1 }}
-											exit={{ height: 0, opacity: 0 }}
-											className="border-t border-slate-100 dark:border-slate-800"
-										>
-											<div className="p-5 sm:p-6 space-y-4 bg-white dark:bg-slate-900 transition-colors">
-												<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-													<h4 className="font-bold text-slate-700 dark:text-slate-300">Itens Pendentes ({devedor.itens.length})</h4>
-													<button
-														onClick={() => handleCobrarWhatsApp(devedor)}
-														className="flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#20bd5a] text-white px-4 py-2 rounded-xl font-bold transition-colors shadow-sm w-full sm:w-auto cursor-pointer text-sm"
-													>
-														<Phone size={16} />
-														Cobrar via WhatsApp
-													</button>
-												</div>
-
-												<div className="space-y-3">
-													{devedor.itens.map((item: any) => {
-														const payInfo = getPaymentInfo(item.observacao);
-														const isPartial = !item.terceiro_pago && payInfo && typeof payInfo.valor_pago === "number";
-														const restante = isPartial ? Number(item.valor) - payInfo.valor_pago : 0;
-
-														return (
-															<div key={item.id} className={`flex flex-col sm:flex-row sm:justify-between sm:items-center p-4 rounded-2xl gap-3 ${item.terceiro_pago ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : isPartial ? 'bg-amber-50/50 dark:bg-amber-955/10 border border-amber-100 dark:border-amber-900/30' : 'bg-slate-50 dark:bg-slate-800/40'}`}>
-																<div>
-																	<div className="flex items-center flex-wrap gap-2">
-																		<p className={`font-bold ${item.terceiro_pago ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
-																			{item.descricao}
-																		</p>
-																		{item.terceiro_pago && (
-																			<span className="text-[10px] font-black uppercase bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full">
-																				Pago
-																			</span>
-																		)}
-																		{isPartial && (
-																			<span className="text-[10px] font-black uppercase bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-																				Parcialmente Pago
-																			</span>
-																		)}
-																		{isPartial && (
-																			<span className="text-xs font-black text-rose-500 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-100">
-																				Ainda falta R$ {restante.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}!
-																			</span>
-																		)}
-																	</div>
-																	<p className="text-xs text-slate-500 mt-1">
-																		Data do Gasto: {new Date(item.data).toLocaleDateString("pt-BR")} 
-																		{item.cartao_id && " • No Cartão"} 
-																		{item.total_parcelas > 1 && ` • Parcela ${item.parcela_atual}/${item.total_parcelas}`}
-																	</p>
-																	{payInfo && (
-																		<p className="text-xs text-indigo-600 font-semibold mt-1">
-																			{item.terceiro_pago 
-																				? `Pago totalmente em ${new Date(payInfo.data_pagamento + "T12:00:00").toLocaleDateString("pt-BR")}` 
-																				: `Pago R$ ${payInfo.valor_pago.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} em ${new Date(payInfo.data_pagamento + "T12:00:00").toLocaleDateString("pt-BR")}`
-																			}
-																		</p>
-																	)}
-																</div>
-																<div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100 dark:border-slate-800">
-																	<p className={`font-black ${item.terceiro_pago ? 'text-slate-400 dark:text-slate-600' : 'text-slate-700 dark:text-slate-200'}`}>
-																		R$ {Number(item.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-																	</p>
-																	<div className="flex gap-2">
-																		{(item.terceiro_pago || isPartial) && (
-																			<button
-																				onClick={() => handleDesfazerPagamento(item.id)}
-																				className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-955/20 rounded-xl transition-colors cursor-pointer"
-																				title="Desfazer Pagamento"
-																			>
-																				<RotateCcw size={18} />
-																			</button>
-																		)}
-																		{!item.terceiro_pago && (
-																			<button
-																				onClick={() => handleOpenPaymentModal(item)}
-																				className="p-2 text-slate-400 dark:text-slate-500 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 rounded-xl transition-colors tooltip-trigger cursor-pointer"
-																				title={isPartial ? "Registrar pagamento do restante" : "Registrar Pagamento"}
-																			>
-																				<CheckCircle2 size={20} />
-																			</button>
-																		)}
-																	</div>
-																</div>
-															</div>
-														);
-													})}
-												</div>
+							return (
+								<div key={devedor.contato?.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-all">
+									<div 
+										className="p-5 sm:p-6 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-slate-100/70 transition-colors"
+										onClick={() => setExpandedId(isExpanded ? null : devedor.contato?.id)}
+									>
+										<div className="flex items-center gap-4">
+											<div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-950/60 rounded-2xl flex justify-center items-center text-emerald-700 dark:text-emerald-400 font-black text-xl shrink-0">
+												{devedor.contato?.nome?.charAt(0).toUpperCase() || "?"}
 											</div>
-										</motion.div>
-									)}
-								</AnimatePresence>
-							</div>
-						))}
-					</motion.div>
-				)
-			) : (
-				credores.length === 0 ? (
-					<motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm text-center">
-						<AlertCircle size={48} className="mx-auto text-purple-400 mb-4" />
-						<h3 className="text-xl font-bold text-slate-700 dark:text-slate-200">Nenhum valor a pagar!</h3>
-						<p className="text-slate-500 dark:text-slate-400 mt-2">Você está em dia com todas as suas parcerias e contatos.</p>
-					</motion.div>
-				) : (
-					<motion.div variants={itemVariants} className="space-y-4">
-						{credores.map((credor) => (
-							<div key={credor.contato.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
-								{/* CARD HEADER */}
-								<div 
-									className="p-5 sm:p-6 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-									onClick={() => setExpandedId(expandedId === credor.contato.id ? null : credor.contato.id)}
-								>
-									<div className="flex items-center gap-4">
-										<div className="w-12 h-12 bg-purple-100 dark:bg-purple-950 rounded-full flex justify-center items-center shrink-0">
-											<span className="text-purple-600 dark:text-purple-400 font-black text-xl">
-												{credor.contato.nome.charAt(0).toUpperCase()}
-											</span>
+											<div>
+												<div className="flex items-center gap-2 flex-wrap">
+													<h3 className="font-black text-lg text-slate-800 dark:text-slate-100">
+														{devedor.contato?.nome}
+													</h3>
+													{temConta ? (
+														<span className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+															<span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+															Usuário Conectado
+														</span>
+													) : (
+														<button
+															onClick={(e) => {
+																e.stopPropagation();
+																setContatoParaConvite(devedor.contato);
+															}}
+															className="bg-slate-200 hover:bg-indigo-100 text-slate-600 hover:text-indigo-600 dark:bg-slate-800 dark:hover:bg-indigo-950/40 dark:text-slate-400 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors cursor-pointer"
+															title="Convidar amigo para ter conta no app"
+														>
+															<Mail size={10} /> Convidar para o App
+														</button>
+													)}
+												</div>
+												<p className="text-xs text-slate-400 mt-0.5">
+													{devedor.contato?.telefone || "Sem telefone"} {devedor.contato?.email ? `• ${devedor.contato.email}` : ""}
+												</p>
+											</div>
 										</div>
-										<div>
-											<h3 className="font-bold text-lg text-slate-800 dark:text-slate-100">{credor.contato.nome}</h3>
-											<p className="text-xs text-purple-500 font-semibold uppercase tracking-wider">Parceria de Contas a Pagar</p>
+
+										<div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-100 dark:border-slate-800">
+											<div className="text-left sm:text-right">
+												<p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-black uppercase tracking-wider">Te Deve</p>
+												<p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+													R$ {Number(devedor.total_devido).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+												</p>
+											</div>
+											<div className="text-slate-400">
+												{isExpanded ? <ChevronUp size={22} /> : <ChevronDown size={22} />}
+											</div>
 										</div>
 									</div>
-									
-									<div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-100 dark:border-slate-800">
-										<div className="text-left sm:text-right">
-											<p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">Total a Pagar Este Mês</p>
-											<p className="text-xl font-black text-rose-500 dark:text-rose-400">
-												R$ {Number(credor.total_devido).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-											</p>
-										</div>
-										<div className="text-slate-400 dark:text-slate-500">
-											{expandedId === credor.contato.id ? <ChevronUp size={24} /> : <ChevronDown size={24} />}
-										</div>
-									</div>
-								</div>
 
-								{/* ACCORDION CONTENT */}
-								<AnimatePresence>
-									{expandedId === credor.contato.id && (
-										<motion.div 
-											initial={{ height: 0, opacity: 0 }}
-											animate={{ height: "auto", opacity: 1 }}
-											exit={{ height: 0, opacity: 0 }}
-											className="border-t border-slate-100 dark:border-slate-800"
-										>
-											<div className="p-5 sm:p-6 space-y-4 bg-white dark:bg-slate-900 transition-colors">
-												<h4 className="font-bold text-slate-700 dark:text-slate-300">Itens e Divisões Ativas ({credor.itens.length})</h4>
+									{/* ITENS DIVIDIDOS */}
+									<AnimatePresence>
+										{isExpanded && (
+											<motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
+												<div className="p-5 sm:p-6 space-y-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800">
+													<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+														<h4 className="font-bold text-slate-700 dark:text-slate-300 text-sm">
+															Lançamentos e Divisões ({devedor.itens.length})
+														</h4>
+														<div className="flex items-center gap-2">
+															<button
+																onClick={() => handleCobrarWhatsApp(devedor)}
+																className="flex items-center gap-2 bg-[#25D366] hover:bg-[#20bd5a] text-white px-4 py-2 rounded-xl font-bold transition-all shadow-xs cursor-pointer text-xs"
+															>
+																<MessageSquare size={15} /> Cobrar no WhatsApp
+															</button>
+															{!temConta && (
+																<button
+																	onClick={() => setContatoParaConvite(devedor.contato)}
+																	className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 px-3.5 py-2 rounded-xl font-bold transition-all cursor-pointer text-xs"
+																>
+																	<Share2 size={14} /> Convidar Amigo
+																</button>
+															)}
+														</div>
+													</div>
 
-												<div className="space-y-3">
-													{credor.itens.map((item: any) => {
-														const totalItemOriginal = item.valor_original;
-														const mappedItemForPayment = {
-															...item,
-															valor: item.valor_parcela_usuario
-														};
+													<div className="space-y-3">
+														{devedor.itens.map((item: any) => {
+															const payInfo = getPaymentInfo(item.observacao);
+															const isPartial = !item.terceiro_pago && payInfo && typeof payInfo.valor_pago === "number";
+															const restante = isPartial ? Number(item.valor) - payInfo.valor_pago : 0;
+															const isSplitMeta = payInfo?.is_split;
 
-														return (
-															<div key={item.id} className={`flex flex-col sm:flex-row sm:justify-between sm:items-center p-4 rounded-2xl gap-3 ${item.quitado ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : 'bg-slate-50 dark:bg-slate-800/40'}`}>
-																<div>
-																	<div className="flex items-center flex-wrap gap-2">
-																		<p className={`font-bold ${item.quitado ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
-																			{item.descricao}
+															return (
+																<div key={item.id} className={`p-4 rounded-2xl flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 border ${item.terceiro_pago ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/30' : isPartial ? 'bg-amber-50/40 dark:bg-amber-955/10 border-amber-200 dark:border-amber-900/40' : 'bg-slate-50 dark:bg-slate-800/40 border-slate-100 dark:border-slate-800'}`}>
+																	<div>
+																		<div className="flex items-center flex-wrap gap-2">
+																			<p className={`font-bold ${item.terceiro_pago ? 'text-slate-400 line-through' : 'text-slate-800 dark:text-slate-100'}`}>
+																				{item.descricao}
+																			</p>
+																			{isSplitMeta && (
+																				<span className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+																					<Split size={10} /> Splitwise
+																				</span>
+																			)}
+																			{item.terceiro_pago && (
+																				<span className="text-[10px] font-black uppercase bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full">
+																					Quitado
+																				</span>
+																			)}
+																			{isPartial && (
+																				<span className="text-[10px] font-black uppercase bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+																					Parcial (Falta R$ {restante.toFixed(2)})
+																				</span>
+																			)}
+																		</div>
+																		<p className="text-xs text-slate-400 mt-1">
+																			Data: {new Date(item.data + "T12:00:00").toLocaleDateString("pt-BR")}
+																			{isSplitMeta && payInfo.valor_total && ` • Total da despesa: R$ ${Number(payInfo.valor_total).toFixed(2)}`}
 																		</p>
-																		{item.quitado && (
-																			<span className="text-[10px] font-black uppercase bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full">
-																				Pago
-																			</span>
-																		)}
 																	</div>
-																	<p className="text-xs text-slate-500 mt-1">
-																		Sua parcela (50%): R$ {item.valor_parcela_usuario.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} • Valor Total: R$ {totalItemOriginal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-																	</p>
-																	<p className="text-xs text-slate-450 mt-0.5">
-																		Vencimento: {new Date(item.data).toLocaleDateString("pt-BR")}
-																		{item.total_parcelas > 1 && ` • Parcela ${item.parcela_atual}/${item.total_parcelas}`}
+
+																	<div className="flex items-center justify-between sm:justify-end gap-4">
+																		<p className="font-black text-slate-800 dark:text-slate-100 text-base">
+																			R$ {Number(item.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+																		</p>
+																		<div className="flex gap-2">
+																			{(item.terceiro_pago || isPartial) && (
+																				<button
+																					onClick={() => handleDesfazerPagamento(item.id)}
+																					className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-955/20 rounded-xl transition-colors cursor-pointer"
+																					title="Desfazer Pagamento"
+																				>
+																					<RotateCcw size={18} />
+																				</button>
+																			)}
+																			{!item.terceiro_pago && (
+																				<button
+																					onClick={() => handleOpenPaymentModal(item)}
+																					className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 rounded-xl transition-colors cursor-pointer"
+																					title="Registrar Pagamento / Quitar"
+																				>
+																					<CheckCircle2 size={20} />
+																				</button>
+																			)}
+																		</div>
+																	</div>
+																</div>
+															);
+														})}
+													</div>
+												</div>
+											</motion.div>
+										)}
+									</AnimatePresence>
+								</div>
+							);
+						})}
+					</div>
+				)
+			) : activeTab === "credores" ? (
+				credoresFiltrados.length === 0 ? (
+					<div className="bg-white dark:bg-slate-900 p-12 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 text-center">
+						<CheckCircle2 size={48} className="mx-auto text-indigo-400 mb-3" />
+						<h3 className="text-xl font-black text-slate-700 dark:text-slate-200">Nenhum valor a pagar!</h3>
+						<p className="text-slate-400 text-sm max-w-sm mx-auto mt-1">
+							Você não possui contas em aberto com seus amigos no momento.
+						</p>
+					</div>
+				) : (
+					<div className="space-y-4">
+						{credoresFiltrados.map((credor) => {
+							const isExpanded = expandedId === credor.contato?.id;
+
+							return (
+								<div key={credor.contato?.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-all">
+									<div 
+										className="p-5 sm:p-6 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-slate-100/70 transition-colors"
+										onClick={() => setExpandedId(isExpanded ? null : credor.contato?.id)}
+									>
+										<div className="flex items-center gap-4">
+											<div className="w-12 h-12 bg-rose-100 dark:bg-rose-950/60 rounded-2xl flex justify-center items-center text-rose-700 dark:text-rose-400 font-black text-xl shrink-0">
+												{credor.contato?.nome?.charAt(0).toUpperCase() || "?"}
+											</div>
+											<div>
+												<h3 className="font-black text-lg text-slate-800 dark:text-slate-100">
+													{credor.contato?.nome}
+												</h3>
+												<p className="text-xs text-rose-500 font-bold uppercase tracking-wider">
+													Você deve a este amigo
+												</p>
+											</div>
+										</div>
+
+										<div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-100 dark:border-slate-800">
+											<div className="text-left sm:text-right">
+												<p className="text-[10px] text-rose-500 font-black uppercase tracking-wider">A Pagar</p>
+												<p className="text-2xl font-black text-rose-500">
+													R$ {Number(credor.total_devido).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+												</p>
+											</div>
+											<div className="text-slate-400">
+												{isExpanded ? <ChevronUp size={22} /> : <ChevronDown size={22} />}
+											</div>
+										</div>
+									</div>
+
+									<AnimatePresence>
+										{isExpanded && (
+											<motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
+												<div className="p-5 sm:p-6 space-y-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800">
+													<h4 className="font-bold text-slate-700 dark:text-slate-300 text-sm">
+														Despesas Compartilhadas a Pagar ({credor.itens.length})
+													</h4>
+													<div className="space-y-3">
+														{credor.itens.map((item: any) => (
+															<div key={item.id} className="p-4 rounded-2xl flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 border bg-slate-50 dark:bg-slate-800/40 border-slate-100 dark:border-slate-800">
+																<div>
+																	<p className="font-bold text-slate-800 dark:text-slate-100">{item.descricao}</p>
+																	<p className="text-xs text-slate-400 mt-1">
+																		Data: {new Date(item.data + "T12:00:00").toLocaleDateString("pt-BR")} • Total original: R$ {item.valor_original?.toFixed(2)}
 																	</p>
 																</div>
-																<div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100 dark:border-slate-800">
-																	<p className={`font-black ${item.quitado ? 'text-slate-400' : 'text-slate-700 dark:text-slate-200'}`}>
+																<div className="flex items-center gap-4">
+																	<p className="font-black text-rose-500 text-base">
 																		R$ {Number(item.valor_parcela_usuario).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 																	</p>
-																	<div className="flex gap-2">
-																		{item.quitado ? (
-																			<button
-																				onClick={() => handleDesfazerPagamento(item.id)}
-																				className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-955/20 rounded-xl transition-colors cursor-pointer"
-																				title="Desfazer Pagamento"
-																			>
-																				<RotateCcw size={18} />
-																			</button>
-																		) : (
-																			<button
-																				onClick={() => handleOpenPaymentModal(mappedItemForPayment)}
-																				className="p-2 text-slate-400 dark:text-slate-500 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 rounded-xl transition-colors tooltip-trigger cursor-pointer"
-																				title="Registrar Pagamento"
-																			>
-																				<CheckCircle2 size={20} />
-																			</button>
-																		)}
-																	</div>
+																	<button
+																		onClick={() => handleOpenPaymentModal(item)}
+																		className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 rounded-xl transition-colors cursor-pointer"
+																		title="Marcar como Pago ao Amigo"
+																	>
+																		<CheckCircle2 size={20} />
+																	</button>
 																</div>
 															</div>
-														);
-													})}
+														))}
+													</div>
 												</div>
-											</div>
-										</motion.div>
-									)}
-								</AnimatePresence>
-							</div>
-						))}
-					</motion.div>
+											</motion.div>
+										)}
+									</AnimatePresence>
+								</div>
+							);
+						})}
+					</div>
 				)
+			) : (
+				/* ABA DE CONTATOS & CONVITES */
+				<div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-4">
+					<div className="flex justify-between items-center pb-4 border-b border-slate-100 dark:border-slate-800">
+						<div>
+							<h3 className="font-black text-lg text-slate-800 dark:text-slate-100">Amigos Cadastrados</h3>
+							<p className="text-xs text-slate-400">Convide amigos para atualizações dinâmicas e automáticas de divisões.</p>
+						</div>
+						<button
+							onClick={() => setIsAddContatoOpen(true)}
+							className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer"
+						>
+							<Plus size={16} /> Novo Amigo
+						</button>
+					</div>
+
+					<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+						{contatosFiltrados.map(contato => {
+							const temConta = contato.email && usuariosComConta.has(contato.email.toLowerCase());
+
+							return (
+								<div key={contato.id} className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex flex-col justify-between space-y-3">
+									<div>
+										<div className="flex items-center justify-between">
+											<h4 className="font-black text-base text-slate-800 dark:text-slate-100">{contato.nome}</h4>
+											{temConta ? (
+												<span className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
+													No App
+												</span>
+											) : (
+												<span className="bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
+													Offline
+												</span>
+											)}
+										</div>
+										<p className="text-xs text-slate-400 mt-1">{contato.email || "Sem e-mail cadastrado"}</p>
+										<p className="text-xs text-slate-400">{contato.telefone || "Sem telefone cadastrado"}</p>
+									</div>
+
+									<div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
+										<button
+											onClick={() => setContatoParaConvite(contato)}
+											className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+										>
+											<Share2 size={13} /> Convidar / Link
+										</button>
+									</div>
+								</div>
+							);
+						})}
+					</div>
+				</div>
 			)}
 
-			{/* PAYMENT REGISTRATION MODAL */}
+			{/* MODAL REGISTRAR PAGAMENTO */}
 			{paymentModalOpen && selectedItemForPayment && (
 				<div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[110] flex items-center justify-center p-4">
-					<div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in duration-300 border border-slate-100 dark:border-slate-800">
-						<div className="p-8 bg-indigo-600 text-white relative">
+					<div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800">
+						<div className="p-6 bg-emerald-600 text-white relative">
 							<h3 className="text-2xl font-black flex items-center gap-2">
-								<DollarSign size={24} /> Registrar Pagamento
+								<DollarSign size={24} /> Registrar Acerto
 							</h3>
-							<p className="text-indigo-100 text-sm font-semibold mt-1">
-								{selectedItemForPayment.descricao} (Total: R$ {Number(selectedItemForPayment.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })})
+							<p className="text-emerald-100 text-xs font-semibold mt-1">
+								{selectedItemForPayment.descricao} (Valor: R$ {Number(selectedItemForPayment.valor || selectedItemForPayment.valor_parcela_usuario || 0).toFixed(2)})
 							</p>
 							<button 
 								onClick={() => {
 									setPaymentModalOpen(false);
 									setSelectedItemForPayment(null);
 								}}
-								className="absolute top-6 right-6 p-2 rounded-full hover:bg-white/20 transition-colors text-white"
+								className="absolute top-5 right-5 p-2 rounded-full hover:bg-white/20 transition-colors text-white cursor-pointer"
 							>
 								<X size={20} />
 							</button>
 						</div>
 
-						<div className="p-8 space-y-6">
-							{/* Data do Pagamento */}
-							<div className="space-y-2">
-								<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">
-									Data do Pagamento
-								</label>
+						<div className="p-6 space-y-5">
+							<div className="space-y-1.5">
+								<label className="text-[10px] font-black uppercase text-slate-400 ml-1">Data do Acerto</label>
 								<input
 									type="date"
-									className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none focus:border-indigo-500 transition-colors"
+									className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-emerald-500"
 									value={paymentDate}
 									onChange={(e) => setPaymentDate(e.target.value)}
 								/>
 							</div>
 
-							{/* Tipo de Pagamento */}
-							<div className="space-y-2">
-								<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">
-									Tipo de Pagamento
-								</label>
+							<div className="space-y-1.5">
+								<label className="text-[10px] font-black uppercase text-slate-400 ml-1">Tipo de Pagamento</label>
 								<div className="grid grid-cols-2 gap-2">
 									<button
 										type="button"
 										onClick={() => setPaymentType("total")}
-										className={`py-3 px-4 rounded-xl font-bold text-sm transition-all border ${
+										className={`py-3 px-4 rounded-xl font-bold text-xs border transition-all cursor-pointer ${
 											paymentType === "total"
-												? "bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300"
-												: "bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+												? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-700 dark:text-emerald-300"
+												: "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500"
 										}`}
 									>
-										Valor Total
+										Valor Total (Quitar)
 									</button>
 									<button
 										type="button"
-										onClick={() => {
-											setPaymentType("parcial");
-											// Pre-fill with remaining amount if already partially paid
-											const payInfo = getPaymentInfo(selectedItemForPayment.observacao);
-											if (payInfo && typeof payInfo.valor_pago === "number") {
-												setPartialAmount((Number(selectedItemForPayment.valor) - payInfo.valor_pago).toString());
-											}
-										}}
-										className={`py-3 px-4 rounded-xl font-bold text-sm transition-all border ${
+										onClick={() => setPaymentType("parcial")}
+										className={`py-3 px-4 rounded-xl font-bold text-xs border transition-all cursor-pointer ${
 											paymentType === "parcial"
-												? "bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300"
-												: "bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+												? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-700 dark:text-emerald-300"
+												: "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500"
 										}`}
 									>
 										Valor Parcial
@@ -665,37 +864,74 @@ export default function Devedores() {
 								</div>
 							</div>
 
-							{/* Valor Parcial Input */}
 							{paymentType === "parcial" && (
-								<div className="space-y-2 animate-in slide-in-from-top-2 duration-300">
-									<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">
-										Valor Pago (R$)
-									</label>
+								<div className="space-y-1.5">
+									<label className="text-[10px] font-black uppercase text-slate-400 ml-1">Valor Pago (R$)</label>
 									<input
 										type="number"
 										step="0.01"
-										min="0.01"
-										max={selectedItemForPayment.valor - 0.01}
 										placeholder="0,00"
-										className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl font-black text-indigo-600 dark:text-indigo-400 text-xl outline-none focus:border-indigo-500 transition-colors"
+										className="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-emerald-600 dark:text-emerald-400 text-lg outline-none"
 										value={partialAmount}
 										onChange={(e) => setPartialAmount(e.target.value)}
 									/>
-									<span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 ml-1 block">
-										Deve ser menor que R$ {Number(selectedItemForPayment.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-									</span>
 								</div>
 							)}
 
 							<button
 								onClick={handleConfirmarPagamento}
-								className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-100 dark:shadow-none"
+								className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-4 rounded-2xl font-black transition-colors flex items-center justify-center gap-2 cursor-pointer uppercase text-sm"
 							>
-								Confirmar Pagamento
+								Confirmar Acerto
 							</button>
 						</div>
 					</div>
 				</div>
+			)}
+
+			{/* MODAL NOVO CONTATO */}
+			{isAddContatoOpen && (
+				<AddContatoWeb
+					onClose={() => setIsAddContatoOpen(false)}
+					onSuccess={() => {
+						loadAllData();
+					}}
+				/>
+			)}
+
+			{/* MODAL SPLITWISE (NOVA DIVISÃO) */}
+			{isAddSplitOpen && (
+				<AddSplitDespesaModal
+					isOpen={isAddSplitOpen}
+					onClose={() => setIsAddSplitOpen(false)}
+					onSuccess={() => {
+						loadAllData();
+					}}
+					onOpenAddContato={() => setIsAddContatoOpen(true)}
+				/>
+			)}
+
+			{/* MODAL DE CONVITE */}
+			{contatoParaConvite && (
+				<ConviteAmigoModal
+					isOpen={!!contatoParaConvite}
+					onClose={() => setContatoParaConvite(null)}
+					contato={contatoParaConvite}
+					userName={userName}
+				/>
+			)}
+
+			{/* MODAL CHAT DE ACORDOS IA */}
+			{isChatIaOpen && (
+				<ChatAcordosIaModal
+					isOpen={isChatIaOpen}
+					onClose={() => setIsChatIaOpen(false)}
+					onSuccess={() => {
+						loadAllData();
+					}}
+					userId={userId}
+					contatosDisponiveis={contatos}
+				/>
 			)}
 		</motion.div>
 	);

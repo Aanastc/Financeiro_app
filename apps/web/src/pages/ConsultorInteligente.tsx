@@ -252,7 +252,7 @@ export default function ConsultorInteligente() {
 				financeService.getContasBancarias(user.id).catch(() => []),
 				financeService.getCartoes(user.id).catch(() => []),
 				financeService.getDividas(user.id).catch(() => []),
-				supabase.from("transacoes").select("*, categorias(nome), cartoes(nome)").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear).catch(() => ({ data: [] })),
+				supabase.from("transacoes").select("*, categorias(nome), cartoes(nome)").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
 				financeService.getInvestimentos(user.id).catch(() => []),
 				financeService.getDevedores(user.id).catch(() => [])
 			]);

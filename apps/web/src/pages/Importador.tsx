@@ -779,7 +779,7 @@ export default function ImportadorWeb() {
 										))}
 									</select>
 
-									{cartoes.length > 0 && (
+									{cartoes.length > 0 && tipoDocumento !== "extrato_bancario" && (
 										<div className="flex items-center gap-2">
 											<CreditCard size={18} className="text-purple-600 dark:text-purple-400" />
 											<span className="text-xs font-black uppercase text-slate-700 dark:text-slate-200 tracking-wider">Cartão (se fatura):</span>
@@ -1068,7 +1068,28 @@ export default function ImportadorWeb() {
 
 													{/* CONTA / CARTÃO */}
 													<td className="p-3 min-w-[140px]">
-														{item.tipo_transacao !== "Transferencia" && (item.tipo_transacao === "Fatura" || item.tipo_transacao === "PagamentoFatura" || item.metodo_pagamento === "Crédito" || (tipoDocumento === "fatura_cartao" && item.cartao_id)) ? (
+														{item.tipo_transacao === "PagamentoFatura" ? (
+															<div className="flex flex-col gap-1">
+																<div className="flex items-center justify-between">
+																	<span className="text-[10px] font-black text-violet-600 dark:text-violet-400 uppercase tracking-tight flex items-center gap-1">
+																		<CreditCard size={12} /> Cartão Quitado
+																	</span>
+																	<span className="text-[9px] font-bold text-slate-400 dark:text-slate-500">
+																		Débito em Conta
+																	</span>
+																</div>
+																<select
+																	className="w-full bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-300 outline-none font-bold text-xs p-1.5 rounded-lg border border-violet-200 dark:border-violet-800 cursor-pointer"
+																	value={item.cartao_id || ""}
+																	onChange={(e) => {
+																		updateItem(item.id, "cartao_id", e.target.value);
+																	}}
+																>
+																	<option value="">Selecione Cartão (Opcional)</option>
+																	{cartoes.map(c => <option key={c.id} value={c.id}>💳 {c.nome}</option>)}
+																</select>
+															</div>
+														) : item.tipo_transacao !== "Transferencia" && (item.tipo_transacao === "Fatura" || item.metodo_pagamento === "Crédito" || (tipoDocumento === "fatura_cartao" && item.cartao_id)) ? (
 															<div className="flex flex-col gap-1">
 																<div className="flex items-center justify-between">
 																	<span className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-tight flex items-center gap-1">

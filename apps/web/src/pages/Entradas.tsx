@@ -8,8 +8,8 @@ import {
 	YAxis,
 	Tooltip,
 	ResponsiveContainer,
-    Cell,
-    CartesianGrid
+	Cell,
+	CartesianGrid
 } from "recharts";
 import {
 	TrendingUp,
@@ -17,9 +17,14 @@ import {
 	Clock,
 	Calendar,
 	ArrowUpCircle,
-    ChevronLeft,
-    ChevronRight,
-    Tag
+	Tag,
+	Building,
+	Filter,
+	Search,
+	RotateCcw,
+	Layers,
+	ChevronLeft,
+	ChevronRight
 } from "lucide-react";
 
 const MESES = [
@@ -36,7 +41,11 @@ export default function EntradasWeb() {
 	const [data, setData] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [year, setYear] = useState(new Date().getFullYear());
-    const [filtroStatus, setFiltroStatus] = useState<'TODOS' | 'RECEBIDO' | 'A_RECEBER'>('TODOS');
+	const [selectedMonth, setSelectedMonth] = useState<string>(""); // "" para todos, "01" a "12"
+	const [selectedDay, setSelectedDay] = useState<string>("");     // "" para todos, "01" a "31"
+	const [selectedCategory, setSelectedCategory] = useState<string>("");
+	const [searchQuery, setSearchQuery] = useState<string>("");
+	const [filtroStatus, setFiltroStatus] = useState<'TODOS' | 'RECEBIDO' | 'A_RECEBER'>('TODOS');
 
 	const loadData = useCallback(async () => {
 		setLoading(true);
@@ -49,7 +58,7 @@ export default function EntradasWeb() {
 				.eq("tipo", "RECEITA")
 				.gte("data", `${year}-01-01`)
 				.lte("data", `${year}-12-31`)
-				.order("data", { ascending: false }); // Historico recente
+				.order("data", { ascending: false });
 			
 			setData(list || []);
 		}
@@ -59,7 +68,6 @@ export default function EntradasWeb() {
 	useEffect(() => {
 		loadData();
 
-		// REALTIME SUBSCRIPTION
 		let channel: any;
 		async function setupRealtime() {
 			const { data: { user } } = await supabase.auth.getUser();
@@ -74,283 +82,568 @@ export default function EntradasWeb() {
 		};
 	}, [loadData]);
 
-    const totalRecebido = useMemo(() => {
-        return data.filter(d => d.status === 'confirmada' || !d.status).reduce((acc, curr) => acc + Number(curr.valor), 0);
-    }, [data]);
+	// Lista de categorias únicas para o filtro
+	const uniqueCategorias = useMemo(() => {
+		const cats = new Set<string>();
+		data.forEach(item => {
+			const nomeCat = item.categorias?.nome || item.categoria || "Salário";
+			if (nomeCat) cats.add(nomeCat);
+		});
+		return Array.from(cats).sort((a, b) => a.localeCompare(b));
+	}, [data]);
 
-    const totalAReceber = useMemo(() => {
-        return data.filter(d => d.status === 'pendente').reduce((acc, curr) => acc + Number(curr.valor), 0);
-    }, [data]);
+	// Filtragem combinada: Ano + Mês + Dia + Categoria + Status + Busca
+	const filtrados = useMemo(() => {
+		return data.filter(item => {
+			if (!item.data) return false;
+			const dateStr = String(item.data).split('T')[0];
+			const parts = dateStr.split('-');
+			const itemMonth = parts[1]; // "01" a "12"
+			const itemDay = parts[2];   // "01" a "31"
 
-    const chartData = useMemo(() => {
-        return MESES.map((nome, idx) => {
-            const itensDoMes = data.filter(d => {
-                if (!d.data) return false;
-                const dateStr = String(d.data);
-                const dObj = new Date(dateStr.includes('T') ? dateStr : `${dateStr}T12:00:00`);
-                return !isNaN(dObj.getTime()) && dObj.getMonth() === idx;
-            });
-            const sumMes = itensDoMes.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
-            return {
-                name: nome,
-                mesCompleto: MESES_COMPLETOS[idx],
-                total: sumMes,
-                count: itensDoMes.length
-            };
-        });
-    }, [data]);
+			// Filtro por Mês
+			if (selectedMonth && itemMonth !== selectedMonth) return false;
 
-    const statsAno = useMemo(() => {
-        const totalAno = chartData.reduce((acc, curr) => acc + curr.total, 0);
-        const mesesComDados = chartData.filter(m => m.total > 0);
-        const mediaMensal = mesesComDados.length > 0 ? totalAno / mesesComDados.length : 0;
-        const maiorMes = chartData.reduce((max, curr) => (curr.total > max.total ? curr : max), { name: '', mesCompleto: '', total: 0, count: 0 });
-        return { totalAno, mediaMensal, maiorMes, qtdMesesAtivos: mesesComDados.length };
-    }, [chartData]);
+			// Filtro por Dia
+			if (selectedDay && itemDay !== selectedDay) return false;
 
-    const filtrados = useMemo(() => {
-        if (filtroStatus === 'RECEBIDO') return data.filter(d => d.status === 'confirmada' || !d.status);
-        if (filtroStatus === 'A_RECEBER') return data.filter(d => d.status === 'pendente');
-        return data;
-    }, [data, filtroStatus]);
+			// Filtro por Categoria
+			const nomeCat = item.categorias?.nome || item.categoria || "Sem Categoria";
+			if (selectedCategory && nomeCat !== selectedCategory) return false;
+
+			// Filtro por Status
+			if (filtroStatus === 'RECEBIDO') {
+				if (item.status && item.status !== 'confirmada') return false;
+			} else if (filtroStatus === 'A_RECEBER') {
+				if (item.status !== 'pendente') return false;
+			}
+
+			// Filtro por Busca de Texto (insensível a acentos e maiúsculas)
+			if (searchQuery.trim()) {
+				const normalize = (str: string) => 
+					(str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+				const query = normalize(searchQuery);
+				const desc = normalize(item.descricao);
+				const obs = normalize(item.observacao);
+				const cat = normalize(nomeCat);
+				const banco = normalize(item.contas_bancarias?.nome);
+				if (!desc.includes(query) && !obs.includes(query) && !cat.includes(query) && !banco.includes(query)) {
+					return false;
+				}
+			}
+
+			return true;
+		});
+	}, [data, selectedMonth, selectedDay, selectedCategory, filtroStatus, searchQuery]);
+
+	// Paginação para evitar scroll infinito e permitir visualização direta
+	const [paginaAtual, setPaginaAtual] = useState(1);
+	const [itensPorPagina, setItensPorPagina] = useState(25);
+
+	useEffect(() => {
+		setPaginaAtual(1);
+	}, [selectedMonth, selectedDay, selectedCategory, filtroStatus, searchQuery, year]);
+
+	const totalPaginas = Math.max(1, Math.ceil(filtrados.length / (itensPorPagina === -1 ? filtrados.length || 1 : itensPorPagina)));
+
+	const itensExibidos = useMemo(() => {
+		if (itensPorPagina === -1) return filtrados;
+		const inicio = (paginaAtual - 1) * itensPorPagina;
+		return filtrados.slice(inicio, inicio + itensPorPagina);
+	}, [filtrados, paginaAtual, itensPorPagina]);
+
+	// Totais calculados com base nos filtros atuais
+	const totalRecebido = useMemo(() => {
+		return filtrados
+			.filter(d => d.status === 'confirmada' || !d.status)
+			.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
+	}, [filtrados]);
+
+	const totalAReceber = useMemo(() => {
+		return filtrados
+			.filter(d => d.status === 'pendente')
+			.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
+	}, [filtrados]);
+
+	// Gráfico mensal baseado nos dados do ano carregado
+	const chartData = useMemo(() => {
+		return MESES.map((nome, idx) => {
+			const mesStr = String(idx + 1).padStart(2, '0');
+			const itensDoMes = data.filter(d => {
+				if (!d.data) return false;
+				const parts = String(d.data).split('T')[0].split('-');
+				return parts[1] === mesStr;
+			});
+			const sumMes = itensDoMes.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
+			return {
+				name: nome,
+				mesIndex: mesStr,
+				mesCompleto: MESES_COMPLETOS[idx],
+				total: sumMes,
+				count: itensDoMes.length
+			};
+		});
+	}, [data]);
+
+	const statsAno = useMemo(() => {
+		const totalAno = chartData.reduce((acc, curr) => acc + curr.total, 0);
+		const mesesComDados = chartData.filter(m => m.total > 0);
+		const mediaMensal = mesesComDados.length > 0 ? totalAno / mesesComDados.length : 0;
+		const maiorMes = chartData.reduce((max, curr) => (curr.total > max.total ? curr : max), { name: '', mesIndex: '', mesCompleto: '', total: 0, count: 0 });
+		return { totalAno, mediaMensal, maiorMes, qtdMesesAtivos: mesesComDados.length };
+	}, [chartData]);
+
+	const hasActiveFilters = Boolean(selectedMonth || selectedDay || selectedCategory || searchQuery.trim() || filtroStatus !== 'TODOS');
+
+	const resetFilters = () => {
+		setSelectedMonth("");
+		setSelectedDay("");
+		setSelectedCategory("");
+		setSearchQuery("");
+		setFiltroStatus("TODOS");
+	};
 
 	return (
 		<div className="space-y-6 sm:space-y-8 pb-20 animate-in fade-in duration-500">
-			{/* SECTION: HEADER & ACTIONS */}
-			<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] shadow-sm border border-slate-100 dark:border-slate-800 transition-colors">
-				<div className="space-y-1">
-					<div className="flex items-center gap-3">
-						<div className="bg-emerald-100 dark:bg-emerald-950/40 p-2 rounded-xl text-emerald-600 dark:text-emerald-400">
-							<TrendingUp size={24} />
-						</div>
-						<h1 className="text-3xl font-black text-slate-800 dark:text-slate-100">
-							Entradas
+			{/* SECTION: HEADER */}
+			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-xs border border-slate-100 dark:border-slate-800 transition-colors">
+				<div className="flex items-center gap-3">
+					<div className="bg-emerald-100 dark:bg-emerald-950/50 p-2.5 rounded-xl text-emerald-600 dark:text-emerald-400 shrink-0">
+						<TrendingUp size={22} />
+					</div>
+					<div>
+						<h1 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">
+							Entradas & Receitas
 						</h1>
-					</div>
-					<p className="text-slate-500 dark:text-slate-400 font-medium text-sm ml-12">
-						Acompanhe o dinheiro que entrou e o que ainda vai entrar.
-					</p>
-				</div>
-
-				<div className="flex flex-wrap items-center gap-3">
-					<div className="flex items-center bg-slate-50 dark:bg-slate-800 rounded-2xl p-1 border border-slate-100 dark:border-slate-700 transition-colors">
-						<button
-							onClick={() => setYear(year - 1)}
-							className="p-2 hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm rounded-xl transition-all text-slate-600 dark:text-slate-400">
-							<ChevronLeft size={20} />
-						</button>
-						<span className="px-4 font-black text-slate-800 dark:text-white">{year}</span>
-						<button
-							onClick={() => setYear(year + 1)}
-							className="p-2 hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm rounded-xl transition-all text-slate-600 dark:text-slate-400">
-							<ChevronRight size={20} />
-						</button>
+						<p className="text-slate-400 dark:text-slate-500 font-medium text-xs">
+							Visão analítica de receitas, salários e previsões financeiras.
+						</p>
 					</div>
 				</div>
 			</div>
 
-			{/* SECTION: KPI CARDS */}
-			<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-				<div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 flex items-center gap-6 shadow-sm">
-                    <div className="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-500">
-                        <CheckCircle2 size={32} />
-                    </div>
-                    <div>
-                        <p className="text-slate-500 dark:text-slate-400 font-bold text-sm uppercase tracking-wider">Total Recebido</p>
-                        <h2 className="text-3xl sm:text-4xl font-black text-emerald-600 dark:text-emerald-500 mt-1">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalRecebido)}
-                        </h2>
-                    </div>
-                </div>
+			{/* SECTION: KPI CARDS COMPACTOS */}
+			<div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+				<div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center gap-3.5 shadow-xs">
+					<div className="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-500 shrink-0">
+						<CheckCircle2 size={22} />
+					</div>
+					<div className="min-w-0">
+						<p className="text-slate-400 dark:text-slate-500 font-bold text-[10px] uppercase tracking-wider truncate">
+							{selectedMonth 
+								? `Recebido (${MESES_COMPLETOS[parseInt(selectedMonth, 10) - 1]}/${year})`
+								: `Recebido no Ano (${year})`}
+						</p>
+						<h2 className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5 truncate">
+							{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalRecebido)}
+						</h2>
+					</div>
+				</div>
 
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 flex items-center gap-6 shadow-sm">
-                    <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-500">
-                        <Clock size={32} />
-                    </div>
-                    <div>
-                        <p className="text-slate-500 dark:text-slate-400 font-bold text-sm uppercase tracking-wider">A Receber / Previsto</p>
-                        <h2 className="text-3xl sm:text-4xl font-black text-slate-800 dark:text-slate-100 mt-1">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalAReceber)}
-                        </h2>
-                    </div>
-                </div>
+				<div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center gap-3.5 shadow-xs">
+					<div className="w-11 h-11 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 flex items-center justify-center text-indigo-500 shrink-0">
+						<Clock size={22} />
+					</div>
+					<div className="min-w-0">
+						<p className="text-slate-400 dark:text-slate-500 font-bold text-[10px] uppercase tracking-wider truncate">
+							A Receber / Previsto
+						</p>
+						<h2 className="text-xl font-black text-slate-800 dark:text-slate-100 mt-0.5 truncate">
+							{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalAReceber)}
+						</h2>
+					</div>
+				</div>
+
+				<div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center gap-3.5 shadow-xs">
+					<div className="w-11 h-11 rounded-xl bg-teal-50 dark:bg-teal-950/40 flex items-center justify-center text-teal-500 shrink-0">
+						<Layers size={22} />
+					</div>
+					<div className="min-w-0">
+						<p className="text-slate-400 dark:text-slate-500 font-bold text-[10px] uppercase tracking-wider truncate">
+							Lançamentos Filtrados
+						</p>
+						<h2 className="text-xl font-black text-teal-600 dark:text-teal-400 mt-0.5 truncate">
+							{filtrados.length} <span className="text-xs font-bold text-slate-400">itens</span>
+						</h2>
+					</div>
+				</div>
 			</div>
 
-            {/* LISTA & GRÁFICO */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                {/* HISTÓRICO FILTRÁVEL */}
-                <div className="lg:col-span-2 space-y-4">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-slate-900 p-2 pl-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                        <h3 className="font-black text-slate-800 dark:text-slate-100">Histórico de Receitas</h3>
-                        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-                            <button 
-                                onClick={() => setFiltroStatus('TODOS')}
-                                className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${filtroStatus === 'TODOS' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500'}`}
-                            >
-                                Todas
-                            </button>
-                            <button 
-                                onClick={() => setFiltroStatus('RECEBIDO')}
-                                className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${filtroStatus === 'RECEBIDO' ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500'}`}
-                            >
-                                Recebidos
-                            </button>
-                            <button 
-                                onClick={() => setFiltroStatus('A_RECEBER')}
-                                className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${filtroStatus === 'A_RECEBER' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-500'}`}
-                            >
-                                A Receber
-                            </button>
-                        </div>
-                    </div>
+			{/* SECTION: BARRA DE FILTROS INTEGRADA E ENXUTA */}
+			<div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-xs space-y-3">
+				<div className="flex items-center justify-between flex-wrap gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-800">
+					<div className="flex items-center gap-2">
+						<Filter size={16} className="text-emerald-500" />
+						<span className="font-black text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider">
+							Filtros
+						</span>
+					</div>
 
-                    <div className="space-y-3">
-                        {loading ? (
-                            <div className="flex justify-center py-10"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div></div>
-                        ) : filtrados.length === 0 ? (
-                            <div className="bg-white dark:bg-slate-900 rounded-3xl p-10 text-center border border-slate-200 dark:border-slate-800 border-dashed">
-                                <ArrowUpCircle size={48} className="mx-auto text-slate-300 dark:text-slate-700 mb-4" />
-                                <h3 className="font-black text-xl text-slate-800 dark:text-slate-200">Nada por aqui!</h3>
-                                <p className="text-slate-500 dark:text-slate-400 font-medium">Use o botão flutuante de "+" para registrar suas entradas de dinheiro.</p>
-                            </div>
-                        ) : (
-                            filtrados.map(item => (
-                                <div key={item.id} className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow group">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500">
-                                            <ArrowUpCircle size={24} />
-                                        </div>
-                                        <div>
-                                            <p className="font-bold text-slate-800 dark:text-slate-100">{item.descricao}</p>
-                                            <div className="flex flex-wrap items-center gap-2 mt-1">
-                                                <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
-                                                    {item.categorias?.nome || 'Sem Categoria'}
-                                                </span>
-                                                <span className="text-xs font-medium text-slate-400 flex items-center gap-1">
-                                                    <Calendar size={12} /> {new Date(item.data).toLocaleDateString('pt-BR')}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className={`font-black text-lg ${(!item.status || item.status === 'confirmada') ? 'text-emerald-600 dark:text-emerald-500' : 'text-slate-800 dark:text-slate-100'}`}>
-                                            + {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.valor)}
-                                        </p>
-                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                                            {item.contas_bancarias?.nome || 'Em Carteira'}
-                                        </p>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
+					<div className="flex items-center gap-2.5">
+						{hasActiveFilters && (
+							<button
+								onClick={resetFilters}
+								className="text-xs font-bold text-rose-500 hover:text-rose-600 flex items-center gap-1 transition-colors cursor-pointer"
+							>
+								<RotateCcw size={12} /> Limpar
+							</button>
+						)}
 
-                {/* GRÁFICO RESUMO */}
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between h-fit">
-                    <div>
-                        <div className="flex items-center justify-between mb-1">
-                            <h3 className="font-black text-slate-800 dark:text-slate-100 text-lg">Volume Mensal</h3>
-                            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                                {year}
-                            </span>
-                        </div>
-                        <p className="text-xs text-slate-400 dark:text-slate-500 mb-6 font-medium">
-                            Receitas acumuladas por mês
-                        </p>
-                    </div>
+						<div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
+							<button 
+								onClick={() => setFiltroStatus('TODOS')}
+								className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${filtroStatus === 'TODOS' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs' : 'text-slate-500'}`}
+							>
+								Todas
+							</button>
+							<button 
+								onClick={() => setFiltroStatus('RECEBIDO')}
+								className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${filtroStatus === 'RECEBIDO' ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-xs' : 'text-slate-500'}`}
+							>
+								Recebidos
+							</button>
+							<button 
+								onClick={() => setFiltroStatus('A_RECEBER')}
+								className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${filtroStatus === 'A_RECEBER' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-xs' : 'text-slate-500'}`}
+							>
+								A Receber
+							</button>
+						</div>
+					</div>
+				</div>
 
-                    <div className="h-64 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#94a3b8" strokeOpacity={0.15} />
-                                <XAxis
-                                    dataKey="name"
-                                    axisLine={false}
-                                    tickLine={false}
-                                    tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: 600 }}
-                                    interval={0}
-                                    angle={-90}
-                                    textAnchor="end"
-                                    height={42}
-                                />
-                                <YAxis
-                                    axisLine={false}
-                                    tickLine={false}
-                                    tick={{ fill: "#94a3b8", fontSize: 10 }}
-                                    width={42}
-                                    tickFormatter={(val) => {
-                                        if (val === 0) return "0";
-                                        if (val >= 1000000) return `${(val / 1000000).toFixed(1)}M`;
-                                        if (val >= 1000) return `${(val / 1000).toFixed(0)}k`;
-                                        return `${val}`;
-                                    }}
-                                />
-                                <Tooltip
-                                    cursor={{ fill: "rgba(148, 163, 184, 0.08)", radius: 8 }}
-                                    content={({ active, payload }) => {
-                                        if (active && payload && payload.length) {
-                                            const item = payload[0].payload;
-                                            return (
-                                                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl shadow-xl">
-                                                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                                                        {item.mesCompleto} • {year}
-                                                    </p>
-                                                    <p className="text-base font-black text-emerald-600 dark:text-emerald-400">
-                                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.total)}
-                                                    </p>
-                                                    <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-1">
-                                                        {item.count} {item.count === 1 ? 'entrada registrada' : 'entradas registradas'}
-                                                    </p>
-                                                </div>
-                                            );
-                                        }
-                                        return null;
-                                    }}
-                                />
-                                <Bar dataKey="total" radius={[6, 6, 0, 0]} maxBarSize={24}>
-                                    {chartData.map((entry, index) => {
-                                        const isMax = statsAno.maiorMes.total > 0 && entry.total === statsAno.maiorMes.total;
-                                        return (
-                                            <Cell
-                                                key={`cell-${index}`}
-                                                fill={isMax ? "#059669" : entry.total > 0 ? "#10b981" : "transparent"}
-                                            />
-                                        );
-                                    })}
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
+				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+					{/* FILTRO POR ANO (ÚNICO) */}
+					<div>
+						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 block mb-1">
+							Ano
+						</label>
+						<select
+							value={year}
+							onChange={(e) => setYear(Number(e.target.value))}
+							className="w-full bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold outline-none cursor-pointer focus:ring-2 focus:ring-emerald-500"
+						>
+							{[year - 3, year - 2, year - 1, year, year + 1, year + 2].map(y => (
+								<option key={y} value={y}>{y}</option>
+							))}
+						</select>
+					</div>
 
-                    {/* MINI METRICS FOOTER */}
-                    <div className="space-y-2.5 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
-                        <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 px-4 py-2.5 rounded-2xl">
-                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Média / Mês</span>
-                            <span className="text-sm font-black text-slate-800 dark:text-slate-100">
-                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(statsAno.mediaMensal)}
-                            </span>
-                        </div>
-                        <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 px-4 py-2.5 rounded-2xl">
-                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Maior Receita</span>
-                            <div className="text-right">
-                                <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">
-                                    {statsAno.maiorMes.total > 0 ? (
-                                        <>
-                                            <span className="font-semibold text-slate-700 dark:text-slate-200 mr-1.5">{statsAno.maiorMes.mesCompleto}:</span>
-                                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(statsAno.maiorMes.total)}
-                                        </>
-                                    ) : (
-                                        "—"
-                                    )}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+					{/* FILTRO POR MÊS */}
+					<div>
+						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 block mb-1">
+							Mês
+						</label>
+						<select
+							value={selectedMonth}
+							onChange={(e) => setSelectedMonth(e.target.value)}
+							className="w-full bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold outline-none cursor-pointer focus:ring-2 focus:ring-emerald-500"
+						>
+							<option value="">Todos os Meses</option>
+							{MESES_COMPLETOS.map((nome, idx) => {
+								const val = String(idx + 1).padStart(2, '0');
+								return <option key={val} value={val}>{nome}</option>;
+							})}
+						</select>
+					</div>
 
-            </div>
+					{/* FILTRO POR DIA */}
+					<div>
+						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 block mb-1">
+							Dia
+						</label>
+						<select
+							value={selectedDay}
+							onChange={(e) => setSelectedDay(e.target.value)}
+							className="w-full bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold outline-none cursor-pointer focus:ring-2 focus:ring-emerald-500"
+						>
+							<option value="">Todos os Dias</option>
+							{Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0')).map(d => (
+								<option key={d} value={d}>Dia {d}</option>
+							))}
+						</select>
+					</div>
+
+					{/* FILTRO POR CATEGORIA */}
+					<div>
+						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 block mb-1">
+							Categoria
+						</label>
+						<select
+							value={selectedCategory}
+							onChange={(e) => setSelectedCategory(e.target.value)}
+							className="w-full bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold outline-none cursor-pointer focus:ring-2 focus:ring-emerald-500"
+						>
+							<option value="">Todas as Categorias</option>
+							{uniqueCategorias.map(cat => (
+								<option key={cat} value={cat}>{cat}</option>
+							))}
+						</select>
+					</div>
+
+					{/* BUSCA POR TEXTO / DESCRIÇÃO */}
+					<div>
+						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 block mb-1">
+							Pesquisa
+						</label>
+						<div className="relative">
+							<Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+							<input
+								type="text"
+								placeholder="Buscar descrição..."
+								value={searchQuery}
+								onChange={(e) => setSearchQuery(e.target.value)}
+								className="w-full bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+							/>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			{/* SECTION: TABELA DETALHADA DE ENTRADAS */}
+			<div className="bg-white dark:bg-slate-900 rounded-3xl sm:rounded-[35px] border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+				<div className="p-4 sm:p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-4">
+					<div>
+						<h3 className="font-black text-slate-800 dark:text-slate-100 text-lg">
+							Tabela de Entradas
+						</h3>
+						<p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+							{filtrados.length} {filtrados.length === 1 ? 'registro exibido' : 'registros exibidos'} de acordo com os filtros selecionados
+						</p>
+					</div>
+				</div>
+
+				{loading ? (
+					<div className="flex justify-center py-20">
+						<div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600"></div>
+					</div>
+				) : filtrados.length === 0 ? (
+					<div className="p-16 text-center">
+						<ArrowUpCircle size={48} className="mx-auto text-slate-300 dark:text-slate-700 mb-4" />
+						<h3 className="font-black text-xl text-slate-800 dark:text-slate-200">Nenhuma entrada encontrada</h3>
+						<p className="text-slate-500 dark:text-slate-400 text-sm font-medium mt-1">
+							Tente ajustar os filtros de ano, mês, dia ou categoria acima.
+						</p>
+					</div>
+				) : (
+					<div>
+						<div className="overflow-auto max-h-[580px]">
+							<table className="w-full text-left border-collapse min-w-[760px]">
+								<thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800 shadow-2xs">
+									<tr className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+										<th className="px-4 py-3.5 w-28">Data</th>
+										<th className="px-4 py-3.5 min-w-[200px]">Descrição</th>
+										<th className="px-4 py-3.5 w-36">Categoria</th>
+										<th className="px-4 py-3.5 w-44">Conta de Destino</th>
+										<th className="px-4 py-3.5 w-32">Status</th>
+										<th className="px-4 py-3.5 text-right w-36">Valor</th>
+									</tr>
+								</thead>
+								<tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+									{itensExibidos.map((item) => {
+										const isRecebido = item.status === "confirmada" || !item.status;
+										const nomeCat = item.categorias?.nome || item.categoria || "Salário";
+										const corCat = item.categorias?.cor_hex || "#10b981";
+										const formattedDate = item.data ? item.data.split('T')[0].split('-').reverse().join('/') : '-';
+
+										return (
+											<tr key={item.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors">
+												{/* DATA */}
+												<td className="px-4 py-3.5 font-bold text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap">
+													<div className="flex items-center gap-1.5">
+														<Calendar size={13} className="text-slate-400" />
+														<span>{formattedDate}</span>
+													</div>
+												</td>
+
+												{/* DESCRIÇÃO */}
+												<td className="px-4 py-3.5">
+													<div className="flex flex-col gap-0.5">
+														<span className="font-bold text-xs text-slate-800 dark:text-slate-100">
+															{item.descricao}
+														</span>
+														{item.observacao && (
+															<span className="text-[10px] text-slate-400 truncate max-w-xs">
+																{item.observacao}
+															</span>
+														)}
+													</div>
+												</td>
+
+												{/* CATEGORIA */}
+												<td className="px-4 py-3.5 whitespace-nowrap">
+													<span
+														className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-lg text-white shadow-2xs whitespace-nowrap"
+														style={{ backgroundColor: corCat }}
+													>
+														<Tag size={11} />
+														{nomeCat}
+													</span>
+												</td>
+
+												{/* CONTA DESTINO */}
+												<td className="px-4 py-3.5 text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+													<div className="flex items-center gap-1.5 whitespace-nowrap">
+														<Building size={14} className="text-emerald-500 shrink-0" />
+														<span>{item.contas_bancarias?.nome || 'Em Carteira'}</span>
+													</div>
+												</td>
+
+												{/* STATUS */}
+												<td className="px-4 py-3.5 whitespace-nowrap">
+													<span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black uppercase ${
+														isRecebido 
+															? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40' 
+															: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/40'
+													}`}>
+														{isRecebido ? '✓ Recebido' : '⏳ A Receber'}
+													</span>
+												</td>
+
+												{/* VALOR */}
+												<td className="px-4 py-3.5 text-right whitespace-nowrap font-black">
+													<span className="text-sm text-emerald-600 dark:text-emerald-400">
+														+ {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.valor)}
+													</span>
+												</td>
+											</tr>
+										);
+									})}
+								</tbody>
+							</table>
+						</div>
+
+						{/* BARRA DE PAGINAÇÃO INTEGRADA */}
+						<div className="p-3.5 sm:p-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-900/50">
+							<div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+								<span>
+									Exibindo <strong className="text-slate-700 dark:text-slate-200">{filtrados.length === 0 ? 0 : (paginaAtual - 1) * (itensPorPagina === -1 ? filtrados.length : itensPorPagina) + 1}</strong> a <strong className="text-slate-700 dark:text-slate-200">{itensPorPagina === -1 ? filtrados.length : Math.min(paginaAtual * itensPorPagina, filtrados.length)}</strong> de <strong className="text-slate-700 dark:text-slate-200">{filtrados.length}</strong>
+								</span>
+								<span className="hidden sm:inline text-slate-300 dark:text-slate-700">•</span>
+								<div className="flex items-center gap-1.5">
+									<span className="hidden sm:inline">Por página:</span>
+									<select
+										value={itensPorPagina}
+										onChange={(e) => {
+											setItensPorPagina(Number(e.target.value));
+											setPaginaAtual(1);
+										}}
+										className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer"
+									>
+										<option value={15}>15</option>
+										<option value={25}>25</option>
+										<option value={50}>50</option>
+										<option value={100}>100</option>
+										<option value={-1}>Todos</option>
+									</select>
+								</div>
+							</div>
+
+							{itensPorPagina !== -1 && totalPaginas > 1 && (
+								<div className="flex items-center gap-2">
+									<button
+										onClick={() => setPaginaAtual(p => Math.max(1, p - 1))}
+										disabled={paginaAtual <= 1}
+										className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shadow-2xs"
+									>
+										<ChevronLeft size={14} /> Anterior
+									</button>
+									<span className="text-xs font-bold px-2 text-slate-600 dark:text-slate-400">
+										{paginaAtual} / {totalPaginas}
+									</span>
+									<button
+										onClick={() => setPaginaAtual(p => Math.min(totalPaginas, p + 1))}
+										disabled={paginaAtual >= totalPaginas}
+										className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shadow-2xs"
+									>
+										Próximo <ChevronRight size={14} />
+									</button>
+								</div>
+							)}
+						</div>
+					</div>
+				)}
+			</div>
+
+			{/* SECTION: GRÁFICO RESUMO DE VOLUME MENSAL */}
+			<div className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-3xl sm:rounded-[35px] border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+				<div className="flex items-center justify-between flex-wrap gap-2">
+					<div>
+						<h3 className="font-black text-slate-800 dark:text-slate-100 text-lg">
+							Volume Mensal de Receitas
+						</h3>
+						<p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+							Distribuição acumulada de entradas por mês em {year}
+						</p>
+					</div>
+					<div className="flex items-center gap-4 text-xs font-bold">
+						<span className="text-slate-500 dark:text-slate-400">
+							Média Mensal: <strong className="text-slate-800 dark:text-slate-100">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(statsAno.mediaMensal)}</strong>
+						</span>
+					</div>
+				</div>
+
+				<div className="h-64 w-full">
+					<ResponsiveContainer width="100%" height="100%">
+						<BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 5 }}>
+							<CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#94a3b8" strokeOpacity={0.15} />
+							<XAxis
+								dataKey="name"
+								axisLine={false}
+								tickLine={false}
+								tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 700 }}
+							/>
+							<YAxis
+								axisLine={false}
+								tickLine={false}
+								tick={{ fill: "#94a3b8", fontSize: 10 }}
+								tickFormatter={(val) => {
+									if (val === 0) return "0";
+									if (val >= 1000) return `R$ ${(val / 1000).toFixed(0)}k`;
+									return `R$ ${val}`;
+								}}
+							/>
+							<Tooltip
+								cursor={{ fill: "rgba(148, 163, 184, 0.08)", radius: 8 }}
+								content={({ active, payload }) => {
+									if (active && payload && payload.length) {
+										const item = payload[0].payload;
+										return (
+											<div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl shadow-xl">
+												<p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+													{item.mesCompleto} • {year}
+												</p>
+												<p className="text-base font-black text-emerald-600 dark:text-emerald-400">
+													{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.total)}
+												</p>
+												<p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-1">
+													{item.count} {item.count === 1 ? 'receita registrada' : 'receitas registradas'}
+												</p>
+											</div>
+										);
+									}
+									return null;
+								}}
+							/>
+							<Bar dataKey="total" radius={[8, 8, 0, 0]} maxBarSize={36}>
+								{chartData.map((entry, index) => {
+									const isSelected = selectedMonth && entry.mesIndex === selectedMonth;
+									const isMax = statsAno.maiorMes.total > 0 && entry.total === statsAno.maiorMes.total;
+									return (
+										<Cell
+											key={`cell-${index}`}
+											fill={isSelected ? "#047857" : isMax ? "#059669" : entry.total > 0 ? "#10b981" : "transparent"}
+											className="cursor-pointer transition-all hover:opacity-80"
+											onClick={() => setSelectedMonth(entry.mesIndex === selectedMonth ? "" : entry.mesIndex)}
+										/>
+									);
+								})}
+							</Bar>
+						</BarChart>
+					</ResponsiveContainer>
+				</div>
+			</div>
 		</div>
 	);
 }

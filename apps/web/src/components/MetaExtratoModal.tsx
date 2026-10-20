@@ -140,7 +140,7 @@ export default function MetaExtratoModal({
 					.eq("id", item.id);
 				if (error) throw error;
 
-				await supabase.from("movimentacoes").delete().eq("transacao_id", item.id).catch(() => {});
+				await supabase.from("movimentacoes").delete().eq("transacao_id", item.id);
 
 				const { data: { user } } = await supabase.auth.getUser();
 				if (user) {

@@ -1,0 +1,129 @@
+import { useState } from "react";
+import { X, Send, Copy, Check, MessageSquare, Sparkles, UserCheck } from "lucide-react";
+import toast from "react-hot-toast";
+
+interface ConviteAmigoModalProps {
+	isOpen: boolean;
+	onClose: () => void;
+	contato: {
+		id: string;
+		nome: string;
+		telefone?: string;
+		email?: string;
+		temConta?: boolean;
+	} | null;
+	userName?: string;
+}
+
+export default function ConviteAmigoModal({ isOpen, onClose, contato, userName }: ConviteAmigoModalProps) {
+	const [copiado, setCopiado] = useState(false);
+
+	if (!isOpen || !contato) return null;
+
+	const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:5173";
+	const linkConvite = `${origin}/login?convite=${contato.id}&email=${encodeURIComponent(contato.email || "")}`;
+
+	const mensagemWhatsApp = `Olá, ${contato.nome}! Tudo bem?%0A%0AEstou usando o *Finance App* para organizar nossas contas e divisões de despesas (estilo Splitwise).%0A%0ACrie sua conta para acompanhar nossos acertos em tempo real e ver os valores compartilhados:%0A👉 ${linkConvite}%0A%0AAbraços!`;
+
+	const handleCopiarLink = async () => {
+		try {
+			await navigator.clipboard.writeText(linkConvite);
+			setCopiado(true);
+			toast.success("Link de convite copiado para a área de transferência!");
+			setTimeout(() => setCopiado(false), 2500);
+		} catch (e) {
+			toast.error("Não foi possível copiar o link.");
+		}
+	};
+
+	const handleEnviarWhatsApp = () => {
+		const tel = (contato.telefone || "").replace(/\D/g, "");
+		if (!tel || tel.length < 10) {
+			toast.error("Contato sem telefone válido cadastrado para WhatsApp.");
+			return;
+		}
+		window.open(`https://wa.me/${tel}?text=${mensagemWhatsApp}`, "_blank");
+	};
+
+	return (
+		<div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+			<div className="bg-white dark:bg-slate-900 rounded-[32px] w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200 border border-slate-100 dark:border-slate-800">
+				{/* HEADER */}
+				<div className="p-6 bg-gradient-to-br from-indigo-600 to-purple-600 text-white relative">
+					<div className="flex items-center gap-3">
+						<div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-xs">
+							<Sparkles size={24} className="text-amber-300" />
+						</div>
+						<div>
+							<h3 className="text-xl font-black">Convidar para o App</h3>
+							<p className="text-indigo-100 text-xs font-semibold mt-0.5">Sincronização estilo Splitwise</p>
+						</div>
+					</div>
+					<button 
+						onClick={onClose}
+						className="absolute top-5 right-5 p-2 rounded-full hover:bg-white/20 transition-colors text-white cursor-pointer"
+					>
+						<X size={20} />
+					</button>
+				</div>
+
+				{/* BODY */}
+				<div className="p-6 space-y-5">
+					<div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-1">
+						<p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Contato Selecionado</p>
+						<h4 className="font-black text-lg text-slate-800 dark:text-slate-100">{contato.nome}</h4>
+						<p className="text-xs text-slate-500 dark:text-slate-400">
+							{contato.email || "Sem e-mail cadastrado"} • {contato.telefone || "Sem telefone"}
+						</p>
+					</div>
+
+					<div className="space-y-3">
+						<p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
+							Ao se cadastrar no app usando este e-mail, {contato.nome} terá acesso às despesas que vocês dividem, com saldo líquido e quitações atualizados dinamicamente para os dois!
+						</p>
+
+						{/* LINK BOX */}
+						<div className="space-y-1.5">
+							<label className="text-[10px] font-black uppercase tracking-wider text-slate-400 ml-1">Link de Convite</label>
+							<div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-2 pl-3">
+								<input 
+									type="text" 
+									readOnly 
+									value={linkConvite} 
+									className="bg-transparent text-xs text-slate-600 dark:text-slate-300 font-mono flex-1 outline-none truncate"
+								/>
+								<button
+									onClick={handleCopiarLink}
+									className="px-3 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+								>
+									{copiado ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+									{copiado ? "Copiado!" : "Copiar"}
+								</button>
+							</div>
+						</div>
+					</div>
+
+					{/* ACTIONS */}
+					<div className="pt-2 space-y-2.5">
+						<button
+							onClick={handleEnviarWhatsApp}
+							className="w-full py-4 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-2xl font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 dark:shadow-none transition-all cursor-pointer text-sm"
+						>
+							<MessageSquare size={18} />
+							Enviar Convite no WhatsApp
+						</button>
+
+						<button
+							onClick={handleCopiarLink}
+							className="w-full py-3.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer text-sm"
+						>
+							<Copy size={16} />
+							Copiar Link do Convite
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+

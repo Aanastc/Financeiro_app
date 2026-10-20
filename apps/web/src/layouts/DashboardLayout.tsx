@@ -23,7 +23,8 @@ import {
   ArrowLeftRight,
   Receipt,
   PiggyBank,
-  Undo2
+  Undo2,
+  Building2
 } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
 import { authService } from "../../../../packages/services/auth.service";
@@ -105,8 +106,11 @@ export default function DashboardLayout() {
 
   // --- COMPONENTES DA SIDEBAR ---
 
-  const NavItem = ({ to, icon: Icon, label, colorClass = "" }: any) => {
-    const isActive = location.pathname === to || location.pathname.startsWith(to + "/");
+  const NavItem = ({ to, icon: Icon, label, colorClass = "", badge }: any) => {
+    const currentFull = location.pathname + location.search;
+    const isActive = to.includes("?")
+      ? currentFull === to
+      : (location.pathname === to && (!location.search || location.search.includes("tab=pessoal")));
     return (
       <Link
         to={to}
@@ -115,10 +119,21 @@ export default function DashboardLayout() {
             ? "bg-indigo-600 text-white shadow-md shadow-indigo-200 dark:shadow-none"
             : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200"
         } ${isSidebarCollapsed ? "justify-center px-0" : ""}`}
-        title={isSidebarCollapsed ? label : undefined}
+        title={isSidebarCollapsed ? (badge ? `${label} (${badge})` : label) : undefined}
       >
         <Icon size={18} className={isActive ? "text-white" : colorClass} />
-        {!isSidebarCollapsed && <span className="text-sm">{label}</span>}
+        {!isSidebarCollapsed && (
+          <div className="flex items-center justify-between flex-1 min-w-0">
+            <span className="text-sm truncate">{label}</span>
+            {badge && (
+              <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md ${
+                isActive ? "bg-white/20 text-white" : "bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60"
+              }`}>
+                {badge}
+              </span>
+            )}
+          </div>
+        )}
       </Link>
     );
   };
@@ -154,12 +169,12 @@ export default function DashboardLayout() {
       <nav className="flex-1 overflow-y-auto pr-1 pb-6 custom-scrollbar space-y-0.5">
         <NavGroup title="Visão Geral">
           <NavItem to="/home" icon={LayoutDashboard} label="Dashboard" />
+          <NavItem to="/home?tab=pj" icon={Building2} label="Finanças PJ & MEI" colorClass="text-emerald-500" badge="Em Breve" />
         </NavGroup>
 
         <NavGroup title="Movimentações">
           <NavItem to="/entradas" icon={ArrowUpCircle} label="Entradas" colorClass="text-emerald-500" />
           <NavItem to="/gastos" icon={ArrowDownCircle} label="Gastos" colorClass="text-rose-500" />
-          {/* Transferências ainda não tem página própria na propsta, mas se tiver, entra aqui */}
         </NavGroup>
 
         <NavGroup title="Dinheiro">
@@ -170,7 +185,7 @@ export default function DashboardLayout() {
 
         <NavGroup title="Planejamento">
           <NavItem to="/dividas" icon={AlertTriangle} label="Dívidas" colorClass="text-amber-500" />
-          <NavItem to="/devedores" icon={Users} label="Devedores" />
+          <NavItem to="/devedores" icon={Users} label="Devedores (Splitwise)" colorClass="text-purple-500" badge="Em Breve" />
           <NavItem to="/metas" icon={Target} label="Metas" colorClass="text-blue-500" />
         </NavGroup>
 

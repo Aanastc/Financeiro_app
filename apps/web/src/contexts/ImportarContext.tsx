@@ -53,6 +53,10 @@ export const CATEGORIAS_PADRAO = [
 	"Serviços",
 	"Investimentos",
 	"Transferência Interna",
+	"Impostos e Tarifas",
+	"Juros e Encargos",
+	"Tarifas Bancárias",
+	"Cartão de Crédito",
 	"Outros",
 ];
 
@@ -117,6 +121,120 @@ export function normalizeText(str: string): string {
 		.replace(/[\u0300-\u036f]/g, "")
 		.toLowerCase()
 		.trim();
+}
+
+/**
+ * Dedução contábil determinística de categorias e tipos essenciais
+ * (IOF, Juros de Limite/Cheque Especial, Tarifas Bancárias, Pagamento de Fatura)
+ */
+export function inferDeterministicContabil(descricao: string, tipo?: string): { categoria?: string; tipo_transacao?: TransacaoPreview['tipo_transacao'] } | null {
+	const descUpper = (descricao || "").toUpperCase();
+	if (
+		descUpper.includes("LIQUIDO DE VENCIMENTO") || 
+		descUpper.includes("LÍQUIDO DE VENCIMENTO") || 
+		descUpper.includes("LIQ. VENCIMENTO") || 
+		descUpper.includes("LIQ VENCIMENTO") || 
+		descUpper.includes("LIQUIDACAO DE VENCIMENTO") || 
+		descUpper.includes("LIQUIDAÇÃO DE VENCIMENTO") || 
+		descUpper.includes("IQUIDACAO DE VENCIMENTO") || 
+		descUpper.includes("IQUIDAÇÃO DE VENCIMENTO") || 
+		descUpper.includes("00.737.343") || 
+		descUpper.includes("00737343") || 
+		descUpper.includes("CREDITO SALARIO") || 
+		descUpper.includes("CRÉDITO SALÁRIO") || 
+		descUpper.includes("CRED SALARIO") || 
+		descUpper.includes("FOLHA DE PAGAMENTO") || 
+		descUpper.includes("PROVENTOS") || 
+		descUpper.includes("HOLERITE") || 
+		descUpper.includes("PAGTO SALARIO")
+	) {
+		return { categoria: "Salário", tipo_transacao: "Entrada" };
+	}
+	if (descUpper.includes("IOF") || descUpper.includes("IRRF") || descUpper.includes("IMPOSTO OPERA")) {
+		return { categoria: "Impostos e Tarifas", tipo_transacao: "Gasto" };
+	}
+	if (descUpper.includes("JUROS SALDO UTILIZADO") || descUpper.includes("LIMITE DA CONTA") || descUpper.includes("CHEQUE ESPECIAL") || descUpper.includes("JUROS UTILIZADO") || descUpper.includes("ENCARGOS CONTA")) {
+		return { categoria: "Juros e Encargos", tipo_transacao: "Gasto" };
+	}
+	if (descUpper.includes("TARIFA") || descUpper.includes("MANUTENCAO DE CONTA") || descUpper.includes("PACOTE DE SERVICOS")) {
+		return { categoria: "Tarifas Bancárias", tipo_transacao: "Gasto" };
+	}
+	if (descUpper.includes("PAGAMENTO FATURA") || descUpper.includes("PAGAMENTO DA FATURA") || descUpper.includes("PGTO FATURA") || descUpper.includes("PAG FATURA") || descUpper.includes("PAGAMENTO CARTAO") || descUpper.includes("PGTO CARTAO")) {
+		return { categoria: "Cartão de Crédito", tipo_transacao: "PagamentoFatura" };
+	}
+	if (
+		descUpper.includes("RENEGOCIACAO") ||
+		descUpper.includes("RENEGOCIAÇÃO") ||
+		descUpper.includes("PARCELAMENTO DE FATURA") ||
+		descUpper.includes("PARCELAMENTO FACIL") ||
+		descUpper.includes("PARCELAMENTO FÁCIL") ||
+		(descUpper.includes("8282") && descUpper.includes("PARCELA")) ||
+		(descUpper.includes("FISICO") && descUpper.includes("PARCELA"))
+	) {
+		return { categoria: "Renegociação de Cartão", tipo_transacao: "Fatura" };
+	}
+	return null;
+}
+
+/**
+ * Aprendizado por histórico e hábitos passados do usuário:
+ * Descobre a categoria que o usuário mais utilizou para termos parecidos (ex: "Rafael" -> "Assinaturas").
+ */
+export function inferFromUserHistory(
+	descricao: string,
+	favorecido: string | undefined,
+	gastosExistentes: any[],
+	categoriaMap: Record<string, string>
+): string | null {
+	if (!gastosExistentes || gastosExistentes.length === 0) return null;
+
+	const descNorm = normalizeText(descricao || "");
+	const favNorm = normalizeText(favorecido || "");
+
+	const stopWords = new Set(["pix", "enviado", "recebido", "transferencia", "ted", "doc", "pagamento", "compra", "debito", "credito", "para", "pelo", "pela", "com", "amp", "ltda", "me", "sa", "outros", "conta", "saldo"]);
+	
+	const searchTerms: string[] = [];
+	if (favNorm) {
+		const favTokens = favNorm.split(/\s+/).filter(t => t.length >= 3 && !stopWords.has(t));
+		for (const tok of favTokens) {
+			if (!searchTerms.includes(tok)) searchTerms.push(tok);
+		}
+	}
+	const descTokens = descNorm.split(/[\s:,\-]+/).filter(t => t.length >= 3 && !stopWords.has(t));
+	for (const tok of descTokens) {
+		if (!searchTerms.includes(tok)) searchTerms.push(tok);
+	}
+
+	if (searchTerms.length === 0) return null;
+
+	const categoryCount: Record<string, number> = {};
+
+	for (const ex of gastosExistentes) {
+		if (!ex.categoria_id) continue;
+		const catNome = categoriaMap[ex.categoria_id];
+		if (!catNome || catNome.toLowerCase() === "outros") continue;
+
+		const exDescNorm = normalizeText(ex.descricao || "");
+		
+		for (const term of searchTerms) {
+			if (exDescNorm.includes(term)) {
+				const weight = (favNorm && favNorm.includes(term)) ? 3 : 1;
+				categoryCount[catNome] = (categoryCount[catNome] || 0) + weight;
+				break;
+			}
+		}
+	}
+
+	let bestCategory: string | null = null;
+	let highestCount = 0;
+	for (const [cat, count] of Object.entries(categoryCount)) {
+		if (count > highestCount) {
+			highestCount = count;
+			bestCategory = cat;
+		}
+	}
+
+	return bestCategory;
 }
 
 /**
@@ -223,7 +341,17 @@ export function encontrarTransacaoRepetida(
 
 	const normDescItem = normalizeText(item.descricao);
 
+	const itemIsEntrada = item.tipo_transacao === "Entrada" || item.tipo_transacao === "RECEITA";
+	const itemIsGasto = item.tipo_transacao === "Gasto" || item.tipo_transacao === "Fatura" || item.tipo_transacao === "DESPESA" || item.tipo_transacao === "PagamentoFatura";
+
 	for (const ex of existentes) {
+		const exIsEntrada = ex.tipo === "RECEITA";
+		const exIsGasto = ex.tipo === "DESPESA" || ex.tipo === "PAGAMENTO_FATURA" || ex.tipo === "PAGAMENTO_DIVIDA" || ex.tipo === "ESTORNO";
+
+		// 🛡️ REGRA CRÍTICA DE OURO: UMA ENTRADA (RECEITA) NUNCA É DUPLICADA DE UM GASTO/DÉBITO!
+		if (itemIsEntrada && !exIsEntrada) continue;
+		if (itemIsGasto && !exIsGasto) continue;
+
 		const exValor = Math.abs(Number(ex.valor) || 0);
 		// 1. Diferença de valor (tolerância de até 0.05 para eventuais centavos/arredondamentos)
 		if (Math.abs(itemValor - exValor) > 0.05) continue;
@@ -378,16 +506,25 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 
 	const applyGlobalCartao = (cartaoId: string) => {
 		setGlobalCartao(cartaoId);
-		setPreview(prev => prev.map(item => ({
-			...item,
-			cartao_id: cartaoId,
-			metodo_pagamento: cartaoId ? "Crédito" : item.metodo_pagamento
-		})));
+		setPreview(prev => prev.map(item => {
+			if (tipoDocumento === "extrato_bancario") {
+				if (item.tipo_transacao === "PagamentoFatura") {
+					return { ...item, cartao_id: cartaoId };
+				}
+				return item;
+			}
+			return {
+				...item,
+				cartao_id: cartaoId,
+				metodo_pagamento: cartaoId ? "Crédito" : item.metodo_pagamento
+			};
+		}));
 	};
 
 	const [usuarioNome, setUsuarioNome] = useState<string>("");
 	const [usuarioCpf, setUsuarioCpf] = useState<string>("");
 	const [categorias, setCategorias] = useState<string[]>(CATEGORIAS_PADRAO);
+	const [categoriaMap, setCategoriaMap] = useState<Record<string, string>>({});
 
 	const adicionarCategoria = async (nome: string) => {
 		const limpo = nome.trim();
@@ -443,6 +580,12 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			const nomesDoBanco = (dataCategorias || []).map((c: any) => c.nome);
 			const todasCategorias = Array.from(new Set([...CATEGORIAS_PADRAO, ...nomesDoBanco])).filter(Boolean);
 			setCategorias(todasCategorias);
+
+			const mapCat: Record<string, string> = {};
+			(dataCategorias || []).forEach((c: any) => {
+				if (c.id && c.nome) mapCat[c.id] = c.nome;
+			});
+			setCategoriaMap(mapCat);
 
 			let metasCarregadas = dataMetas.data || [];
 			let reserva = metasCarregadas.find(m => /reserva(\s+de)?\s+emerg[eê]ncia|caixinha/i.test(m.titulo));
@@ -552,8 +695,20 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					mudouItem = true;
 				}
 
-				// 4. Detecção de Pagamento de Fatura vs Fatura de Cartão / Limite Convertido
-				const isPagamentoFatura = descLower.includes("pagamento de fatura") || descLower.includes("pagamento da fatura") || descLower.includes("pgto fatura");
+				// 4. Detecção Contábil Determinística (IOF, Juros de Limite, Tarifas, Pagamento de Fatura)
+				const contabilLive = inferDeterministicContabil(desc, tipo);
+				if (contabilLive && !item.manualOverride) {
+					if (contabilLive.categoria && cat !== contabilLive.categoria) {
+						cat = contabilLive.categoria;
+						mudouItem = true;
+					}
+					if (contabilLive.tipo_transacao && tipo !== contabilLive.tipo_transacao) {
+						tipo = contabilLive.tipo_transacao;
+						mudouItem = true;
+					}
+				}
+
+				const isPagamentoFatura = tipo === "PagamentoFatura" || descLower.includes("pagamento de fatura") || descLower.includes("pagamento da fatura") || descLower.includes("pgto fatura");
 				if (isPagamentoFatura && tipo !== "PagamentoFatura") {
 					tipo = "PagamentoFatura";
 					cat = "Cartão de Crédito";
@@ -749,10 +904,11 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			
 			if (detectedContaId) setGlobalConta(detectedContaId);
 
+			const santanderCard = cartoes.find(c => c.nome.toLowerCase().includes("santander"));
+			const nuCard = cartoes.find(c => c.nome.toLowerCase().includes("nubank"));
+
 			let detectedCartaoId = "";
 			if (ext.tipo_documento === "fatura_cartao" && !isSantanderExtrato) {
-				const nuCard = cartoes.find(c => c.nome.toLowerCase().includes("nubank"));
-				const santanderCard = cartoes.find(c => c.nome.toLowerCase().includes("santander"));
 				if (fileNameLower.includes("santander") && santanderCard) detectedCartaoId = santanderCard.id;
 				else if (fileNameLower.includes("nu") && nuCard) detectedCartaoId = nuCard.id;
 				else if (cartoes.length > 0) detectedCartaoId = cartoes[0].id;
@@ -806,6 +962,13 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					                          t.tipo === "PAGAMENTO_FATURA" ||
 					                          t.subtipo === "PAGAMENTO_FATURA";
 
+					const isSalario = descLower.includes("liquido de vencimento") || 
+					                  descLower.includes("líquido de vencimento") || 
+					                  descLower.includes("liq vencimento") || 
+					                  descLower.includes("credito salario") || 
+					                  descLower.includes("folha de pagamento") || 
+					                  descLower.includes("proventos") || 
+					                  descLower.includes("holerite");
 					const isLimiteConvertido = descLower.includes("limite convertido") || t.subtipo === "CONVERSAO_LIMITE_CARTAO";
 					const isResgateEmprestimo = descLower.includes("resgate de empréstimo") || descLower.includes("resgate de emprestimo") || descLower.includes("pagamento de empréstimo") || descLower.includes("pagamento de emprestimo");
 
@@ -815,20 +978,22 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					else if (isAplicacaoRDB) tipoTransacao = "Meta";
 					else if (isResgateRDB) tipoTransacao = "Resgate";
 					else if (isPagamentoFatura) tipoTransacao = "PagamentoFatura";
-					else if (isLimiteConvertido) tipoTransacao = "Entrada";
+					else if (isLimiteConvertido || isSalario) tipoTransacao = "Entrada";
 					else if (t.tipo === "RECEITA" || descLower.includes("pix recebido")) tipoTransacao = "Entrada";
 					else tipoTransacao = "Gasto";
 
 					let finalCat = t.categoria_sugerida;
-					if (isLimiteConvertido) finalCat = "Financiamento / Ajuste de Limite";
+					if (isSalario) finalCat = "Salário";
+					else if (isLimiteConvertido) finalCat = "Financiamento / Ajuste de Limite";
 					else if (isResgateEmprestimo) finalCat = "Emprestimo";
 
+					const autoCardId = isPagamentoFatura ? (santanderCard?.id || (cartoes.length > 0 ? cartoes[0].id : null)) : null;
 					return {
 						...t,
 						tipo_transacao: tipoTransacao,
 						metodo_pagamento: "Débito",
 						conta_id: detectedContaId,
-						cartao_id: null,
+						cartao_id: autoCardId,
 						categoria_sugerida: finalCat,
 						observacao: isResgateEmprestimo ? "Quitação / Pagamento de Empréstimo" : t.observacao
 					};
@@ -988,13 +1153,28 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					tipoFinal = t.tipo_transacao || "Gasto";
 				}
 
+				// Dedução contábil (IOF, Juros de Cheque Especial / Limite, Tarifas)
+				const contabil = inferDeterministicContabil(cleanDesc, t.tipo_transacao);
+				if (contabil?.tipo_transacao && !isTransfPropria && !isClaudiney && !isAplicacao) {
+					tipoFinal = contabil.tipo_transacao;
+				}
+
+				// Aprendizado por histórico do usuário (ex: transações para 'Rafael' aprendidas como 'Assinaturas')
+				const learnedCat = (!contabil && !isClaudiney && !isTransfPropria && !isAplicacao && !isLimiteConvertido)
+					? inferFromUserHistory(cleanDesc, favorecido, gastosExistentes, categoriaMap)
+					: null;
+
 				let categoriaFinal = isClaudiney
 					? (tipoFinal === "Entrada" ? "Pix Recebido" : (t.categoria_sugerida && t.categoria_sugerida !== "Transferência Interna" ? t.categoria_sugerida : "Outros"))
 					: (isTransfPropria
 						? "Transferência Interna"
 						: (isAplicacao 
 							? "Investimentos" 
-							: (isLimiteConvertido ? "Financiamento / Ajuste de Limite" : (CATEGORIAS_PADRAO.includes(t.categoria_sugerida) ? t.categoria_sugerida : "Outros"))));
+							: (isLimiteConvertido 
+								? "Financiamento / Ajuste de Limite" 
+								: (contabil?.categoria 
+									|| learnedCat 
+									|| (categorias.some(c => c.toLowerCase() === (t.categoria_sugerida || "").toLowerCase()) ? t.categoria_sugerida : (CATEGORIAS_PADRAO.includes(t.categoria_sugerida) ? t.categoria_sugerida : "Outros"))))));
 
 				const metaIdFinal = isAplicacao ? (t.meta_id || metaReserva?.id || (metas[0]?.id || "")) : (t.meta_id || "");
 
@@ -1013,7 +1193,9 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 						? "Transferência entre contas próprias (Mesmo titular - não altera patrimônio)" 
 						: (dup.repetida ? dup.motivo : ""));
 
-				const cartaoIdFinal = (isFatura || tipoFinal === "Fatura") ? (t.cartao_id || detectedCartaoId || cartoes[0]?.id || null) : null;
+				const cartaoIdFinal = (isFatura || tipoFinal === "Fatura") 
+					? (t.cartao_id || detectedCartaoId || cartoes[0]?.id || null) 
+					: (tipoFinal === "PagamentoFatura" ? (t.cartao_id || santanderCard?.id || (cartoes.length > 0 ? cartoes[0].id : null)) : null);
 				const contaIdFinal = (isFatura || tipoFinal === "Fatura") ? null : (t.conta_id || detectedContaId || null);
 
 				const matchParc = (cleanDesc || "").match(/(?:[-–—]?\s*(?:parcela|parc\.?)?\s*\(?(\d{1,2})\s*[/]\s*(\d{1,2})\)?)|(?:(\d{1,2})\s+de\s+(\d{1,2}))/i);
@@ -1268,6 +1450,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					terceiro_pago: item.terceiro_pago || false,
 					observacao: item.observacao || null,
 					valor_ja_dividido: true,
+					considerar_soma: finalCat !== "Renegociação de Cartão" && !item.descricao.toLowerCase().includes("renegocia"),
 					documento_importado_id: documentoImportadoId || null
 				});
 				importados++;
@@ -1349,31 +1532,16 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			// 5. Transferências Internas (se não foram ignoradas pelo usuário)
 			const transferencias = itemsToSave.filter(i => i.tipo_transacao === "Transferencia");
 			for (const item of transferencias) {
-				const { data: tx, error: txErr } = await supabase
-					.from("transacoes")
-					.insert([{
-						usuario_id: user.id,
-						tipo: "TRANSFERENCIA",
-						descricao: item.descricao || "Transferência entre contas próprias",
-						valor: item.valor,
-						data: item.data,
-						conta_id: item.conta_id || globalConta || null,
-						documento_importado_id: documentoImportadoId || null,
-						status: "confirmada"
-					}])
-					.select()
-					.single();
-
-				if (!txErr && tx && tx.conta_id) {
-					await supabase.from("movimentacoes").insert([{
-						usuario_id: user.id,
-						transacao_id: tx.id,
-						conta_id: tx.conta_id,
-						tipo: "SAIDA",
-						valor: tx.valor,
-						data: tx.data
-					}]);
-				}
+				await financeService.addTransacao(user.id, {
+					tipo: "TRANSFERENCIA",
+					descricao: item.descricao || "Transferência entre contas próprias",
+					valor: item.valor,
+					data: item.data,
+					conta_id: item.conta_id || globalConta || null,
+					conta_destino_id: item.conta_destino_id || null,
+					observacao: item.categoria || "Transferência interna",
+					documento_importado_id: documentoImportadoId || null
+				});
 				importados++;
 			}
 
