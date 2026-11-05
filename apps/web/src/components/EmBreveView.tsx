@@ -3,7 +3,7 @@ import { Clock, Sparkles, ArrowLeft, ShieldCheck,  Rocket } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface EmBreveViewProps {
-  modulo: "SPLITWISE" | "PJ";
+  modulo: "COMPARTILHADO" | "PJ";
   onVoltarPessoal?: () => void;
 }
 
@@ -30,7 +30,7 @@ export default function EmBreveView({ modulo, onVoltarPessoal }: EmBreveViewProp
       }
     : {
         tag: "Finanças Compartilhadas",
-        titulo: "Splitwise & Divisão de Contas",
+        titulo: "Divisão de Contas",
         subtitulo: "A lógica de conciliação entre amigos está em fase final de testes.",
         descricao:
           "Em breve você poderá dividir contas de bares, viagens e despesas de moradia sem dor de cabeça, com links dinâmicos de cobrança via Pix e sincronização inteligente para quem deve a quem.",

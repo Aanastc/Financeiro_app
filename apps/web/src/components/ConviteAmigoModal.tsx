@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { X,  Copy, Check, MessageSquare, Sparkles } from "lucide-react";
+import { X, Copy, Check, MessageSquare, Sparkles, Mail } from "lucide-react";
+import { conviteService } from "../../../../packages/services/convite.service";
 import toast from "react-hot-toast";
 
 interface ConviteAmigoModalProps {
@@ -15,15 +16,12 @@ interface ConviteAmigoModalProps {
 	userName?: string;
 }
 
-export default function ConviteAmigoModal({ isOpen, onClose, contato }: ConviteAmigoModalProps) {
+export default function ConviteAmigoModal({ isOpen, onClose, contato, userName }: ConviteAmigoModalProps) {
 	const [copiado, setCopiado] = useState(false);
 
 	if (!isOpen || !contato) return null;
 
-	const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:5173";
-	const linkConvite = `${origin}/login?convite=${contato.id}&email=${encodeURIComponent(contato.email || "")}`;
-
-	const mensagemWhatsApp = `Olá, ${contato.nome}! Tudo bem?%0A%0AEstou usando o *Finance App* para organizar nossas contas e divisões de despesas (estilo Splitwise).%0A%0ACrie sua conta para acompanhar nossos acertos em tempo real e ver os valores compartilhados:%0A👉 ${linkConvite}%0A%0AAbraços!`;
+	const linkConvite = conviteService.linkConvite(contato);
 
 	const handleCopiarLink = async () => {
 		try {
@@ -36,13 +34,13 @@ export default function ConviteAmigoModal({ isOpen, onClose, contato }: ConviteA
 		}
 	};
 
+	// Sem telefone válido, o WhatsApp abre para escolher o contato manualmente
 	const handleEnviarWhatsApp = () => {
-		const tel = (contato.telefone || "").replace(/\D/g, "");
-		if (!tel || tel.length < 10) {
-			toast.error("Contato sem telefone válido cadastrado para WhatsApp.");
-			return;
-		}
-		window.open(`https://wa.me/${tel}?text=${mensagemWhatsApp}`, "_blank");
+		window.open(conviteService.urlWhatsApp(contato, userName), "_blank", "noopener");
+	};
+
+	const handleEnviarEmail = () => {
+		window.location.href = conviteService.urlEmail(contato, userName);
 	};
 
 	return (
@@ -56,7 +54,7 @@ export default function ConviteAmigoModal({ isOpen, onClose, contato }: ConviteA
 						</div>
 						<div>
 							<h3 className="text-xl font-black">Convidar para o App</h3>
-							<p className="text-indigo-100 text-xs font-semibold mt-0.5">Sincronização estilo Splitwise</p>
+							<p className="text-indigo-100 text-xs font-semibold mt-0.5">Despesas compartilhadas</p>
 						</div>
 					</div>
 					<button 
@@ -79,7 +77,7 @@ export default function ConviteAmigoModal({ isOpen, onClose, contato }: ConviteA
 
 					<div className="space-y-3">
 						<p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
-							Ao se cadastrar no app usando este e-mail, {contato.nome} terá acesso às despesas que vocês dividem, com saldo líquido e quitações atualizados dinamicamente para os dois!
+							Quando {contato.nome} criar a conta por este link{contato.email ? " (com o e-mail cadastrado no contato)" : ""}, o contato fica vinculado à conta no app.
 						</p>
 
 						{/* LINK BOX */}
@@ -111,6 +109,14 @@ export default function ConviteAmigoModal({ isOpen, onClose, contato }: ConviteA
 						>
 							<MessageSquare size={18} />
 							Enviar Convite no WhatsApp
+						</button>
+
+						<button
+							onClick={handleEnviarEmail}
+							className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer text-sm"
+						>
+							<Mail size={16} />
+							{contato.email ? `Enviar por E-mail (${contato.email})` : "Enviar por E-mail"}
 						</button>
 
 						<button

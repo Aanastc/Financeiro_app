@@ -8,6 +8,7 @@ import {
 	Users } from "lucide-react";
 import { useEffect } from "react";
 import { supabase } from "../../../../packages/services/supabase";
+import Copyright from "../components/Copyright";
 
 export default function LandingPage() {
 	const navigate = useNavigate();
@@ -187,7 +188,7 @@ export default function LandingPage() {
 
 			{/* FOOTER */}
 			<footer className="py-8 text-center text-xs text-slate-400 dark:text-slate-600 border-t border-slate-100 dark:border-slate-800 mt-20">
-				<p>© {new Date().getFullYear()} ANA LETICIA TECH LTDA. Todos os direitos reservados. Projeto local seguro.</p>
+				<Copyright />
 			</footer>
 		</div>
 	);

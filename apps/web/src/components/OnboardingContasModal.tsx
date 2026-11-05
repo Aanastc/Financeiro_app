@@ -131,7 +131,7 @@ export default function OnboardingContasModal({ isOpen, userId, onComplete, init
               <Wallet size={40} />
             </div>
             <h2 className="text-3xl font-black text-slate-800 dark:text-white mb-4">
-              Bem-vindo ao Tech Finance!
+              Boas-vindas ao Tech Finance!
             </h2>
             <p className="text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">
               Para que o sistema consiga rastrear corretamente para onde vai o seu dinheiro, precisamos cadastrar suas <strong>Contas Bancárias</strong> e <strong>Carteiras</strong>.

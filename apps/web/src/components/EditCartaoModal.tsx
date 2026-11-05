@@ -106,7 +106,7 @@ export default function EditCartaoModal({ isOpen, onClose, onSuccess, cartao }: 
 
 				<form onSubmit={handleSubmit} className="space-y-5 overflow-y-auto flex-1 pr-1 scrollbar-thin">
 					<div className="space-y-1.5">
-						<label className="text-xs font-bold text-slate-600 dark:text-slate-350 ml-2">Nome do Cartão</label>
+						<label className="text-xs font-bold text-slate-600 dark:text-slate-300 ml-2">Nome do Cartão</label>
 						<input
 							type="text"
 							required
@@ -118,7 +118,7 @@ export default function EditCartaoModal({ isOpen, onClose, onSuccess, cartao }: 
 					</div>
 
 					<div className="space-y-1.5">
-						<label className="text-xs font-bold text-slate-600 dark:text-slate-350 ml-2">Limite Total (R$)</label>
+						<label className="text-xs font-bold text-slate-600 dark:text-slate-300 ml-2">Limite Total (R$)</label>
 						<input
 							type="text"
 							inputMode="numeric"
@@ -132,7 +132,7 @@ export default function EditCartaoModal({ isOpen, onClose, onSuccess, cartao }: 
 
 					<div className="grid grid-cols-2 gap-4">
 						<div className="space-y-1.5">
-							<label className="text-xs font-bold text-slate-600 dark:text-slate-350 ml-2 flex items-center gap-1">
+							<label className="text-xs font-bold text-slate-600 dark:text-slate-300 ml-2 flex items-center gap-1">
 								<Calendar size={12} /> Vencimento (Dia)
 							</label>
 							<input
@@ -177,7 +177,7 @@ export default function EditCartaoModal({ isOpen, onClose, onSuccess, cartao }: 
 					</div>
 
 					<div className="space-y-2">
-						<label className="text-xs font-bold text-slate-600 dark:text-slate-350 ml-2 flex items-center gap-1">
+						<label className="text-xs font-bold text-slate-600 dark:text-slate-300 ml-2 flex items-center gap-1">
 							<Palette size={12} /> Cor do Cartão
 						</label>
 						<div className="flex flex-wrap gap-2.5 p-1.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-800">
@@ -195,7 +195,7 @@ export default function EditCartaoModal({ isOpen, onClose, onSuccess, cartao }: 
 
 					<button
 						disabled={loading}
-						className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-4.5 rounded-2xl font-black mt-4 transition-all transform hover:scale-[1.01] shadow-lg shadow-indigo-150 dark:shadow-none cursor-pointer text-sm uppercase shrink-0"
+						className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-4.5 rounded-2xl font-black mt-4 transition-all transform hover:scale-[1.01] shadow-lg shadow-indigo-100 dark:shadow-none cursor-pointer text-sm uppercase shrink-0"
 					>
 						{loading ? "SALVANDO..." : "SALVAR ALTERAÇÕES"}
 					</button>

@@ -15,9 +15,10 @@ import {
 import { supabase } from "../../../../packages/services/supabase";
 import { authService } from "../../../../packages/services/auth.service";
 import { financeService } from "../../../../packages/services/finance.service";
-import { splitwiseService } from "../../../../packages/services/splitwise.service";
-import type { Grupo } from "../../../../packages/services/splitwise.service";
+import { despesasCompartilhadasService } from "../../../../packages/services/despesas-compartilhadas.service";
+import type { Grupo } from "../../../../packages/services/despesas-compartilhadas.service";
 import toast from "react-hot-toast";
+import { notificarDivisaoPorEmail } from "../../../../packages/services/convite.service";
 
 interface AddSplitDespesaModalProps {
 	isOpen: boolean;
@@ -96,6 +97,10 @@ export default function AddSplitDespesaModal({
 
 	// RECORRÊNCIA (EX: TODO DIA 1 MENSAL)
 	const [isRecorrente, setIsRecorrente] = useState(false);
+	// Compra que já está/vai entrar na fatura ou extrato: registra só o valor a receber
+	// (não soma nos gastos, na fatura nem no saldo — evita lançar duas vezes)
+	const [jaNoExtrato, setJaNoExtrato] = useState(false);
+	const [avisarPorEmail, setAvisarPorEmail] = useState(true);
 	const [diaDoMes, setDiaDoMes] = useState<number>(1);
 	const [mesesRecorrencia, setMesesRecorrencia] = useState<number>(12);
 
@@ -117,7 +122,7 @@ export default function AddSplitDespesaModal({
 						.select("*")
 						.eq("usuario_id", user.id)
 						.order("nome"),
-					splitwiseService.getGrupos(user.id),
+					despesasCompartilhadasService.getGrupos(user.id),
 					financeService.getCartoes(user.id).catch(() => []),
 					financeService.getContasBancarias(user.id).catch(() => []),
 					financeService.getCategorias(user.id).catch(() => []),
@@ -342,6 +347,7 @@ export default function AddSplitDespesaModal({
 		}
 
 		setLoading(true);
+		const idsParaAvisar: string[] = [];
 		try {
 			if (tipoDestino === "AMIGO") {
 				const contatoNome = contatoSelecionado?.nome || "Amigo";
@@ -393,12 +399,13 @@ export default function AddSplitDespesaModal({
 							valor: cotaContatoAmigo,
 							data: dataFinal,
 							categoria_id: categoriaId || null,
-							conta_id: formaPagamento === "CONTA" ? contaId || null : null,
-							cartao_id: formaPagamento === "CARTAO" ? cartaoId || null : null,
+							conta_id: !jaNoExtrato && formaPagamento === "CONTA" ? contaId || null : null,
+							cartao_id: !jaNoExtrato && formaPagamento === "CARTAO" ? cartaoId || null : null,
+							considerar_soma: !jaNoExtrato,
 							terceiro: true,
 							terceiro_pago: false,
 							contato_id: contatoId,
-							observacao: JSON.stringify(splitMetadataComRec),
+							observacao: JSON.stringify({ ...splitMetadataComRec, ja_no_extrato: jaNoExtrato }),
 							status: m === 0 ? "confirmada" : "pendente",
 						});
 					} else {
@@ -421,8 +428,9 @@ export default function AddSplitDespesaModal({
 					}
 				}
 
-				const { error: txError } = await supabase.from("transacoes").insert(txsToInsert);
+				const { data: inseridas, error: txError } = await supabase.from("transacoes").insert(txsToInsert).select("id");
 				if (txError) throw txError;
+				idsParaAvisar.push(...(inseridas || []).map((t: any) => t.id));
 			} else {
 				// SALVANDO NO GRUPO
 				const grupoAtual = grupos.find((g) => g.id === grupoId);
@@ -492,11 +500,12 @@ export default function AddSplitDespesaModal({
 							valor: consumoDosOutros > 0 ? consumoDosOutros : valorTotal,
 							data: dataFinal,
 							categoria_id: categoriaId || null,
-							conta_id: formaPagamento === "CONTA" ? contaId || null : null,
-							cartao_id: formaPagamento === "CARTAO" ? cartaoId || null : null,
+							conta_id: !jaNoExtrato && formaPagamento === "CONTA" ? contaId || null : null,
+							cartao_id: !jaNoExtrato && formaPagamento === "CARTAO" ? cartaoId || null : null,
+							considerar_soma: !jaNoExtrato,
 							terceiro: true,
 							terceiro_pago: false,
-							observacao: JSON.stringify(grupoMetadataComRec),
+							observacao: JSON.stringify({ ...grupoMetadataComRec, ja_no_extrato: jaNoExtrato }),
 							status: m === 0 ? "confirmada" : "pendente",
 						});
 					} else {
@@ -519,14 +528,22 @@ export default function AddSplitDespesaModal({
 					}
 				}
 
-				const { error: txError } = await supabase.from("transacoes").insert(txsToInsertGrupo);
+				const { data: inseridas, error: txError } = await supabase.from("transacoes").insert(txsToInsertGrupo).select("id");
 				if (txError) throw txError;
+				idsParaAvisar.push(...(inseridas || []).map((t: any) => t.id));
+			}
+
+			// Aviso por e-mail (não bloqueia: falha só gera log)
+			if (avisarPorEmail && idsParaAvisar.length > 0) {
+				notificarDivisaoPorEmail(idsParaAvisar).then((r) => {
+					if (r && r.enviados > 0) toast.success(`Aviso enviado por e-mail (${r.enviados}).`);
+				});
 			}
 
 			if (isRecorrente) {
 				toast.success(`Assinatura recorrente programada para ${mesesRecorrencia} meses (todo dia ${diaDoMes})!`);
 			} else {
-				toast.success("Despesa dividida com sucesso no Splitwise!");
+				toast.success("Despesa dividida com sucesso!");
 			}
 			onSuccess();
 			onClose();
@@ -551,7 +568,7 @@ export default function AddSplitDespesaModal({
 						</div>
 						<div>
 							<h2 className="text-xl font-black">
-								Dividir Despesa (Splitwise)
+								Dividir Despesa
 							</h2>
 							<p className="text-emerald-100 text-xs font-semibold">
 								{tipoDestino === "GRUPO"
@@ -885,14 +902,14 @@ export default function AddSplitDespesaModal({
 						)}
 					</div>
 
-					{/* FORMA DE DIVISÃO (MÉTODOS DO SPLITWISE) */}
+					{/* FORMA DE DIVISÃO  */}
 					<div className="space-y-3">
 						<div className="flex items-center justify-between ml-1">
 							<label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
 								Como você quer dividir? (Split Method)
 							</label>
 							<span className="text-[10px] font-bold text-slate-400">
-								Splitwise Engine
+								Forma de divisão
 							</span>
 						</div>
 
@@ -1284,7 +1301,41 @@ export default function AddSplitDespesaModal({
 								))}
 							</select>
 						)}
+
+						{(tipoDestino === "AMIGO" ? pagoPorAmigo === "VOCE" : Boolean(participantesGrupo.find((p) => p.id === pagadorGrupoId)?.is_user)) && (
+						<label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 cursor-pointer">
+							<input
+								type="checkbox"
+								className="mt-0.5 w-4 h-4 accent-emerald-600 shrink-0"
+								checked={jaNoExtrato}
+								onChange={(e) => setJaNoExtrato(e.target.checked)}
+							/>
+							<span>
+								<span className="block text-xs font-bold text-slate-800 dark:text-slate-100">
+									Essa compra já está (ou vai entrar) na minha fatura/extrato
+								</span>
+								<span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+									Registra só quanto vão te pagar. Não soma nos seus gastos, na fatura nem no saldo, para não lançar duas vezes quando você importar o extrato.
+								</span>
+							</span>
+						</label>
+						)}
 					</div>
+
+					<label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 cursor-pointer">
+						<input
+							type="checkbox"
+							className="w-4 h-4 accent-indigo-600 shrink-0"
+							checked={avisarPorEmail}
+							onChange={(e) => setAvisarPorEmail(e.target.checked)}
+						/>
+						<span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+							Avisar por e-mail
+							<span className="block text-[11px] font-normal text-slate-500 dark:text-slate-400">
+								Quem tiver e-mail cadastrado recebe o lançamento e a parte que lhe cabe.
+							</span>
+						</span>
+					</label>
 
 					{/* OPÇÃO DE RECORRÊNCIA (MENSAL TODO DIA X) */}
 					<div className="p-4 rounded-2xl border border-purple-200 dark:border-purple-900/60 bg-purple-50/40 dark:bg-purple-950/20 space-y-3">
@@ -1363,7 +1414,7 @@ export default function AddSplitDespesaModal({
 							className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black flex items-center justify-center gap-2 transition-all shadow-xl shadow-emerald-100 dark:shadow-none disabled:opacity-50 cursor-pointer text-sm uppercase">
 							<Check size={18} />
 							{loading
-								? "SALVANDO NO SPLITWISE..."
+								? "SALVANDO..."
 								: isRecorrente
 								? `PROGRAMAR RECORRÊNCIA (${mesesRecorrencia} MESES)`
 								: "CONFIRMAR E REGISTRAR DIVISÃO"}

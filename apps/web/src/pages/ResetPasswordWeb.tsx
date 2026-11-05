@@ -4,6 +4,7 @@ import { supabase } from "../../../../packages/services/supabase";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { Eye, EyeOff, Lock, RefreshCw } from "lucide-react";
+import Copyright from "../components/Copyright";
 
 export default function ResetPasswordWeb() {
 	const [password, setPassword] = useState("");
@@ -107,7 +108,7 @@ export default function ResetPasswordWeb() {
 	}
 
 	return (
-		<div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-4 font-sans transition-colors duration-200">
+		<div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col items-center justify-center p-4 font-sans transition-colors duration-200">
 			<form
 				onSubmit={handleResetPassword}
 				className="bg-white dark:bg-slate-900 p-6 sm:p-10 md:p-14 rounded-3xl sm:rounded-[40px] md:rounded-[50px] shadow-2xl w-full max-w-md border border-slate-100 dark:border-slate-800 transition-colors duration-200 relative overflow-hidden"
@@ -140,7 +141,7 @@ export default function ResetPasswordWeb() {
 							<button
 								type="button"
 								onClick={() => setShowPassword(!showPassword)}
-								className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-250 transition-colors flex items-center justify-center cursor-pointer"
+								className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors flex items-center justify-center cursor-pointer"
 							>
 								{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
 							</button>
@@ -163,7 +164,7 @@ export default function ResetPasswordWeb() {
 							<button
 								type="button"
 								onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-								className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-250 transition-colors flex items-center justify-center cursor-pointer"
+								className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors flex items-center justify-center cursor-pointer"
 							>
 								{showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
 							</button>
@@ -178,7 +179,7 @@ export default function ResetPasswordWeb() {
 
 				<button
 					disabled={loading}
-					className="w-full bg-[#4CAF50] hover:bg-[#43a047] disabled:opacity-50 text-white p-5 rounded-3xl font-black mt-8 transition-all transform hover:scale-[1.01] shadow-lg shadow-green-150 dark:shadow-none cursor-pointer uppercase text-sm flex items-center justify-center space-x-2"
+					className="w-full bg-[#4CAF50] hover:bg-[#43a047] disabled:opacity-50 text-white p-5 rounded-3xl font-black mt-8 transition-all transform hover:scale-[1.01] shadow-lg shadow-green-100 dark:shadow-none cursor-pointer uppercase text-sm flex items-center justify-center space-x-2"
 				>
 					{loading ? (
 						<>
@@ -190,6 +191,7 @@ export default function ResetPasswordWeb() {
 					)}
 				</button>
 			</form>
+			<Copyright className="mt-6" />
 		</div>
 	);
 }

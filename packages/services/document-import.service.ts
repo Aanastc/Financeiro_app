@@ -18,6 +18,7 @@ import type {
   ValidacaoTotalFatura,
   CausaDivergenciaFatura
 } from "./document-import.types";
+import { detectarProdutoInvestimento, ehAplicacaoInvestimento, ehResgateInvestimento } from "../utils/investimentos";
 
 /**
  * SERVIÇO DE IMPORTAÇÃO DE DOCUMENTOS FINANCEIROS POR IA
@@ -335,9 +336,9 @@ REGRAS DE CLASSIFICAÇÃO E EXTRAÇÃO:
          Se Pix Enviado para o parente: "tipo": "DESPESA", "subtipo": null, "categoria_sugerida": "Outros", "favorecido": "Jose Souza Lima"
          Se Pix Recebido do parente: "tipo": "RECEITA", "subtipo": null, "categoria_sugerida": "Pix Recebido", "favorecido": "Jose Souza Lima"
        JAMAIS classifique transações com parentes de prenome diferente como "TRANSFERENCIA_PROPRIA"!
-   - REGRA MANDATÓRIA PARA APLICAÇÃO E RESGATE RDB / CAIXINHA / INVESTIMENTOS:
-     - Saída/aporte ("Aplicação RDB", "Caixinha", "Guardar dinheiro"): "tipo": "APORTE", "subtipo": "APLICACAO_RDB", "categoria_sugerida": "Investimentos". NUNCA classifique como DESPESA de consumo!
-     - Entrada/resgate ("Resgate RDB", "Resgate Caixinha"): "tipo": "RESGATE", "subtipo": "RESGATE_RDB", "categoria_sugerida": "Investimentos". NUNCA classifique como RECEITA operacional!
+   - REGRA MANDATÓRIA PARA APLICAÇÃO E RESGATE DE INVESTIMENTOS (CDB, RDB, LCI, LCA, Tesouro Direto, poupança, caixinha, cofrinho, fundos):
+     - Saída/aporte ("Aplicação CDB", "Aplicação RDB", "Aplic. Poupança", "Caixinha", "Guardar dinheiro", "Tesouro Selic"): "tipo": "APORTE", "subtipo": "APLICACAO_RDB", "categoria_sugerida": "Investimentos". NUNCA classifique como DESPESA de consumo!
+     - Entrada/resgate ("Resgate CDB", "Resgate RDB", "Resgate Poupança", "Resgate Caixinha"): "tipo": "RESGATE", "subtipo": "RESGATE_RDB", "categoria_sugerida": "Investimentos". NUNCA classifique como RECEITA operacional!
    - REGRA MANDATÓRIA PARA PAGAMENTO DE FATURA E DIVIDAS:
      - "Pagamento de fatura", "Pagamento cartão", "PAGAMENTO CARTAO CREDITO BCE": "tipo": "PAGAMENTO_FATURA". NUNCA classifique como DESPESA de consumo!
      - "Pagamento de empréstimo", "Pagamento parcela dívida": "tipo": "PAGAMENTO_DIVIDA".
@@ -505,15 +506,15 @@ DIRETRIZES FUNDAMENTAIS:
         descLimpa = `Pix Recebido: ${favorecido}`;
         tipo = "RECEITA";
         categoria = "Pix Recebido";
-      } else if (/aplica[cç][aã]o\s*rdb|guardar\s*dinheiro|caixinha/i.test(descRaw)) {
-        descLimpa = "Aplicação RDB";
-        tipo = "APORTE";
-        subtipo = "APLICACAO_RDB";
-        categoria = "Investimentos";
-      } else if (/resgate\s*rdb|resgate\s*caixinha/i.test(descRaw)) {
-        descLimpa = "Resgate RDB";
+      } else if (ehResgateInvestimento(descRaw)) {
+        descLimpa = `Resgate ${detectarProdutoInvestimento(descRaw) || "Investimento"}`;
         tipo = "RESGATE";
         subtipo = "RESGATE_RDB";
+        categoria = "Investimentos";
+      } else if (ehAplicacaoInvestimento(descRaw)) {
+        descLimpa = `Aplicação ${detectarProdutoInvestimento(descRaw) || "Investimento"}`;
+        tipo = "APORTE";
+        subtipo = "APLICACAO_RDB";
         categoria = "Investimentos";
       } else if (/limite\s*convertido/i.test(descRaw)) {
         descLimpa = "Limite convertido em saldo na conta";
@@ -982,8 +983,8 @@ ${fileContent.textContent}`];
           tipoTx = (descLower.includes("pix recebido") || t.tipo === "RECEITA") ? "RECEITA" : "DESPESA";
           subtipoTx = null;
           catSugerida = tipoTx === "RECEITA" ? "Pix Recebido" : "Outros";
-        } else if (descLower.includes("rdb") || descLower.includes("caixinha") || descLower.includes("guardar dinheiro")) {
-          if (descLower.includes("resgate")) {
+        } else if (ehAplicacaoInvestimento(desc) || ehResgateInvestimento(desc)) {
+          if (ehResgateInvestimento(desc)) {
             tipoTx = "RECEITA";
             subtipoTx = "RESGATE_RDB";
             catSugerida = "Investimentos";
@@ -1522,8 +1523,8 @@ ${fileContent.textContent}`];
           const descLower = (t.descricao || "").toLowerCase();
           const isLimite = t.natureza === "LIMITE_CONVERTIDO" || descLower.includes("limite convertido");
           const isPagamentoFatura = t.tipo === "PAGAMENTO_FATURA" || t.natureza === "PAGAMENTO_FATURA" || descLower.includes("pagamento de fatura") || descLower.includes("pgto fatura");
-          const isAplicacao = t.tipo === "APORTE" || t.tipo === "INVESTIMENTO" || (descLower.includes("rdb") && !descLower.includes("resgate")) || descLower.includes("caixinha") || descLower.includes("guardar dinheiro");
-          const isResgate = t.tipo === "RESGATE" || (descLower.includes("rdb") && descLower.includes("resgate")) || descLower.includes("resgate caixinha");
+          const isAplicacao = t.tipo === "APORTE" || t.tipo === "INVESTIMENTO" || ehAplicacaoInvestimento(t.descricao || "");
+          const isResgate = t.tipo === "RESGATE" || ehResgateInvestimento(t.descricao || "");
           const isTransf = t.tipo === "TRANSFERENCIA" || t.natureza === "TRANSFERENCIA" || /mesma\s+titularidade|contas?\s+pr[oó]prias?/i.test(descLower);
 
           if (t.tipo === "RECEITA" || isLimite) {

@@ -791,7 +791,7 @@ Se não for um comando de criação ou quitação, responda normalmente como con
 					{aiReport && (
 						<button
 							onClick={handleCopyReport}
-							className="flex items-center gap-2 px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 rounded-2xl font-bold text-xs uppercase transition-all shadow-sm cursor-pointer"
+							className="flex items-center gap-2 px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-2xl font-bold text-xs uppercase transition-all shadow-sm cursor-pointer"
 						>
 							{copySuccess ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
 							<span>{copySuccess ? "Copiado!" : "Copiar"}</span>

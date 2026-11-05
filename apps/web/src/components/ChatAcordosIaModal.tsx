@@ -13,6 +13,7 @@ import {
 import { aiService } from "../../../../packages/services/ai.service";
 import { supabase } from "../../../../packages/services/supabase";
 import { toast } from "react-hot-toast";
+import { notificarDivisaoPorEmail } from "../../../../packages/services/convite.service";
 
 interface ChatAcordosIaModalProps {
 	isOpen: boolean;
@@ -250,7 +251,7 @@ export default function ChatAcordosIaModal({
 				.map((c) => `id: "${c.id}", nome: "${c.nome}"`)
 				.join("; ");
 
-			const prompt = `Você é um assistente financeiro especialista em interpretar acordos de divisão de despesas (estilo Splitwise).
+			const prompt = `Você é um assistente financeiro especialista em interpretar acordos de divisão de despesas entre pessoas.
 Analise o texto abaixo e extraia um JSON estruturado com todos os detalhes do acordo.
 
 Contatos já cadastrados no sistema:
@@ -467,11 +468,14 @@ Responda SOMENTE um objeto JSON válido (sem tags markdown de bloco, sem explica
 			);
 
 			if (transacoesParaInserir.length > 0) {
-				const { error: errInsert } = await supabase
+				const { data: inseridas, error: errInsert } = await supabase
 					.from("transacoes")
-					.insert(transacoesParaInserir);
+					.insert(transacoesParaInserir)
+					.select("id");
 
 				if (errInsert) throw errInsert;
+				// Avisa a outra pessoa por e-mail, se ela tiver e-mail cadastrado
+				notificarDivisaoPorEmail((inseridas || []).map((t: any) => t.id));
 			}
 
 			toast.success("Acordo registrado com sucesso!");

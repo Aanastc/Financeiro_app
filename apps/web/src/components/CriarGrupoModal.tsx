@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { X, Users, Home, Heart, Plane, Beer,  Check,   UserPlus } from "lucide-react";
-import { splitwiseService } from "../../../../packages/services/splitwise.service";
+import { despesasCompartilhadasService } from "../../../../packages/services/despesas-compartilhadas.service";
 import toast from "react-hot-toast";
 
 interface CriarGrupoModalProps {
@@ -134,7 +134,7 @@ export default function CriarGrupoModal({
     setLoading(true);
     try {
       const tipoObj = TIPOS_GRUPO.find(t => t.id === tipo);
-      const novoGrupo = await splitwiseService.criarGrupo(
+      const novoGrupo = await despesasCompartilhadasService.criarGrupo(
         userId,
         {
           nome: nome.trim(),
@@ -171,7 +171,7 @@ export default function CriarGrupoModal({
             </div>
             <div>
               <h2 className="text-xl font-black">Criar Novo Grupo</h2>
-              <p className="text-white/80 text-xs font-semibold">Organize divisões de despesas estilo Splitwise</p>
+              <p className="text-white/80 text-xs font-semibold">Organize a divisão de despesas do grupo</p>
             </div>
           </div>
           <button 

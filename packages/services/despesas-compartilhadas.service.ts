@@ -67,8 +67,9 @@ export const BalancoMembro = {} as any;
 export const SimplificacaoDivida = {} as any;
 export const TransacaoSplit = {} as any;
 
-class SplitwiseService {
+class DespesasCompartilhadasService {
   private getLocalStorageKey(userId: string) {
+    // Chave mantida por compatibilidade: renomear apagaria os grupos já salvos no navegador
     return `finance_splitwise_grupos_${userId}`;
   }
 
@@ -254,7 +255,7 @@ class SplitwiseService {
     return novoMembro;
   }
 
-  // 5. CALCULAR BALANÇO E SIMPLIFICAÇÃO DE DÍVIDAS (ALGORITMO SPLITWISE)
+  // 5. CALCULAR BALANÇO E SIMPLIFICAÇÃO DE DÍVIDAS (SIMPLIFICAÇÃO DE DÍVIDAS)
   calcularBalancoGrupo(
     membros: GrupoMembro[],
     despesas: any[]
@@ -328,7 +329,7 @@ class SplitwiseService {
       saldoLiquido: Math.round((data.pago - data.devido) * 100) / 100
     }));
 
-    // ALGORITMO DE SIMPLIFICAÇÃO DE DÍVIDAS DO SPLITWISE
+    // ALGORITMO DE SIMPLIFICAÇÃO DE DÍVIDAS
     // Separa devedores (saldo < 0) e credores (saldo > 0)
     const devedores: { id: string; nome: string; valor: number }[] = [];
     const credores: { id: string; nome: string; valor: number }[] = [];
@@ -379,5 +380,5 @@ class SplitwiseService {
   }
 }
 
-export const splitwiseService = new SplitwiseService();
+export const despesasCompartilhadasService = new DespesasCompartilhadasService();
 

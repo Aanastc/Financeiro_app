@@ -105,7 +105,7 @@ export default function EditContaModal({ isOpen, onClose, conta, onUpdate, userI
 								/>
 								<div>
 									<p className="text-sm font-bold text-slate-800 dark:text-slate-200">Função Débito</p>
-									<p className="text-xs text-slate-500 dark:text-slate-450 mt-0.5">Permite lançar gastos diretos nesta conta</p>
+									<p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Permite lançar gastos diretos nesta conta</p>
 								</div>
 							</label>
 

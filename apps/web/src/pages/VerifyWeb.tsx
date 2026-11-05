@@ -3,6 +3,7 @@ import { authService } from "../../../../packages/services/auth.service";
 import { useNavigate, useLocation } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { Mail, ArrowLeft, RefreshCw, HelpCircle, Clock } from "lucide-react";
+import Copyright from "../components/Copyright";
 
 export default function VerifyWeb() {
 	const [token, setToken] = useState("");
@@ -52,7 +53,7 @@ export default function VerifyWeb() {
 			// 1. Valida o token no Supabase
 			await authService.verifyOtp(email, token);
 
-			toast.success("Conta ativada com sucesso! Bem-vindo(a)! 🎉", {
+			toast.success("Conta ativada com sucesso! Boas-vindas! 🎉", {
 				id: loadToast,
 			});
 			navigate("/home");
@@ -88,7 +89,7 @@ export default function VerifyWeb() {
 	};
 
 	return (
-		<div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 font-sans transition-colors duration-200">
+		<div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4 font-sans transition-colors duration-200">
 			<div className="bg-white dark:bg-slate-900 p-6 sm:p-10 md:p-14 rounded-3xl sm:rounded-[40px] shadow-2xl w-full max-w-md border border-slate-100 dark:border-slate-800 text-center relative overflow-hidden transition-all duration-300 hover:shadow-3xl">
 				{/* Top decorative gradient bar */}
 				<div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-emerald-500 via-[#4CAF50] to-[#5D4037]" />
@@ -135,11 +136,11 @@ export default function VerifyWeb() {
 						
 						{/* Token Expiration Timer */}
 						<div className="flex items-center justify-center space-x-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 mt-2">
-							<Clock className="w-3.5 h-3.5 text-slate-450" />
+							<Clock className="w-3.5 h-3.5 text-slate-500" />
 							{timeLeft > 0 ? (
 								<span>O token expira em: <span className="font-extrabold text-[#4CAF50] dark:text-emerald-400">{formatTime(timeLeft)}</span></span>
 							) : (
-								<span className="text-rose-550 dark:text-rose-450 font-extrabold">O token expirou!</span>
+								<span className="text-rose-600 dark:text-rose-400 font-extrabold">O token expirou!</span>
 							)}
 						</div>
 					</div>
@@ -193,6 +194,7 @@ export default function VerifyWeb() {
 					</button>
 				</div>
 			</div>
+			<Copyright className="mt-6" />
 		</div>
 	);
 }

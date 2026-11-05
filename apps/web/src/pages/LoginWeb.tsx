@@ -2,12 +2,28 @@ import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { authService } from "../../../../packages/services/auth.service";
 import { useNavigate, Link } from "react-router-dom";
+import Copyright from "../components/Copyright";
+import { toast } from "react-hot-toast";
 
 export default function LoginWeb() {
 	const [form, setForm] = useState({ email: "", password: "" });
 	const [loading, setLoading] = useState(false);
 	const [showPassword, setShowPassword] = useState(false);
 	const navigate = useNavigate();
+	const [entrandoConvidado, setEntrandoConvidado] = useState(false);
+
+	// Convidado: acesso só à divisão de contas, sem e-mail/senha (pode virar conta completa depois)
+	const handleEntrarComoConvidado = async () => {
+		setEntrandoConvidado(true);
+		try {
+			await authService.entrarComoConvidado();
+			navigate("/devedores");
+		} catch (err: any) {
+			toast.error(err?.message || "Não foi possível entrar como convidado.");
+		} finally {
+			setEntrandoConvidado(false);
+		}
+	};
 
 	const handleLogin = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -23,14 +39,14 @@ export default function LoginWeb() {
 	};
 
 	return (
-		<div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 font-sans transition-colors duration-200">
+		<div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4 font-sans transition-colors duration-200">
 			<form
 				onSubmit={handleLogin}
 				className="bg-white dark:bg-slate-900 p-6 sm:p-10 md:p-14 rounded-3xl sm:rounded-[40px] md:rounded-[50px] shadow-2xl w-full max-w-md border border-slate-100 dark:border-slate-800 transition-colors duration-200"
 			>
 				<div className="text-center mb-10">
 					<h2 className="text-4xl font-black text-slate-800 dark:text-slate-100 mb-2 tracking-tight">Entrar</h2>
-					<p className="text-slate-400 dark:text-slate-500 font-semibold text-sm">Bem-vinda de volta! 😊</p>
+					<p className="text-slate-400 dark:text-slate-500 font-semibold text-sm">Que bom te ver de novo! 😊</p>
 				</div>
 
 				<div className="space-y-6">
@@ -62,7 +78,7 @@ export default function LoginWeb() {
 							<button
 								type="button"
 								onClick={() => setShowPassword(!showPassword)}
-								className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-250 transition-colors flex items-center justify-center cursor-pointer"
+								className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors flex items-center justify-center cursor-pointer"
 							>
 								{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
 							</button>
@@ -70,7 +86,7 @@ export default function LoginWeb() {
 						<div className="text-right px-2">
 							<Link
 								to="/forgot-password"
-								className="text-xs font-bold text-slate-450 dark:text-slate-500 hover:text-[#4CAF50] dark:hover:text-emerald-400 transition-colors"
+								className="text-xs font-bold text-slate-500 dark:text-slate-500 hover:text-[#4CAF50] dark:hover:text-emerald-400 transition-colors"
 							>
 								Esqueceu a senha?
 							</Link>
@@ -80,7 +96,7 @@ export default function LoginWeb() {
 
 				<button
 					disabled={loading}
-					className="w-full bg-[#4CAF50] hover:bg-[#43a047] disabled:opacity-50 text-white p-5 rounded-3xl font-black mt-10 transition-all transform hover:scale-[1.01] shadow-lg shadow-green-150 dark:shadow-none cursor-pointer uppercase text-sm"
+					className="w-full bg-[#4CAF50] hover:bg-[#43a047] disabled:opacity-50 text-white p-5 rounded-3xl font-black mt-10 transition-all transform hover:scale-[1.01] shadow-lg shadow-green-100 dark:shadow-none cursor-pointer uppercase text-sm"
 				>
 					{loading ? "ENTRANDO..." : "ENTRAR"}
 				</button>
@@ -121,6 +137,15 @@ export default function LoginWeb() {
 					GOOGLE
 				</button>
 
+				<button
+					type="button"
+					onClick={handleEntrarComoConvidado}
+					disabled={entrandoConvidado}
+					className="w-full mt-3 p-4 rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold text-sm transition-colors cursor-pointer disabled:opacity-60"
+				>
+					{entrandoConvidado ? "Entrando..." : "Só quero dividir contas (entrar sem cadastro)"}
+				</button>
+
 				<p className="text-center mt-8 text-slate-400 dark:text-slate-500 text-sm font-medium">
 					Ainda não tem uma conta?{" "}
 					<Link
@@ -131,6 +156,7 @@ export default function LoginWeb() {
 					</Link>
 				</p>
 			</form>
+			<Copyright className="mt-6" />
 		</div>
 	);
 }

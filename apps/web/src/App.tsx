@@ -1,6 +1,10 @@
 import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { supabase } from "../../../packages/services/supabase";
+import { conviteService } from "../../../packages/services/convite.service";
+
+// Guarda ?convite= da URL para vincular a conta depois do cadastro/login
+conviteService.capturarDaUrl();
 import { Toaster } from "react-hot-toast";
 import PageLoader from "./components/PageLoader";
 import LandingPage from "./pages/LandingPage";

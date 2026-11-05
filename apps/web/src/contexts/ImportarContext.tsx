@@ -14,6 +14,7 @@ import {
 	encontrarPorInstituicao,
 	nomeArquivoIndicaExtrato,
 } from "../../../../packages/utils/instituicoes";
+import { ehAplicacaoInvestimento, ehResgateInvestimento } from "../../../../packages/utils/investimentos";
 
 export interface TransacaoPreview {
 	id: string;
@@ -687,9 +688,9 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					}
 				}
 
-				// 3. Aplicação e Resgate RDB / Caixinha
+				// 3. Aplicação e Resgate de investimentos (CDB, RDB, LCI/LCA, Tesouro, poupança, caixinha...)
 				const descLower = desc.toLowerCase();
-				const isAplicacao = (descLower.includes("rdb") && !descLower.includes("resgate")) || descLower.includes("caixinha") || descLower.includes("guardar dinheiro");
+				const isAplicacao = ehAplicacaoInvestimento(desc);
 				if (isAplicacao && (tipo !== "Meta" || !metaId)) {
 					tipo = "Meta";
 					cat = "Investimentos";
@@ -697,7 +698,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					mudouItem = true;
 				}
 
-				const isResgate = (descLower.includes("rdb") && descLower.includes("resgate")) || descLower.includes("resgate caixinha");
+				const isResgate = ehResgateInvestimento(desc);
 				if (isResgate && tipo !== "Resgate") {
 					tipo = "Resgate";
 					cat = "Investimentos";
@@ -956,15 +957,12 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			if (ext.tipo_documento === "extrato_bancario" && ext.dados?.transacoes) {
 				rawItems = ext.dados.transacoes.map((t: any) => {
 					const descLower = (t.descricao || "").toLowerCase();
-					const isAplicacaoRDB = (descLower.includes("rdb") && !descLower.includes("resgate")) ||
-					                       descLower.includes("caixinha") ||
-					                       descLower.includes("guardar dinheiro") ||
+					const isAplicacaoRDB = ehAplicacaoInvestimento(t.descricao || "") ||
 					                       t.tipo === "INVESTIMENTO" ||
 					                       t.tipo === "APORTE" ||
 					                       t.subtipo === "APLICACAO_RDB";
 
-					const isResgateRDB = (descLower.includes("rdb") && descLower.includes("resgate")) ||
-					                     descLower.includes("resgate caixinha") ||
+					const isResgateRDB = ehResgateInvestimento(t.descricao || "") ||
 					                     t.tipo === "RESGATE" ||
 					                     t.subtipo === "RESGATE_RDB";
 
@@ -1053,7 +1051,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			let metaReserva = metas.find(m => /reserva(\s+de)?\s+emerg[eê]ncia|caixinha(\s+reserva)?/i.test(m.titulo));
 			const temAplicacaoRdb = rawItems.some(item => 
 				item.tipo_transacao === "Meta" || 
-				(item.descricao && item.descricao.toLowerCase().includes("rdb") && !item.descricao.toLowerCase().includes("resgate"))
+				ehAplicacaoInvestimento(item.descricao || "")
 			);
 
 			if (temAplicacaoRdb && !metaReserva) {
@@ -1135,8 +1133,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 
 				const descLower = cleanDesc.toLowerCase();
 				const isAplicacao = t.tipo_transacao === "Meta" || 
-				                    (descLower.includes("rdb") && !descLower.includes("resgate")) ||
-				                    descLower.includes("caixinha") ||
+				                    ehAplicacaoInvestimento(cleanDesc) ||
 				                    t.subtipo === "APLICACAO_RDB";
 
 				const isLimiteConvertido = descLower.includes("limite convertido") || t.subtipo === "CONVERSAO_LIMITE_CARTAO";

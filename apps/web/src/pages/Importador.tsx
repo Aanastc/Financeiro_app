@@ -270,7 +270,7 @@ function CategoryCreatableSelect({
 					))}
 
 					{filtered.length === 0 && (!isTyping || !search.trim()) && (
-						<div className="px-2.5 py-2 text-[11px] text-slate-400 dark:text-slate-550 text-center italic">
+						<div className="px-2.5 py-2 text-[11px] text-slate-400 dark:text-slate-500 text-center italic">
 							Nenhuma categoria encontrada
 						</div>
 					)}
@@ -404,7 +404,7 @@ export default function ImportadorWeb() {
 					onDrop={handleDrop}
 					className={`
 						relative h-[400px] rounded-3xl sm:rounded-[50px] border-4 border-dashed transition-all flex flex-col items-center justify-center gap-6
-						${dragActive ? 'border-indigo-500 bg-indigo-50/50 scale-[0.99]' : 'border-gray-150 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-200 dark:hover:border-indigo-800 hover:bg-indigo-50/20 dark:hover:bg-indigo-950/20'}
+						${dragActive ? 'border-indigo-500 bg-indigo-50/50 scale-[0.99]' : 'border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-200 dark:hover:border-indigo-800 hover:bg-indigo-50/20 dark:hover:bg-indigo-950/20'}
 					`}
 				>
 					<input 
@@ -424,7 +424,7 @@ export default function ImportadorWeb() {
 					
 					<div className="text-center space-y-2">
 						<h3 className="text-xl font-black text-[#2D2424] dark:text-slate-100">Arraste seu documento financeiro aqui</h3>
-						<p className="text-gray-400 dark:text-slate-550 font-bold uppercase text-[10px] tracking-widest px-4">
+						<p className="text-gray-400 dark:text-slate-500 font-bold uppercase text-[10px] tracking-widest px-4">
 							Extratos bancários, faturas de cartão, contratos de empréstimo e renegociação (PDF, PNG, JPG, CSV, OFX, EXCEL)
 						</p>
 					</div>
@@ -442,23 +442,23 @@ export default function ImportadorWeb() {
 								<FileCode size={24} />
 							</div>
 							<div>
-								<h4 className="font-black text-[#2D2424] dark:text-slate-150 text-base">{file.name}</h4>
+								<h4 className="font-black text-[#2D2424] dark:text-slate-100 text-base">{file.name}</h4>
 								<div className="flex flex-wrap items-center gap-2 mt-1">
 									{tipoDocumento && (
-										<span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-black text-[11px] px-2.5 py-1 rounded-lg border border-indigo-150 dark:border-indigo-900">
+										<span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-black text-[11px] px-2.5 py-1 rounded-lg border border-indigo-100 dark:border-indigo-900">
 											📋 {getTipoDocumentoLabel(tipoDocumento)}
 										</span>
 									)}
 									{confiancaIA > 0 && (
 										<span className={`font-black text-[11px] px-2.5 py-1 rounded-lg border flex items-center gap-1 ${
 											confiancaIA >= 0.85 
-												? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-150 dark:border-emerald-900' 
-												: 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-150 dark:border-amber-900'
+												? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900' 
+												: 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-900'
 										}`}>
 											<ShieldCheck size={13} /> {Math.round(confiancaIA * 100)}% de Confiança
 										</span>
 									)}
-									<span className="text-xs font-bold text-gray-400 dark:text-slate-550">
+									<span className="text-xs font-bold text-gray-400 dark:text-slate-500">
 										{loading ? "Processando e validando..." : (resumoIA || `${preview.length} Lançamentos detectados`)}
 									</span>
 								</div>
@@ -499,7 +499,7 @@ export default function ImportadorWeb() {
 							</div>
 							
 							<div className="text-center max-w-sm mt-4 space-y-2">
-								<h3 className="text-lg font-black text-[#2D2424] dark:text-slate-150 animate-pulse">Classificando e Validando com IA</h3>
+								<h3 className="text-lg font-black text-[#2D2424] dark:text-slate-100 animate-pulse">Classificando e Validando com IA</h3>
 								<p className="text-xs text-gray-400 dark:text-slate-400 font-medium leading-relaxed">
 									A IA está extraindo as informações e aplicando as regras de validação do domínio financeiro.
 								</p>
@@ -707,7 +707,7 @@ export default function ImportadorWeb() {
 														title="Clique para alternar entre Paga e Pendente"
 													>
 														<div className="flex items-center justify-between gap-1 mb-1">
-															<span className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-550">
+															<span className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">
 																#{p.numero_parcela}
 															</span>
 															<span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
@@ -1156,13 +1156,13 @@ export default function ImportadorWeb() {
 													{/* TERCEIROS */}
 													<td className="p-3 min-w-[130px]">
 														{item.tipo_transacao === "PagamentoFatura" ? (
-															<div className="text-xs font-bold text-slate-400 dark:text-slate-550 italic text-center">-</div>
+															<div className="text-xs font-bold text-slate-400 dark:text-slate-500 italic text-center">-</div>
 														) : (
 															<div className="flex flex-col gap-2">
 																<div className="flex items-center gap-2">
 																	<button 
 																		onClick={() => updateItem(item.id, "terceiro", !item.terceiro)}
-																		className={`px-3 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-colors flex-1 cursor-pointer ${item.terceiro ? 'bg-amber-100 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-450 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+																		className={`px-3 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-colors flex-1 cursor-pointer ${item.terceiro ? 'bg-amber-100 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
 																	>
 																		<Users size={14} /> 
 																		{item.tipo_transacao === "Entrada" 
@@ -1186,7 +1186,7 @@ export default function ImportadorWeb() {
 																
 																{item.terceiro && (
 																	<select
-																		className="w-full bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-450 outline-none font-bold text-xs p-2 rounded-lg focus:ring-2 focus:ring-amber-300 cursor-pointer"
+																		className="w-full bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 outline-none font-bold text-xs p-2 rounded-lg focus:ring-2 focus:ring-amber-300 cursor-pointer"
 																		value={item.contato_id}
 																		onChange={(e) => {
 																			if (e.target.value === "NOVO_DEVEDOR") {

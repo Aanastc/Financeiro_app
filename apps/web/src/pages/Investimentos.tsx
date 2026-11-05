@@ -8,7 +8,8 @@ import {
 	PieChart as ChartIcon,
 	Building2,
 	Coins,
-	Trash2
+	Trash2,
+	Pencil
 } from "lucide-react";
 import {
 	PieChart,
@@ -21,12 +22,14 @@ import {
 import { toast } from "react-hot-toast";
 import AddInvestimentoWeb from "../components/AddInvestimentoWeb";
 import PageLoader from "../components/PageLoader";
+import { descreverRentabilidade, instituicaoDoInvestimento, metaIdDoInvestimento } from "../../../../packages/utils/investimentos";
 
 export default function InvestimentosWeb() {
 	const [investimentos, setInvestimentos] = useState<any[]>([]);
 	const [metas, setMetas] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [isAddInvestimentoOpen, setIsAddInvestimentoOpen] = useState(false);
+	const [investimentoEmEdicao, setInvestimentoEmEdicao] = useState<any | null>(null);
 
 	// O loader só aparece no primeiro carregamento (recargas em tempo real não piscam a tela)
 	const loadInvestimentos = useCallback(async () => {
@@ -46,14 +49,20 @@ export default function InvestimentosWeb() {
 		setLoading(false);
 	}, []);
 
-	const parseMetaId = (corretora: string) => {
-		const match = corretora?.match(/\[Meta:\s*([^\]]+)\]/);
-		return match ? match[1] : null;
-	};
+	const parseMetaId = (corretora: string) => metaIdDoInvestimento(corretora);
+	const cleanCorretora = (corretora: string) => instituicaoDoInvestimento(corretora) || "—";
 
-	const cleanCorretora = (corretora: string) => {
-		if (!corretora) return "—";
-		return corretora.replace(/\[Meta:\s*[^\]]+\]/, '').trim() || "—";
+	const handleExcluir = async (inv: any) => {
+		if (!window.confirm(`Excluir o investimento "${inv.titulo}"? O histórico de valores dele também será removido.`)) return;
+		try {
+			const { data: { user } } = await supabase.auth.getUser();
+			if (!user) return;
+			await financeService.deleteInvestimento(user.id, inv.id);
+			toast.success("Investimento excluído.");
+			loadInvestimentos();
+		} catch (e: any) {
+			toast.error(e?.message || "Erro ao excluir investimento.");
+		}
 	};
 
 	useEffect(() => {
@@ -126,7 +135,7 @@ export default function InvestimentosWeb() {
 						<h2 className={`text-2xl font-black ${totals.lucro >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
 							R$ {Math.abs(totals.lucro).toLocaleString()}
 						</h2>
-						<span className={`text-xs font-bold px-2 py-1 rounded-lg ${totals.lucro >= 0 ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400' : 'bg-rose-50 dark:bg-rose-955 text-rose-600 dark:text-rose-400'}`}>
+						<span className={`text-xs font-bold px-2 py-1 rounded-lg ${totals.lucro >= 0 ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400' : 'bg-rose-50 dark:bg-rose-950 text-rose-600 dark:text-rose-400'}`}>
 							{totals.perc >= 0 ? '+' : ''}{totals.perc.toFixed(2)}%
 						</span>
 					</div>
@@ -189,7 +198,7 @@ export default function InvestimentosWeb() {
 									<th className="p-8 text-center">Ações</th>
 								</tr>
 							</thead>
-							<tbody className="divide-y divide-slate-55 dark:divide-slate-800/40">
+							<tbody className="divide-y divide-slate-50 dark:divide-slate-800/40">
 								{investimentos.length > 0 ? investimentos.map((inv) => (
 									<tr key={inv.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group">
 										<td className="p-8">
@@ -220,6 +229,11 @@ export default function InvestimentosWeb() {
 											<span className="bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg text-[9px] font-black uppercase text-slate-500 dark:text-slate-400">
 												{inv.tipo}
 											</span>
+											{descreverRentabilidade(inv.indexador, inv.taxa) && (
+												<span className="block mt-1.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+													{descreverRentabilidade(inv.indexador, inv.taxa)}
+												</span>
+											)}
 										</td>
 										<td className="p-8 text-center text-sm font-medium text-slate-500 dark:text-slate-400">{cleanCorretora(inv.corretora)}</td>
 										<td className="p-8 text-right font-bold text-slate-400 dark:text-slate-500 text-sm">
@@ -229,9 +243,22 @@ export default function InvestimentosWeb() {
 											R$ {Number(inv.valor_atual).toLocaleString()}
 										</td>
 										<td className="p-8 text-center">
-											<button className="text-slate-300 hover:text-rose-500 transition-colors">
-												<Trash2 size={18} />
-											</button>
+											<div className="flex items-center justify-center gap-3">
+												<button
+													onClick={() => setInvestimentoEmEdicao(inv)}
+													title="Editar (meta, rentabilidade, saldo)"
+													aria-label={`Editar ${inv.titulo}`}
+													className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer">
+													<Pencil size={18} />
+												</button>
+												<button
+													onClick={() => handleExcluir(inv)}
+													title="Excluir"
+													aria-label={`Excluir ${inv.titulo}`}
+													className="text-slate-400 hover:text-rose-500 transition-colors cursor-pointer">
+													<Trash2 size={18} />
+												</button>
+											</div>
 										</td>
 									</tr>
 								)) : (
@@ -245,10 +272,11 @@ export default function InvestimentosWeb() {
 				</div>
 			</div>
 
-			{isAddInvestimentoOpen && (
-				<AddInvestimentoWeb 
-					onClose={() => setIsAddInvestimentoOpen(false)} 
-					onSuccess={loadInvestimentos} 
+			{(isAddInvestimentoOpen || investimentoEmEdicao) && (
+				<AddInvestimentoWeb
+					investimento={investimentoEmEdicao}
+					onClose={() => { setIsAddInvestimentoOpen(false); setInvestimentoEmEdicao(null); }}
+					onSuccess={loadInvestimentos}
 				/>
 			)}
 		</div>

@@ -2,13 +2,19 @@ import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { authService } from "../../../../packages/services/auth.service";
 import { useNavigate, Link } from "react-router-dom";
+import { toast } from "react-hot-toast";
+import { cpfValido, formatarCPF, formatarTelefone, mensagemDuplicidade, telefoneValido } from "../../../../packages/utils/documentos";
+import Copyright from "../components/Copyright";
 
 export default function RegisterWeb() {
 	const [form, setForm] = useState({
 		nome: "",
-		email: "",
+		// Convite (/register?convite=...&email=...): já preenche o e-mail
+		email: new URLSearchParams(window.location.search).get("email") || "",
 		password: "",
 		confirmPassword: "",
+		cpf: "",
+		telefone: "",
 		acompanhaMei: false,
 	});
 	const [loading, setLoading] = useState(false);
@@ -18,24 +24,26 @@ export default function RegisterWeb() {
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
+		if (!cpfValido(form.cpf)) return toast.error("CPF inválido.");
+		if (!telefoneValido(form.telefone)) return toast.error("Telefone inválido. Use DDD + número.");
 		if (form.password.length < 8)
-			return alert("A senha deve ter no mínimo 8 caracteres.");
+			return toast.error("A senha deve ter no mínimo 8 caracteres.");
 		if (form.password !== form.confirmPassword)
-			return alert("As senhas não coincidem.");
+			return toast.error("As senhas não coincidem.");
 
 		setLoading(true);
 		try {
-			await authService.register(form.email, form.password, form.nome, form.acompanhaMei);
-			navigate("/verify", { state: { email: form.email } });
+			await authService.register(form.email.trim(), form.password, form.nome.trim(), form.acompanhaMei, form.cpf, form.telefone);
+			navigate("/verify", { state: { email: form.email.trim() } });
 		} catch (err: any) {
-			alert(err.message);
+			toast.error(mensagemDuplicidade(err) || err.message || "Não foi possível criar a conta.");
 		} finally {
 			setLoading(false);
 		}
 	};
 
 	return (
-		<div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-4 font-sans transition-colors duration-200">
+		<div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col items-center justify-center p-4 font-sans transition-colors duration-200">
 			<form
 				onSubmit={handleSubmit}
 				className="bg-white dark:bg-slate-900 p-6 sm:p-10 md:p-14 rounded-3xl sm:rounded-[40px] md:rounded-[50px] shadow-2xl w-full max-w-3xl border border-slate-100 dark:border-slate-800 transition-colors duration-200"
@@ -69,7 +77,39 @@ export default function RegisterWeb() {
 							type="email"
 							placeholder="seu@email.com"
 							required
+							autoComplete="email"
+							value={form.email}
 							onChange={(e) => setForm({ ...form, email: e.target.value })}
+						/>
+					</div>
+
+					<div className="space-y-1.5">
+						<label className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-2">
+							CPF
+						</label>
+						<input
+							className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
+							inputMode="numeric"
+							placeholder="000.000.000-00"
+							required
+							value={form.cpf}
+							onChange={(e) => setForm({ ...form, cpf: formatarCPF(e.target.value) })}
+						/>
+					</div>
+
+					<div className="space-y-1.5">
+						<label className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-2">
+							CELULAR
+						</label>
+						<input
+							className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-[#4CAF50] outline-none transition-all text-slate-700 dark:text-slate-200 font-bold text-sm"
+							type="tel"
+							inputMode="tel"
+							autoComplete="tel-national"
+							placeholder="(00) 00000-0000"
+							required
+							value={form.telefone}
+							onChange={(e) => setForm({ ...form, telefone: formatarTelefone(e.target.value) })}
 						/>
 					</div>
 
@@ -88,7 +128,7 @@ export default function RegisterWeb() {
 							<button
 								type="button"
 								onClick={() => setShowPassword(!showPassword)}
-								className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-250 transition-colors flex items-center justify-center cursor-pointer"
+								className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors flex items-center justify-center cursor-pointer"
 							>
 								{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
 							</button>
@@ -115,7 +155,7 @@ export default function RegisterWeb() {
 							<button
 								type="button"
 								onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-								className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-250 transition-colors flex items-center justify-center cursor-pointer"
+								className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors flex items-center justify-center cursor-pointer"
 							>
 								{showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
 							</button>
@@ -159,7 +199,7 @@ export default function RegisterWeb() {
 
 				<button
 					disabled={loading}
-					className="w-full bg-[#4CAF50] hover:bg-[#43a047] disabled:opacity-50 text-white p-5 rounded-3xl font-black mt-8 transition-all transform hover:scale-[1.01] shadow-lg shadow-green-150 dark:shadow-none cursor-pointer uppercase text-sm"
+					className="w-full bg-[#4CAF50] hover:bg-[#43a047] disabled:opacity-50 text-white p-5 rounded-3xl font-black mt-8 transition-all transform hover:scale-[1.01] shadow-lg shadow-green-100 dark:shadow-none cursor-pointer uppercase text-sm"
 				>
 					{loading ? "PROCESSANDO..." : "CRIAR CONTA"}
 				</button>
@@ -210,6 +250,7 @@ export default function RegisterWeb() {
 					</Link>
 				</p>
 			</form>
+			<Copyright className="mt-6" />
 		</div>
 	);
 }

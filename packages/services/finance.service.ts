@@ -2,6 +2,53 @@ import { supabase } from "./supabase";
 import { getFaturaCycle, getFaturaMesReferencia } from "../utils/cartao.utils";
 import { encontrarPorInstituicao } from "../utils/instituicoes";
 import { buscarTodasPaginas } from "./paginacao";
+import {
+  detectarProdutoInvestimento,
+  ehAplicacaoInvestimento,
+  ehResgateInvestimento,
+  instituicaoDoInvestimento,
+  metaIdDoInvestimento,
+} from "../utils/investimentos";
+
+/** Colunas da migration 007; se ainda não existirem no banco, salva sem elas. */
+const CAMPOS_RENTABILIDADE = ["indexador", "taxa", "vencimento", "liquidez_diaria"];
+
+async function salvarInvestimento(
+  tabela: () => any,
+  dados: any,
+  executar: (payload: any, q: any) => PromiseLike<{ data: any; error: any }>
+) {
+  let { data, error } = await executar(dados, tabela());
+  if (error && /column|schema cache/i.test(error.message || "") && CAMPOS_RENTABILIDADE.some(c => c in dados)) {
+    const semRentabilidade = Object.fromEntries(Object.entries(dados).filter(([k]) => !CAMPOS_RENTABILIDADE.includes(k)));
+    console.warn("Colunas de rentabilidade ausentes (migration 007 pendente). Salvando sem elas.");
+    ({ data, error } = await executar(semRentabilidade, tabela()));
+  }
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Investimento correspondente a um aporte/resgate:
+ * 1) o vinculado à meta informada; 2) o do mesmo produto (ex.: CDB) e, se informada,
+ * da mesma instituição, desde que não esteja vinculado a OUTRA meta.
+ */
+function encontrarInvestimento(invs: any[], metaId?: string | null, produto?: string | null, instituicao?: string | null) {
+  if (metaId) {
+    const daMeta = invs.find(inv => metaIdDoInvestimento(inv.corretora) === metaId);
+    if (daMeta) return daMeta;
+  }
+  if (!produto) return undefined;
+  const inst = (instituicao || "").toLowerCase();
+  return invs.find(inv => {
+    const outraMeta = metaIdDoInvestimento(inv.corretora);
+    if (outraMeta && metaId && outraMeta !== metaId) return false;
+    const mesmoProduto = detectarProdutoInvestimento(`${inv.titulo || ""} ${inv.tipo || ""}`) === produto;
+    const instInv = instituicaoDoInvestimento(inv.corretora).toLowerCase();
+    const mesmaInst = !inst || !instInv || instInv.includes(inst) || inst.includes(instInv);
+    return mesmoProduto && mesmaInst;
+  });
+}
 
 export const financeService = {
   /**
@@ -509,6 +556,12 @@ export const financeService = {
     // 💰 VALOR E DETALHES DE PARCELAMENTO (A despesa do mês é SEMPRE da parcela incorrida)
     const valorParcelaAtual = form.valor_ja_dividido ? valorNumerico : Math.round((valorNumerico / numParcelas) * 100) / 100;
     const valorTotalCompra = form.valor_ja_dividido ? Math.round((valorNumerico * numParcelas) * 100) / 100 : valorNumerico;
+    // A última parcela absorve a diferença de centavos (ex.: R$ 100 em 3x = 33,33 + 33,33 + 33,34)
+    const valorDaParcela = (i: number) =>
+      form.valor_ja_dividido || numParcelas <= 1 || i < numParcelas
+        ? valorParcelaAtual
+        : Math.round((valorNumerico - valorParcelaAtual * (numParcelas - 1)) * 100) / 100;
+    const valorDestaParcela = valorDaParcela(currentParcelaInput);
 
     // 1. 💸 REGISTRA A TRANSAÇÃO NA TABELA `transacoes` (Deduplicação defensiva)
     let transacao: any = null;
@@ -517,7 +570,7 @@ export const financeService = {
       .select("*")
       .eq("usuario_id", usuario_id)
       .eq("data", form.data)
-      .eq("valor", valorParcelaAtual)
+      .eq("valor", valorDestaParcela)
       .eq("cartao_id", isCredito ? form.cartao_id : null)
       .ilike("descricao", `%${descricaoLimpa}%`)
       .maybeSingle();
@@ -529,7 +582,7 @@ export const financeService = {
         .select("*")
         .eq("usuario_id", usuario_id)
         .eq("cartao_id", isCredito ? form.cartao_id : null)
-        .eq("valor", valorParcelaAtual)
+        .eq("valor", valorDestaParcela)
         .ilike("descricao", `%${descricaoLimpa}%`)
         .ilike("descricao", `%${currentParcelaInput}/${numParcelas}%`)
         .maybeSingle();
@@ -562,7 +615,7 @@ export const financeService = {
           usuario_id,
           tipo: tipoTransacao,
           descricao: descFinal,
-          valor: valorParcelaAtual,
+          valor: valorDestaParcela,
           data: form.data,
           cartao_id: isCredito ? form.cartao_id : null,
           conta_id: isCredito ? null : form.conta_id,
@@ -628,7 +681,7 @@ export const financeService = {
               .select("*")
               .eq("usuario_id", usuario_id)
               .eq("cartao_id", isCredito ? form.cartao_id : null)
-              .eq("valor", valorParcelaAtual)
+              .eq("valor", valorDaParcela(i))
               .ilike("descricao", `%${descricaoLimpa}%`)
               .ilike("descricao", `%${i}/${numParcelas}%`)
               .maybeSingle();
@@ -644,7 +697,7 @@ export const financeService = {
                   usuario_id,
                   tipo: "DESPESA",
                   descricao: descParcela,
-                  valor: valorParcelaAtual,
+                  valor: valorDaParcela(i),
                   data: dataParcelaStr,
                   cartao_id: isCredito ? form.cartao_id : null,
                   conta_id: isCredito ? null : form.conta_id,
@@ -671,7 +724,7 @@ export const financeService = {
                 .update({
                   status: isPast || isCurrent ? 'PAGA' : 'PENDENTE',
                   transacao_id: txIdForParcela || targetParcela.transacao_id,
-                  valor: valorParcelaAtual,
+                  valor: valorDaParcela(i),
                   data_vencimento: isCurrent ? form.data : targetParcela.data_vencimento || dataParcelaStr
                 })
                 .eq("id", targetParcela.id);
@@ -681,7 +734,7 @@ export const financeService = {
                 parcelamento_id: parcelamento.id,
                 transacao_id: txIdForParcela,
                 numero_parcela: i,
-                valor: valorParcelaAtual,
+                valor: valorDaParcela(i),
                 data_vencimento: isCurrent ? form.data : dataParcelaStr,
                 status: isPast || isCurrent ? 'PAGA' : 'PENDENTE'
               }]);
@@ -705,7 +758,7 @@ export const financeService = {
         transacao_id: transacao.id,
         conta_id: form.conta_id,
         tipo: 'SAIDA',
-        valor: valorParcelaAtual,
+        valor: valorDestaParcela,
         data: form.data
       }]);
       if (errMov) throw errMov;
@@ -1012,20 +1065,17 @@ export const financeService = {
     }
 
     // 3. Atualizar ou criar Investimento correspondente
-    const titulo = params.titulo_investimento || (params.descricao?.includes("RDB")
-      ? `RDB${params.instituicao ? ` ${params.instituicao}` : ""}`
-      : "Aplicação RDB / Caixinha");
+    const produto = detectarProdutoInvestimento(params.descricao || "");
+    const titulo = params.titulo_investimento ||
+      (produto ? `${produto}${params.instituicao ? ` ${params.instituicao}` : ""}` : "Aplicação");
     
     const { data: invs } = await supabase
       .from("investimentos")
       .select("*")
       .eq("usuario_id", usuario_id);
 
-    let targetInv = (invs || []).find((inv: any) => {
-      if (params.meta_id && inv.corretora?.includes(params.meta_id)) return true;
-      if (inv.titulo?.toLowerCase().includes("rdb") && titulo.toLowerCase().includes("rdb")) return true;
-      return false;
-    });
+    // 1º investimento vinculado à mesma meta; 2º mesmo produto (ex.: CDB) sem vínculo conflitante
+    let targetInv = encontrarInvestimento(invs || [], params.meta_id, produto, params.instituicao);
 
     if (targetInv) {
       const novoInvestido = Number(targetInv.valor_investido || 0) + valor;
@@ -1136,10 +1186,10 @@ export const financeService = {
       .select("*")
       .eq("usuario_id", usuario_id);
 
-    let targetInv = (invs || []).find((inv: any) => {
-      if (params.meta_id && inv.corretora?.includes(params.meta_id)) return true;
-      return inv.titulo?.toLowerCase().includes("rdb") || inv.tipo?.toLowerCase().includes("renda fixa");
-    }) || (invs && invs[0]);
+    // Mesma regra do aporte. Com vários investimentos e nenhum correspondente, não abate de um aleatório.
+    const produtoResgate = detectarProdutoInvestimento(params.descricao || "");
+    let targetInv = encontrarInvestimento(invs || [], params.meta_id, produtoResgate, params.instituicao)
+      || ((invs || []).length === 1 ? invs![0] : undefined);
 
     if (targetInv) {
       const novoAtual = Math.max(0, Number(targetInv.valor_atual || 0) - valor);
@@ -1197,10 +1247,10 @@ export const financeService = {
       if (!metaReserva) return;
 
       // Filtra transações relacionadas a RDB / Caixinhas
-      const txRdb = txs.filter(t => {
-        const d = (t.descricao || "").toLowerCase();
-        return d.includes("rdb") || d.includes("caixinha") || d.includes("reserva") || t.tipo === "APORTE" || t.tipo === "RESGATE";
-      });
+      const txRdb = txs.filter(t =>
+        t.tipo === "APORTE" || t.tipo === "RESGATE" ||
+        ehAplicacaoInvestimento(t.descricao || "") || ehResgateInvestimento(t.descricao || "")
+      );
 
       if (txRdb.length === 0) return;
 
@@ -1209,17 +1259,16 @@ export const financeService = {
       const saldoCalculado = Math.max(0, totalAportes - totalResgates);
 
       // Localiza investimento de RDB
-      let targetInv = invs.find((inv: any) => {
-        if (inv.corretora?.includes(metaReserva.id)) return true;
-        return (inv.titulo || "").toLowerCase().includes("rdb") || (inv.titulo || "").toLowerCase().includes("reserva");
-      });
+      // Vínculo escolhido pelo usuário tem prioridade; só sugere vínculo para investimento SEM meta
+      let targetInv = invs.find((inv: any) => metaIdDoInvestimento(inv.corretora) === metaReserva.id)
+        || invs.find((inv: any) => !metaIdDoInvestimento(inv.corretora) && /rdb|reserva|caixinha/i.test(inv.titulo || ""));
 
       // Preserva a instituição já registrada no investimento (sem assumir banco)
       const baseCorretora = targetInv?.corretora?.replace(/\[Meta:\s*[^\]]+\]/, '').trim() || "";
       const corretoraTag = `[Meta: ${metaReserva.id}] ${baseCorretora}`.trim();
 
       if (targetInv) {
-        const needsCorretoraFix = !targetInv.corretora?.includes(metaReserva.id);
+        const needsCorretoraFix = !metaIdDoInvestimento(targetInv.corretora);
         const needsValorFix = Number(targetInv.valor_atual || 0) === 0 && saldoCalculado > 0;
         if (needsCorretoraFix || needsValorFix) {
           await supabase.from("investimentos").update({
@@ -1430,9 +1479,27 @@ export const financeService = {
   },
 
   async addInvestimento(usuario_id: string, dados: any) {
-    const { data, error } = await supabase.from("investimentos").insert([{ ...dados, usuario_id }]).select();
+    return salvarInvestimento(() => supabase.from("investimentos"), dados, (payload, q) =>
+      q.insert([{ ...payload, usuario_id }]).select()
+    );
+  },
+
+  async updateInvestimento(usuario_id: string, id: string, dados: any) {
+    return salvarInvestimento(() => supabase.from("investimentos"), dados, (payload, q) =>
+      q.update(payload).eq("id", id).eq("usuario_id", usuario_id).select()
+    );
+  },
+
+  /** Exclui o investimento e seu histórico de valores (ação explícita do usuário). */
+  async deleteInvestimento(usuario_id: string, id: string) {
+    const { data: inv, error: errBusca } = await supabase
+      .from("investimentos").select("id").eq("id", id).eq("usuario_id", usuario_id).maybeSingle();
+    if (errBusca) throw errBusca;
+    if (!inv) throw new Error("Investimento não encontrado.");
+    const { error: errHist } = await supabase.from("historico_investimentos").delete().eq("investimento_id", id);
+    if (errHist) throw errHist;
+    const { error } = await supabase.from("investimentos").delete().eq("id", id).eq("usuario_id", usuario_id);
     if (error) throw error;
-    return data;
   },
 
   async deleteRecord(table: 'gastos' | 'entradas' | 'investimentos' | 'dividas' | 'metas' | 'contatos', id: string) {

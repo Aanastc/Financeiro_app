@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { X, Camera } from "lucide-react";
 import { authService } from "../../../../packages/services/auth.service";
 import toast from "react-hot-toast";
+import { cpfValido, formatarCPF, formatarTelefone, mensagemDuplicidade, telefoneValido } from "../../../../packages/utils/documentos";
 
 interface EditProfileModalProps {
 	isOpen: boolean;
@@ -45,27 +46,8 @@ export default function EditProfileModal({ isOpen, onClose, onUpdate }: EditProf
 
 	if (!isOpen) return null;
 
-	const formatCPF = (val: string) => {
-		return val
-			.replace(/\D/g, "")
-			.replace(/(\d{3})(\d)/, "$1.$2")
-			.replace(/(\d{3})(\d)/, "$1.$2")
-			.replace(/(\d{3})(\d{1,2})/, "$1-$2")
-			.replace(/(-\d{2})\d+?$/, "$1");
-	};
-
-	const formatPhone = (val: string) => {
-		let v = val.replace(/\D/g, "");
-		if (v.length > 11) v = v.slice(0, 11);
-		if (v.length > 10) {
-			v = v.replace(/^(\d\d)(\d{5})(\d{4}).*/, "($1) $2-$3");
-		} else if (v.length > 5) {
-			v = v.replace(/^(\d\d)(\d{4})(\d{0,4}).*/, "($1) $2-$3");
-		} else if (v.length > 2) {
-			v = v.replace(/^(\d\d)(\d{0,5})/, "($1) $2");
-		}
-		return v;
-	};
+	const formatCPF = formatarCPF;
+	const formatPhone = formatarTelefone;
 
 	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const file = e.target.files?.[0];
@@ -77,6 +59,10 @@ export default function EditProfileModal({ isOpen, onClose, onUpdate }: EditProf
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
+		if (!nome.trim()) return toast.error("Informe seu nome.");
+		if (!telefoneValido(telefone)) return toast.error("Telefone inválido. Use DDD + número.");
+		if (!cpfValido(cpf)) return toast.error("CPF inválido.");
+		if (password && password.length < 8) return toast.error("A nova senha deve ter no mínimo 8 caracteres.");
 		setLoading(true);
 		try {
 			let finalAvatarUrl = avatarUrl;
@@ -91,12 +77,15 @@ export default function EditProfileModal({ isOpen, onClose, onUpdate }: EditProf
 				}
 			}
 
-			await authService.updateProfile(nome, finalAvatarUrl || undefined, email, password || undefined, telefone, cpf, acompanhaMei);
+			const { emailPendente } = await authService.updateProfile(nome.trim(), finalAvatarUrl || undefined, email, password || undefined, telefone, cpf, acompanhaMei);
 			toast.success("Perfil atualizado com sucesso!");
+			if (emailPendente) {
+				toast("Confirme a troca de e-mail pelos links enviados ao e-mail antigo e ao novo. Até lá, o e-mail atual continua valendo.", { icon: "📧", duration: 8000 });
+			}
 			onUpdate();
 			onClose();
 		} catch (error: any) {
-			toast.error(error.message || "Erro ao atualizar perfil");
+			toast.error(mensagemDuplicidade(error) || error.message || "Erro ao atualizar perfil");
 		} finally {
 			setLoading(false);
 		}
@@ -155,6 +144,7 @@ export default function EditProfileModal({ isOpen, onClose, onUpdate }: EditProf
 								type="email"
 								value={email}
 								onChange={(e) => setEmail(e.target.value)}
+								autoComplete="email"
 								className="w-full p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all text-slate-800 dark:text-slate-100 font-bold text-sm rounded-xl"
 								placeholder="seu@email.com"
 								required
@@ -162,22 +152,27 @@ export default function EditProfileModal({ isOpen, onClose, onUpdate }: EditProf
 						</div>
 
 						<div className="space-y-1.5">
-							<label className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 ml-1 block">Telefone</label>
+							<label className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 ml-1 block">Telefone *</label>
 							<input
-								type="text"
 								value={telefone}
 								onChange={(e) => setTelefone(formatPhone(e.target.value))}
+								type="tel"
+								inputMode="tel"
+								autoComplete="tel-national"
+								required
 								className="w-full p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all text-slate-800 dark:text-slate-100 font-bold text-sm rounded-xl"
 								placeholder="(11) 99999-9999"
 							/>
 						</div>
 
 						<div className="space-y-1.5">
-							<label className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 ml-1 block">CPF</label>
+							<label className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 ml-1 block">CPF *</label>
 							<input
 								type="text"
 								value={cpf}
 								onChange={(e) => setCpf(formatCPF(e.target.value))}
+								inputMode="numeric"
+								required
 								className="w-full p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all text-slate-800 dark:text-slate-100 font-bold text-sm rounded-xl"
 								placeholder="000.000.000-00"
 							/>
@@ -190,10 +185,11 @@ export default function EditProfileModal({ isOpen, onClose, onUpdate }: EditProf
 							</label>
 							<input
 								type="password"
+								autoComplete="new-password"
 								value={password}
 								onChange={(e) => setPassword(e.target.value)}
 								className="w-full p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all text-slate-800 dark:text-slate-100 font-bold text-sm rounded-xl"
-								placeholder="••••••••"
+								placeholder="Deixe em branco para manter a atual"
 							/>
 						</div>
 

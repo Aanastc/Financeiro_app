@@ -20,8 +20,8 @@ import ConviteAmigoModal from "./components/ConviteAmigoModal";
 import AddContatoWeb from "./components/AddContatoWeb";
 import ChatAcordosIaModal from "./components/ChatAcordosIaModal";
 import CriarGrupoModal from "./components/CriarGrupoModal";
-import { splitwiseService } from "../../../packages/services/splitwise.service";
-import type { Grupo } from "../../../packages/services/splitwise.service";
+import { despesasCompartilhadasService } from "../../../packages/services/despesas-compartilhadas.service";
+import type { Grupo } from "../../../packages/services/despesas-compartilhadas.service";
 import EmBreveView from "./components/EmBreveView";
 import { getFaturaMesReferencia } from "../../../packages/utils/cartao.utils";
 import CategoryBreakdown from "./components/CategoryBreakdown";
@@ -38,27 +38,27 @@ export default function HomeWeb() {
 	const [isClient, setIsClient] = useState(false);
 	const [isFetchingData, setIsFetchingData] = useState(true);
 
-	// 3 CAMINHOS DA HOME: PESSOAL | SPLITWISE | PJ
+	// 3 CAMINHOS DA HOME: PESSOAL | COMPARTILHADO | PJ
 	const [searchParams, setSearchParams] = useSearchParams();
 	const tabParam = searchParams.get("tab")?.toUpperCase();
-	const initialCaminho: "PESSOAL" | "SPLITWISE" | "PJ" = 
-		tabParam === "SPLITWISE" || tabParam === "DEVEDORES" ? "SPLITWISE" :
+	const initialCaminho: "PESSOAL" | "COMPARTILHADO" | "PJ" = 
+		["COMPARTILHADO", "COMPARTILHADO", "DEVEDORES"].includes(tabParam || "") ? "COMPARTILHADO" :
 		tabParam === "PJ" || tabParam === "MEI" ? "PJ" : "PESSOAL";
 
-	const [caminhoAtivo, setCaminhoAtivo] = useState<"PESSOAL" | "SPLITWISE" | "PJ">(initialCaminho);
+	const [caminhoAtivo, setCaminhoAtivo] = useState<"PESSOAL" | "COMPARTILHADO" | "PJ">(initialCaminho);
 
 	useEffect(() => {
-		if (tabParam === "SPLITWISE" || tabParam === "DEVEDORES") setCaminhoAtivo("SPLITWISE");
+		if (["COMPARTILHADO", "COMPARTILHADO", "DEVEDORES"].includes(tabParam || "")) setCaminhoAtivo("COMPARTILHADO");
 		else if (tabParam === "PJ" || tabParam === "MEI") setCaminhoAtivo("PJ");
 		else if (tabParam === "PESSOAL" || tabParam === "PF") setCaminhoAtivo("PESSOAL");
 	}, [tabParam]);
 
-	const handleMudarCaminho = (novo: "PESSOAL" | "SPLITWISE" | "PJ") => {
+	const handleMudarCaminho = (novo: "PESSOAL" | "COMPARTILHADO" | "PJ") => {
 		setCaminhoAtivo(novo);
 		setSearchParams({ tab: novo.toLowerCase() });
 	};
 
-	// Modais e dados do Splitwise na Home
+	// Modais e dados de despesas compartilhadas na Home
 	const [isAddSplitOpen, setIsAddSplitOpen] = useState(false);
 	const [isAddContatoOpen, setIsAddContatoOpen] = useState(false);
 	const [isChatIaOpen, setIsChatIaOpen] = useState(false);
@@ -149,7 +149,7 @@ export default function HomeWeb() {
 					.select("id, descricao, data, valor, terceiro_pago, observacao, cartao_id, conta_id, cartoes(nome), contas_bancarias(nome)")
 					.eq("usuario_id", user.id)
 					.ilike("observacao", "%parceria_credor_id%"),
-				splitwiseService.getGrupos(user.id).catch(() => [])
+				despesasCompartilhadasService.getGrupos(user.id).catch(() => [])
 			]);
 
 			const contatosRaw = resContatos?.data || [];
@@ -851,7 +851,7 @@ export default function HomeWeb() {
 				</h2>
 			</div>
 
-			{/* 3 CAMINHOS DA HOME: MINHAS FINANÇAS | FINANÇAS ENTRE PESSOAS (SPLITWISE) | FINANÇAS PJ */}
+			{/* 3 CAMINHOS DA HOME: MINHAS FINANÇAS | FINANÇAS ENTRE PESSOAS (COMPARTILHADAS) | FINANÇAS PJ */}
 			<div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4">
 				{/* CAMINHO 1: MINHAS FINANÇAS (PESSOAL) */}
 				<button
@@ -895,19 +895,19 @@ export default function HomeWeb() {
 					</div>
 				</button>
 
-				{/* CAMINHO 2: FINANÇAS ENTRE PESSOAS (SPLITWISE) */}
+				{/* CAMINHO 2: FINANÇAS ENTRE PESSOAS (COMPARTILHADAS) */}
 				<button
 					type="button"
-					onClick={() => handleMudarCaminho("SPLITWISE")}
+					onClick={() => handleMudarCaminho("COMPARTILHADO")}
 					className={`group text-left p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden ${
-						caminhoAtivo === "SPLITWISE"
+						caminhoAtivo === "COMPARTILHADO"
 							? "bg-gradient-to-br from-violet-600 to-purple-700 text-white shadow-lg shadow-purple-500/20 border-purple-500 ring-2 ring-purple-400/40"
 							: "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-purple-300 dark:hover:border-purple-800 text-slate-800 dark:text-slate-100 shadow-2xs"
 					}`}
 				>
 					<div className="flex items-center justify-between mb-3">
 						<div className={`w-11 h-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105 ${
-							caminhoAtivo === "SPLITWISE"
+							caminhoAtivo === "COMPARTILHADO"
 								? "bg-white/20 text-white"
 								: "bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400"
 						}`}>
@@ -916,26 +916,26 @@ export default function HomeWeb() {
 						<div className="flex items-center gap-1.5">
 							
 							<span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
-								caminhoAtivo === "SPLITWISE"
+								caminhoAtivo === "COMPARTILHADO"
 									? "bg-white/25 text-white"
 									: "bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400"
 							}`}>
-								Splitwise Hub
+								Contas Compartilhadas
 							</span>
 						</div>
 					</div>
-					<h3 className={`text-base sm:text-lg font-black tracking-tight ${caminhoAtivo === "SPLITWISE" ? "text-white" : "text-slate-800 dark:text-slate-100"}`}>
+					<h3 className={`text-base sm:text-lg font-black tracking-tight ${caminhoAtivo === "COMPARTILHADO" ? "text-white" : "text-slate-800 dark:text-slate-100"}`}>
 						Finanças entre Pessoas
 					</h3>
-					<p className={`text-xs mt-0.5 ${caminhoAtivo === "SPLITWISE" ? "text-purple-100" : "text-slate-400 dark:text-slate-500"}`}>
+					<p className={`text-xs mt-0.5 ${caminhoAtivo === "COMPARTILHADO" ? "text-purple-100" : "text-slate-400 dark:text-slate-500"}`}>
 						Divisão de contas, amigos e devedores
 					</p>
-					<div className={`mt-3.5 pt-3 border-t flex items-center justify-between ${caminhoAtivo === "SPLITWISE" ? "border-white/15" : "border-slate-100 dark:border-slate-800"}`}>
-						<span className={`text-[11px] font-bold ${caminhoAtivo === "SPLITWISE" ? "text-purple-100" : "text-slate-400"}`}>
+					<div className={`mt-3.5 pt-3 border-t flex items-center justify-between ${caminhoAtivo === "COMPARTILHADO" ? "border-white/15" : "border-slate-100 dark:border-slate-800"}`}>
+						<span className={`text-[11px] font-bold ${caminhoAtivo === "COMPARTILHADO" ? "text-purple-100" : "text-slate-400"}`}>
 							{saldoLiquidoSplit >= 0 ? "Saldo a Receber" : "Saldo a Pagar"}
 						</span>
 						<span className={`text-xs font-black ${
-							caminhoAtivo === "SPLITWISE"
+							caminhoAtivo === "COMPARTILHADO"
 								? "text-white"
 								: saldoLiquidoSplit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
 						}`}>
@@ -1026,7 +1026,7 @@ export default function HomeWeb() {
 									<span className="font-bold text-slate-700 dark:text-slate-300 truncate max-w-[150px]">{pay.title}</span>
 									<div className="text-right shrink-0">
 										<span className="text-slate-500 dark:text-slate-400 mr-2">{pay.date.includes("undefined") ? pay.date.replace("undefined", "01").split("-").reverse().join("/") : pay.date.split("-").reverse().join("/")}</span>
-										<span className="font-black text-rose-500 dark:text-rose-455">R$ {pay.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+										<span className="font-black text-rose-500 dark:text-rose-400">R$ {pay.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
 									</div>
 								</div>
 							))}
@@ -1079,20 +1079,20 @@ export default function HomeWeb() {
 				
 				<div className="flex flex-col sm:flex-row justify-end gap-3 w-full md:w-auto">
 					<div className="relative w-full sm:w-auto">
-						<select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))} className="w-full pr-8 pl-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-350 cursor-pointer appearance-none outline-none focus:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm">
+						<select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))} className="w-full pr-8 pl-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer appearance-none outline-none focus:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm">
 							{[hoje.getFullYear() - 1, hoje.getFullYear(), hoje.getFullYear() + 1].map(y => <option key={y} value={y}>{y}</option>)}
 						</select>
 						<ChevronDown size={12} className="absolute inset-y-0 right-3 my-auto text-slate-400 pointer-events-none" />
 					</div>
 					<div className="relative w-full sm:w-auto">
-						<select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value === "all" ? "all" : Number(e.target.value))} className="w-full pr-8 pl-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-350 cursor-pointer appearance-none outline-none focus:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm">
+						<select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value === "all" ? "all" : Number(e.target.value))} className="w-full pr-8 pl-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer appearance-none outline-none focus:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm">
 							<option value="all">Ano Todo</option>
 							{NOME_MESES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
 						</select>
 						<ChevronDown size={12} className="absolute inset-y-0 right-3 my-auto text-slate-400 pointer-events-none" />
 					</div>
 					<div className="relative w-full sm:w-auto">
-						<select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="w-full pr-8 pl-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-350 cursor-pointer appearance-none outline-none focus:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm">
+						<select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="w-full pr-8 pl-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer appearance-none outline-none focus:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm">
 							<option value="all">Visão Geral</option>
 							<option value="entradas">Só Entradas</option>
 							<option value="gastos">Só Gastos</option>
@@ -1111,14 +1111,14 @@ export default function HomeWeb() {
 					<Wallet size={120} className="absolute -top-4 -right-4 p-4 opacity-[0.03] pointer-events-none" />
 					<div>
 						<p className="text-indigo-300 dark:text-indigo-400 font-bold uppercase tracking-wider text-xs mb-3">{filterMonth === "all" ? "Saldo Anual Consolidado" : "Saldo do Período"}</p>
-						<h3 className="text-4xl sm:text-5xl font-black mb-1 flex items-baseline"><span className="text-indigo-455 text-2xl font-bold mr-1.5 opacity-80">R$</span><span>{saldoFiltrado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span></h3>
+						<h3 className="text-4xl sm:text-5xl font-black mb-1 flex items-baseline"><span className="text-indigo-500 text-2xl font-bold mr-1.5 opacity-80">R$</span><span>{saldoFiltrado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span></h3>
 					</div>
 				</motion.div>
-				{(filterCategory === "all" || filterCategory === "entradas") && <MetricCard title="Entradas (Período)" value={dashboardData.totaisMes.entradas} icon={<TrendingUp size={24} className="text-emerald-600 dark:text-emerald-455" />} bgClass="bg-emerald-50 dark:bg-emerald-950/30" colorClass="text-emerald-600 dark:text-emerald-455" borderClass="bg-emerald-500" />}
-				{(filterCategory === "all" || filterCategory === "gastos") && <MetricCard title="Gastos (Período)" value={dashboardData.totaisMes.gastos} icon={<TrendingDown size={24} className="text-rose-600 dark:text-rose-455" />} bgClass="bg-rose-50 dark:bg-rose-950/30" colorClass="text-rose-600 dark:text-rose-455" borderClass="bg-rose-500" />}
-				{filterCategory === "cartoes" && <MetricCard title="Faturas (Período)" value={dashboardData.totaisMes.faturas} icon={<CreditCard size={24} className="text-purple-600 dark:text-purple-450" />} bgClass="bg-purple-50 dark:bg-purple-950/30" colorClass="text-purple-600 dark:text-purple-450" borderClass="bg-purple-500" />}
-				{filterCategory === "investimentos" && <MetricCard title="Investimentos (Período)" value={dashboardData.totaisMes.investimentos} icon={<TrendingUp size={24} className="text-blue-600 dark:text-blue-450" />} bgClass="bg-blue-50 dark:bg-blue-950/30" colorClass="text-blue-600 dark:text-blue-450" borderClass="bg-blue-500" />}
-				{filterCategory === "dividas" && <MetricCard title="Dívidas (Período)" value={dashboardData.totaisMes.dividas} icon={<HandCoins size={24} className="text-orange-600 dark:text-orange-450" />} bgClass="bg-orange-50 dark:bg-orange-950/30" colorClass="text-orange-600 dark:text-orange-450" borderClass="bg-orange-500" />}
+				{(filterCategory === "all" || filterCategory === "entradas") && <MetricCard title="Entradas (Período)" value={dashboardData.totaisMes.entradas} icon={<TrendingUp size={24} className="text-emerald-600 dark:text-emerald-400" />} bgClass="bg-emerald-50 dark:bg-emerald-950/30" colorClass="text-emerald-600 dark:text-emerald-400" borderClass="bg-emerald-500" />}
+				{(filterCategory === "all" || filterCategory === "gastos") && <MetricCard title="Gastos (Período)" value={dashboardData.totaisMes.gastos} icon={<TrendingDown size={24} className="text-rose-600 dark:text-rose-400" />} bgClass="bg-rose-50 dark:bg-rose-950/30" colorClass="text-rose-600 dark:text-rose-400" borderClass="bg-rose-500" />}
+				{filterCategory === "cartoes" && <MetricCard title="Faturas (Período)" value={dashboardData.totaisMes.faturas} icon={<CreditCard size={24} className="text-purple-600 dark:text-purple-400" />} bgClass="bg-purple-50 dark:bg-purple-950/30" colorClass="text-purple-600 dark:text-purple-400" borderClass="bg-purple-500" />}
+				{filterCategory === "investimentos" && <MetricCard title="Investimentos (Período)" value={dashboardData.totaisMes.investimentos} icon={<TrendingUp size={24} className="text-blue-600 dark:text-blue-400" />} bgClass="bg-blue-50 dark:bg-blue-950/30" colorClass="text-blue-600 dark:text-blue-400" borderClass="bg-blue-500" />}
+				{filterCategory === "dividas" && <MetricCard title="Dívidas (Período)" value={dashboardData.totaisMes.dividas} icon={<HandCoins size={24} className="text-orange-600 dark:text-orange-400" />} bgClass="bg-orange-50 dark:bg-orange-950/30" colorClass="text-orange-600 dark:text-orange-400" borderClass="bg-orange-500" />}
 			</div>
 
 			{/* 5. PREVISÃO E EVOLUÇÃO ANUAL */}
@@ -1146,7 +1146,7 @@ export default function HomeWeb() {
 								<span>{previsaoGastoProximoMes.totalPrevisao.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
 							</h3>
 
-							<div className="space-y-3 text-sm text-slate-600 dark:text-slate-350">
+							<div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
 								<div className="flex justify-between items-center">
 									<span className="flex items-center gap-1.5"><CreditCard size={14} className="opacity-70 text-purple-500" /> Faturas Previstas</span>
 									<span className="font-bold text-slate-800 dark:text-slate-100">R$ {previsaoGastoProximoMes.totalParcelasProxMes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -1235,7 +1235,7 @@ export default function HomeWeb() {
 											<div className="flex justify-between items-center">
 												<div className="flex flex-col">
 													<p className="font-extrabold text-slate-800 dark:text-slate-100 text-sm sm:text-base">{res.cartao.nome}</p>
-													<p className="text-xs text-rose-500 dark:text-rose-450 font-bold mt-0.5">
+													<p className="text-xs text-rose-500 dark:text-rose-400 font-bold mt-0.5">
 														Fatura: R$ {res.totalFatura.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 													</p>
 												</div>
@@ -1275,7 +1275,7 @@ export default function HomeWeb() {
 								<div key={devedor.contato.id} className="flex justify-between items-center p-4 sm:p-5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800">
 									<div>
 										<p className="font-extrabold text-slate-800 dark:text-slate-100 text-sm sm:text-base">{devedor.contato.nome}</p>
-										<p className="text-xs font-medium text-slate-500 dark:text-slate-450">{devedor.contato.telefone || "Sem Telefone"}</p>
+										<p className="text-xs font-medium text-slate-500 dark:text-slate-400">{devedor.contato.telefone || "Sem Telefone"}</p>
 									</div>
 									<div className="flex items-center gap-4">
 										<div className="text-right">
@@ -1309,24 +1309,24 @@ export default function HomeWeb() {
 
 			{/* 8. ÚLTIMOS LANÇAMENTOS */}
 			<div className={`grid grid-cols-1 ${filterCategory === "all" ? "lg:grid-cols-2" : "lg:grid-cols-1"} gap-6`}>
-				{(filterCategory === "all" || filterCategory === "entradas") && <RecentSection title="Últimas Entradas" items={dashboardData.recentes.entradas} colorClass="text-emerald-500 dark:text-emerald-455" bgIconClass="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400" icon={<ArrowUpRight size={16} />} onMore={() => navigate("/entradas")} dateField="data" />}
-				{(filterCategory === "all" || filterCategory === "gastos") && <RecentSection title="Últimos Gastos" items={dashboardData.recentes.gastos} colorClass="text-rose-500 dark:text-rose-455" bgIconClass="bg-rose-50 text-rose-600 dark:bg-rose-950/20 dark:text-rose-450" icon={<ArrowDownRight size={16} />} onMore={() => navigate("/gastos")} dateField="data" />}
-				{filterCategory === "cartoes" && <RecentSection title="Últimos Pagtos Fatura" items={dashboardData.recentes.cartoes} colorClass="text-purple-500 dark:text-purple-450" bgIconClass="bg-purple-50 text-purple-600 dark:bg-purple-950/20 dark:text-purple-400" icon={<ArrowDownRight size={16} />} onMore={() => navigate("/cartoes")} dateField="data" />}
-				{filterCategory === "investimentos" && <RecentSection title="Últimos Investimentos" items={dashboardData.recentes.investimentos} colorClass="text-blue-500 dark:text-blue-450" bgIconClass="bg-blue-50 text-blue-600 dark:bg-blue-950/20 dark:text-blue-400" icon={<TrendingUp size={16} />} onMore={() => navigate("/investimentos")} titleField="titulo" dateField={null} />}
-				{filterCategory === "dividas" && <RecentSection title="Últimas Dívidas" items={dashboardData.recentes.dividas} colorClass="text-orange-500 dark:text-orange-450" bgIconClass="bg-orange-50 text-orange-600 dark:bg-orange-950/20 dark:text-orange-400" icon={<TrendingDown size={16} />} onMore={() => navigate("/dividas")} dateField="vencimento_parcela" />}
+				{(filterCategory === "all" || filterCategory === "entradas") && <RecentSection title="Últimas Entradas" items={dashboardData.recentes.entradas} colorClass="text-emerald-500 dark:text-emerald-400" bgIconClass="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400" icon={<ArrowUpRight size={16} />} onMore={() => navigate("/entradas")} dateField="data" />}
+				{(filterCategory === "all" || filterCategory === "gastos") && <RecentSection title="Últimos Gastos" items={dashboardData.recentes.gastos} colorClass="text-rose-500 dark:text-rose-400" bgIconClass="bg-rose-50 text-rose-600 dark:bg-rose-950/20 dark:text-rose-400" icon={<ArrowDownRight size={16} />} onMore={() => navigate("/gastos")} dateField="data" />}
+				{filterCategory === "cartoes" && <RecentSection title="Últimos Pagtos Fatura" items={dashboardData.recentes.cartoes} colorClass="text-purple-500 dark:text-purple-400" bgIconClass="bg-purple-50 text-purple-600 dark:bg-purple-950/20 dark:text-purple-400" icon={<ArrowDownRight size={16} />} onMore={() => navigate("/cartoes")} dateField="data" />}
+				{filterCategory === "investimentos" && <RecentSection title="Últimos Investimentos" items={dashboardData.recentes.investimentos} colorClass="text-blue-500 dark:text-blue-400" bgIconClass="bg-blue-50 text-blue-600 dark:bg-blue-950/20 dark:text-blue-400" icon={<TrendingUp size={16} />} onMore={() => navigate("/investimentos")} titleField="titulo" dateField={null} />}
+				{filterCategory === "dividas" && <RecentSection title="Últimas Dívidas" items={dashboardData.recentes.dividas} colorClass="text-orange-500 dark:text-orange-400" bgIconClass="bg-orange-50 text-orange-600 dark:bg-orange-950/20 dark:text-orange-400" icon={<TrendingDown size={16} />} onMore={() => navigate("/dividas")} dateField="vencimento_parcela" />}
 				</div>
 				</>
-			) : caminhoAtivo === "SPLITWISE" ? (
+			) : caminhoAtivo === "COMPARTILHADO" ? (
 				/* ========================================================
-				   CAMINHO 2: FINANÇAS ENTRE PESSOAS (SPLITWISE HUB)
+				   CAMINHO 2: FINANÇAS ENTRE PESSOAS (DESPESAS COMPARTILHADAS)
 				   ======================================================== */
 				<motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 sm:space-y-8">
-					{/* BANNER SPLITWISE HUB */}
+					{/* BANNER DESPESAS COMPARTILHADAS */}
 					<div className="bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-700 rounded-3xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden">
 						<div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
 							<div>
 								<div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider mb-3">
-									<Users size={14} /> Splitwise & Despesas Compartilhadas
+									<Users size={14} /> Despesas Compartilhadas
 								</div>
 								<h2 className="text-2xl sm:text-3xl font-black tracking-tight">
 									Finanças entre Amigos e Grupos
@@ -1365,7 +1365,7 @@ export default function HomeWeb() {
 						</div>
 					</div>
 
-					{/* KPIS DO SPLITWISE */}
+					{/* KPIS COMPARTILHADAS */}
 					<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 						<div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-xs flex items-center gap-4">
 							<div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-500 shrink-0">
@@ -1614,7 +1614,7 @@ export default function HomeWeb() {
 				<EmBreveView modulo="PJ" onVoltarPessoal={() => handleMudarCaminho("PESSOAL")} />
 			)}
 
-			{/* MODAL DE ADICIONAR SPLITWISE */}
+			{/* MODAL DE DIVIDIR DESPESA */}
 			<AddSplitDespesaModal 
 				isOpen={isAddSplitOpen}
 				onClose={() => setIsAddSplitOpen(false)}
@@ -1653,7 +1653,7 @@ export default function HomeWeb() {
 				userName={nome}
 			/>
 
-			{/* MODAL DE CHAT IA DE ACORDOS / SPLITWISE */}
+			{/* MODAL DE CHAT IA DE ACORDOS  */}
 			<ChatAcordosIaModal 
 				isOpen={isChatIaOpen}
 				onClose={() => setIsChatIaOpen(false)}
@@ -1727,7 +1727,7 @@ function MetricCard({ title, value, icon, bgClass, colorClass, borderClass }: an
 		<motion.div whileHover={{ y: -2 }} className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col justify-between">
 			<div>
 				<div className="flex items-center gap-3 mb-4"><div className={`p-3 rounded-xl ${bgClass} ${colorClass}`}>{icon}</div><p className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-xs">{title}</p></div>
-				<h3 className="text-3xl sm:text-4xl font-black text-slate-800 dark:text-slate-100 flex items-baseline"><span className="text-slate-400 dark:text-slate-655 text-xl font-bold mr-1.5 opacity-80">R$</span><span>{value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span></h3>
+				<h3 className="text-3xl sm:text-4xl font-black text-slate-800 dark:text-slate-100 flex items-baseline"><span className="text-slate-400 dark:text-slate-600 text-xl font-bold mr-1.5 opacity-80">R$</span><span>{value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span></h3>
 			</div>
 			<div className="h-1.5 w-full bg-slate-50 dark:bg-slate-800 rounded-full mt-6 overflow-hidden"><div className={`h-full ${borderClass} rounded-full`} style={{ width: "40%" }} /></div>
 		</motion.div>
@@ -1751,7 +1751,7 @@ function RecentSection({ title, items, colorClass, bgIconClass, icon, onMore, ti
 								<div className={`p-3 rounded-xl shrink-0 ${bgIconClass}`}>{icon}</div>
 								<div className="min-w-0 flex-1">
 									<p className="font-extrabold text-slate-700 dark:text-slate-300 text-sm truncate">{item[titleField] || item.descricao}</p>
-									{dateField && item[dateField] && <p className="text-xs text-slate-500 dark:text-slate-450 font-semibold mt-0.5">{new Date(item[dateField] + "T12:00:00").toLocaleDateString("pt-BR")}</p>}
+									{dateField && item[dateField] && <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-0.5">{new Date(item[dateField] + "T12:00:00").toLocaleDateString("pt-BR")}</p>}
 								</div>
 							</div>
 							<p className={`font-black text-sm sm:text-base shrink-0 ${colorClass}`}>R$ {Number(item.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>

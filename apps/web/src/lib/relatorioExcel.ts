@@ -102,7 +102,7 @@ function categoriaDe(t: Transacao): string {
 }
 
 /** Data ISO (YYYY-MM-DD) → Date em UTC (o ExcelJS grava datas como UTC). */
-function dataExcel(iso: string): Date | string {
+export function dataExcel(iso: string): Date | string {
 	const [a, m, d] = (iso || "").split("-").map(Number);
 	return a && m && d ? new Date(Date.UTC(a, m - 1, d)) : iso;
 }
@@ -110,12 +110,12 @@ function dataExcel(iso: string): Date | string {
 // ----------------------------------------------------------------------------
 // Estilo
 // ----------------------------------------------------------------------------
-const FONTE = "Segoe UI";
-const FMT_MOEDA = '"R$ " #,##0.00;[Red]-"R$ " #,##0.00;"R$ " 0.00';
-const FMT_PCT = "0.0%;[Red]-0.0%;0.0%";
-const FMT_DATA = "dd/mm/yyyy";
+export const FONTE = "Segoe UI";
+export const FMT_MOEDA = '"R$ " #,##0.00;[Red]-"R$ " #,##0.00;"R$ " 0.00';
+export const FMT_PCT = "0.0%;[Red]-0.0%;0.0%";
+export const FMT_DATA = "dd/mm/yyyy";
 
-const CORES = {
+export const CORES = {
 	titulo: "3D3030",
 	cabecalho: "4E342E",
 	receita: { texto: "1B5E20", fundo: "E8F5E9", total: "C8E6C9" },
@@ -140,7 +140,7 @@ function borda(cell: ExcelJS.Cell, cor = CORES.borda) {
 	cell.border = { top: b, bottom: b, left: b, right: b };
 }
 
-function titulo(sheet: ExcelJS.Worksheet, texto: string, ultimaColuna: number, subtitulo?: string) {
+export function titulo(sheet: ExcelJS.Worksheet, texto: string, ultimaColuna: number, subtitulo?: string) {
 	const row = sheet.addRow([texto]);
 	sheet.mergeCells(row.number, 1, row.number, ultimaColuna);
 	row.height = 40;
@@ -157,7 +157,7 @@ function titulo(sheet: ExcelJS.Worksheet, texto: string, ultimaColuna: number, s
 	sheet.addRow([]);
 }
 
-function secao(sheet: ExcelJS.Worksheet, texto: string, ultimaColuna: number, cor: { texto: string; fundo: string }) {
+export function secao(sheet: ExcelJS.Worksheet, texto: string, ultimaColuna: number, cor: { texto: string; fundo: string }) {
 	const row = sheet.addRow([texto]);
 	sheet.mergeCells(row.number, 1, row.number, ultimaColuna);
 	row.height = 24;
@@ -167,7 +167,7 @@ function secao(sheet: ExcelJS.Worksheet, texto: string, ultimaColuna: number, co
 	c.alignment = { horizontal: "left", vertical: "middle" };
 }
 
-function cabecalho(sheet: ExcelJS.Worksheet, colunas: string[]) {
+export function cabecalho(sheet: ExcelJS.Worksheet, colunas: string[]) {
 	const row = sheet.addRow(colunas);
 	row.height = 26;
 	row.eachCell((cell, n) => {
@@ -180,7 +180,7 @@ function cabecalho(sheet: ExcelJS.Worksheet, colunas: string[]) {
 }
 
 /** Linha de dados com formatação por coluna. */
-function linha(
+export function linha(
 	sheet: ExcelJS.Worksheet,
 	valores: ExcelJS.CellValue[],
 	formatos: Record<number, string> = {},

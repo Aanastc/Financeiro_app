@@ -3,6 +3,7 @@ import { authService } from "../../../../packages/services/auth.service";
 import { useNavigate, Link } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { Mail, ArrowLeft, RefreshCw } from "lucide-react";
+import Copyright from "../components/Copyright";
 
 export default function ForgotPasswordWeb() {
 	const [email, setEmail] = useState("");
@@ -34,7 +35,7 @@ export default function ForgotPasswordWeb() {
 	};
 
 	return (
-		<div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 font-sans transition-colors duration-200">
+		<div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4 font-sans transition-colors duration-200">
 			<form
 				onSubmit={handleResetRequest}
 				className="bg-white dark:bg-slate-900 p-6 sm:p-10 md:p-14 rounded-3xl sm:rounded-[40px] md:rounded-[50px] shadow-2xl w-full max-w-md border border-slate-100 dark:border-slate-800 transition-colors duration-200 relative overflow-hidden"
@@ -68,7 +69,7 @@ export default function ForgotPasswordWeb() {
 
 				<button
 					disabled={loading}
-					className="w-full bg-[#4CAF50] hover:bg-[#43a047] disabled:opacity-50 text-white p-5 rounded-3xl font-black mt-8 transition-all transform hover:scale-[1.01] shadow-lg shadow-green-150 dark:shadow-none cursor-pointer uppercase text-sm flex items-center justify-center space-x-2"
+					className="w-full bg-[#4CAF50] hover:bg-[#43a047] disabled:opacity-50 text-white p-5 rounded-3xl font-black mt-8 transition-all transform hover:scale-[1.01] shadow-lg shadow-green-100 dark:shadow-none cursor-pointer uppercase text-sm flex items-center justify-center space-x-2"
 				>
 					{loading ? (
 						<>
@@ -90,6 +91,7 @@ export default function ForgotPasswordWeb() {
 					</Link>
 				</div>
 			</form>
+			<Copyright className="mt-6" />
 		</div>
 	);
 }

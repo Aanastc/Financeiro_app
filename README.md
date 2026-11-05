@@ -124,7 +124,7 @@ finance-app/
 │   │   ├── document-import.types.ts       # Tipagens e schemas estritos por tipo de documento
 │   │   ├── finance.service.ts             # Regras de negócio contábeis e persistência
 │   │   ├── paginacao.ts                   # Busca paginada (o Supabase limita 1000 linhas por consulta)
-│   │   ├── splitwise.service.ts           # Grupos e divisão de despesas
+│   │   ├── despesas-compartilhadas.service.ts           # Grupos e divisão de despesas
 │   │   └── supabase.ts                    # Cliente Supabase com persistência segura
 │   └── utils/
 │       ├── cartao.utils.ts                # Ciclos de fatura
@@ -193,4 +193,6 @@ npm run build
 ---
 
 ## 📄 8. Licença
-Este projeto é privado e desenvolvido para portfólio profissional e uso pessoal. Todos os direitos reservados.
+© ANA LETICIA TECH. Todos os direitos reservados.
+
+Este projeto é de propriedade da ANA LETICIA TECH e está publicado apenas para fins de portfólio. Não é permitido copiar, modificar, distribuir ou usar comercialmente o código sem autorização expressa.

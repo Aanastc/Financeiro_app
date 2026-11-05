@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
 import { authService } from "../../../../packages/services/auth.service";
 import { financeService } from "../../../../packages/services/finance.service";
-import { splitwiseService } from "../../../../packages/services/splitwise.service";
-import type { Grupo } from "../../../../packages/services/splitwise.service";
+import { despesasCompartilhadasService } from "../../../../packages/services/despesas-compartilhadas.service";
+import type { Grupo } from "../../../../packages/services/despesas-compartilhadas.service";
 import { supabase } from "../../../../packages/services/supabase";
 import { motion } from "framer-motion";
 import {
+	Download,
 	Users,
 	CheckCircle2,
 	X,
@@ -27,8 +28,11 @@ import toast from "react-hot-toast";
 import AddContatoWeb from "../components/AddContatoWeb";
 import AddSplitDespesaModal from "../components/AddSplitDespesaModal";
 import ConviteAmigoModal from "../components/ConviteAmigoModal";
+import CompartilhadoComigo from "../components/CompartilhadoComigo";
 import ChatAcordosIaModal from "../components/ChatAcordosIaModal";
 import CriarGrupoModal from "../components/CriarGrupoModal";
+import { telefoneWhatsApp } from "../../../../packages/services/convite.service";
+import { exportarExcelGrupo, exportarExcelPessoa } from "../lib/relatorioDivisao";
 
 export default function Devedores() {
 	const [userId, setUserId] = useState<string>("");
@@ -100,7 +104,7 @@ export default function Devedores() {
 							"terceiro.eq.true,observacao.ilike.%is_split%,observacao.ilike.%parceria_credor_id%",
 						)
 						.order("data", { ascending: false }),
-					splitwiseService.getGrupos(user.id),
+					despesasCompartilhadasService.getGrupos(user.id),
 				]);
 
 			setDevedores(devedoresData || []);
@@ -218,7 +222,7 @@ export default function Devedores() {
 			}
 		} catch (error) {
 			console.error(error);
-			toast.error("Erro ao carregar dados do Splitwise");
+			toast.error("Erro ao carregar despesas compartilhadas");
 		} finally {
 			setLoading(false);
 		}
@@ -272,13 +276,9 @@ export default function Devedores() {
 		return null;
 	};
 
-	// COBRAR VIA WHATSAPP COM RELATÓRIO DO SPLITWISE
+	// COBRAR VIA WHATSAPP COM RELATÓRIO COMPARTILHADAS
 	const handleCobrarWhatsApp = (devedor: any) => {
-		const telefone = devedor.contato?.telefone?.replace(/\D/g, "");
-		if (!telefone || telefone.length < 10) {
-			toast.error("Telefone inválido ou não cadastrado.");
-			return;
-		}
+		const telefone = telefoneWhatsApp(devedor.contato?.telefone);
 
 		const itensPendentes = (devedor.itens || []).filter(
 			(i: any) => !i.terceiro_pago,
@@ -300,12 +300,14 @@ export default function Devedores() {
 				}
 				return `• ${i.descricao} (${dataFormatada}): R$ ${Number(i.valor).toFixed(2)}`;
 			})
-			.join("%0A");
+			.join("\n");
 
 		const total = Number(devedor.total_devido).toFixed(2);
-		const mensagem = `Olá, ${devedor.contato.nome}! Tudo bem?%0A%0ASegue o demonstrativo das despesas que dividimos pelo Splitwise:%0A%0A${itensText}%0A%0A*Total em aberto:* R$ ${total}%0A%0APor favor, me envie o comprovante quando realizar o Pix. Valeu!`;
+		const mensagem = `Olá, ${devedor.contato.nome}! Tudo bem?\n\nSegue o demonstrativo das despesas que dividimos:\n\n${itensText}\n\n*Total em aberto:* R$ ${total}\n\nPor favor, me envie o comprovante quando realizar o Pix. Valeu!`;
 
-		window.open(`https://wa.me/${telefone}?text=${mensagem}`, "_blank");
+		// Sem telefone válido, o WhatsApp abre para escolher o contato manualmente
+		const destino = telefone ? `https://wa.me/${telefone}` : "https://wa.me/";
+		window.open(`${destino}?text=${encodeURIComponent(mensagem)}`, "_blank", "noopener");
 	};
 
 	const handleDeleteContato = async (contatoId: string, nomeContato: string) => {
@@ -315,8 +317,12 @@ export default function Devedores() {
 			if (error) throw error;
 			toast.success(`Contato "${nomeContato}" excluído.`);
 			loadAllData();
-		} catch (e) {
-			toast.error("Erro ao excluir contato.");
+		} catch (e: any) {
+			toast.error(
+				e?.code === "23503"
+					? `"${nomeContato}" tem despesas ou grupos vinculados. Remova os vínculos antes de excluir.`
+					: "Erro ao excluir contato.",
+			);
 		}
 	};
 
@@ -336,7 +342,10 @@ export default function Devedores() {
 				selectedItemForPayment.valor_parcela_usuario ||
 				0,
 		);
-		let valorPago = valorOriginal;
+		const infoAnterior = getPaymentInfo(selectedItemForPayment.observacao) || {};
+		const jaPago = Number(infoAnterior.valor_pago) || 0;
+		const restante = Math.max(0, Math.round((valorOriginal - jaPago) * 100) / 100);
+		let valorPago = restante;
 		let isTotal = paymentType === "total";
 
 		if (!isTotal) {
@@ -346,23 +355,27 @@ export default function Devedores() {
 			if (
 				isNaN(parsedPartial) ||
 				parsedPartial <= 0 ||
-				parsedPartial >= valorOriginal
+				parsedPartial > restante
 			) {
 				toast.error(
-					`Informe um valor maior que zero e menor que R$ ${valorOriginal.toFixed(2)}`,
+					`Informe um valor maior que zero e até R$ ${restante.toFixed(2)} (restante)`,
 				);
 				return;
 			}
 			valorPago = parsedPartial;
+			// Parcial que quita o restante vira pagamento total
+			if (Math.abs(parsedPartial - restante) < 0.005) isTotal = true;
 		}
 
 		try {
-			const currentObservacao = selectedItemForPayment.observacao
-				? getPaymentInfo(selectedItemForPayment.observacao) || {}
-				: {};
+			const obsTexto = selectedItemForPayment.observacao;
+			// Observação em texto (ex.: "Categoria: Lazer") é preservada, não sobrescrita
+			const base = getPaymentInfo(obsTexto) || (obsTexto ? { observacao_original: obsTexto } : {});
+			const pagamentos = [...(Array.isArray(base.pagamentos) ? base.pagamentos : []), { valor: valorPago, data: paymentDate }];
 			const metadata = {
-				...currentObservacao,
-				valor_pago: valorPago,
+				...base,
+				pagamentos,
+				valor_pago: Math.round((jaPago + valorPago) * 100) / 100,
 				data_pagamento: paymentDate,
 				total: isTotal,
 			};
@@ -377,7 +390,7 @@ export default function Devedores() {
 
 			if (error) throw error;
 
-			toast.success("Pagamento registrado com sucesso no Splitwise!");
+			toast.success("Pagamento registrado com sucesso!");
 			setPaymentModalOpen(false);
 			setSelectedItemForPayment(null);
 			setPartialAmount("");
@@ -387,6 +400,15 @@ export default function Devedores() {
 			console.error(error);
 			toast.error("Erro ao registrar pagamento");
 		}
+	};
+
+	/** Remove os dados de pagamento da observação, devolvendo o texto original quando existir. */
+	const observacaoSemPagamento = (obs?: string | null): string | null => {
+		const info = getPaymentInfo(obs || "");
+		if (!info) return obs ?? null;
+		const { valor_pago, data_pagamento, total, pagamentos, observacao_original, ...resto } = info;
+		if (Object.keys(resto).length === 0) return observacao_original ?? null;
+		return JSON.stringify(observacao_original ? { ...resto, observacao_original } : resto);
 	};
 
 	const handleDesfazerPagamento = async (gastoId: string) => {
@@ -399,6 +421,7 @@ export default function Devedores() {
 				.from("transacoes")
 				.update({
 					terceiro_pago: false,
+					observacao: observacaoSemPagamento(todasDespesasSplit.find((t: any) => t.id === gastoId)?.observacao),
 				})
 				.eq("id", gastoId);
 
@@ -420,7 +443,7 @@ export default function Devedores() {
 		)
 			return;
 		try {
-			await splitwiseService.excluirGrupo(userId, grupo.id);
+			await despesasCompartilhadasService.excluirGrupo(userId, grupo.id);
 			toast.success(`Grupo "${grupo.nome}" excluído`);
 			if (grupoSelecionado?.id === grupo.id) {
 				setGrupoSelecionado(null);
@@ -477,7 +500,7 @@ export default function Devedores() {
 	// BALANÇO E SIMPLIFICAÇÃO DO GRUPO SELECIONADO
 	const analiseDoGrupo = useMemo(() => {
 		if (!grupoSelecionado || !grupoSelecionado.membros) return null;
-		return splitwiseService.calcularBalancoGrupo(
+		return despesasCompartilhadasService.calcularBalancoGrupo(
 			grupoSelecionado.membros,
 			despesasDoGrupoSelecionado,
 		);
@@ -488,8 +511,9 @@ export default function Devedores() {
 			initial={{ opacity: 0 }}
 			animate={{ opacity: 1 }}
 			className="space-y-6 sm:space-y-8 pb-20">
+			<CompartilhadoComigo />
 			{/* ========================================================
-          CABEÇALHO COM IDENTIDADE DO SPLITWISE
+          CABEÇALHO COM IDENTIDADE COMPARTILHADAS
          ======================================================== */}
 			<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-3xl sm:rounded-[36px] shadow-sm border border-slate-100 dark:border-slate-800">
 				<div>
@@ -499,7 +523,7 @@ export default function Devedores() {
 						</div>
 						<div>
 							<div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 mb-1">
-								Splitwise Hub Integrado
+								Despesas Compartilhadas
 							</div>
 							<h1 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight">
 								Devedores & Divisão de Contas
@@ -545,7 +569,7 @@ export default function Devedores() {
 			</div>
 
 			{/* ========================================================
-          KPIS GERAIS DO SPLITWISE
+          KPIS GERAIS COMPARTILHADAS
          ======================================================== */}
 			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 				{/* Total a Receber */}
@@ -623,7 +647,7 @@ export default function Devedores() {
 			</div>
 
 			{/* ========================================================
-          ABAS DE NAVEGAÇÃO ESTILO SPLITWISE
+          ABAS DE NAVEGAÇÃO 
          ======================================================== */}
 			{!grupoSelecionado && (
 				<div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4">
@@ -694,7 +718,7 @@ export default function Devedores() {
 				<div className="flex flex-col items-center justify-center py-20 gap-3">
 					<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
 					<p className="text-xs text-slate-400 font-semibold">
-						Carregando dados do Splitwise...
+						Carregando despesas compartilhadas...
 					</p>
 				</div>
 			) : grupoSelecionado ? (
@@ -717,7 +741,7 @@ export default function Devedores() {
 							</h2>
 							<p className="text-white/80 text-xs sm:text-sm mt-1 max-w-xl">
 								{grupoSelecionado.descricao ||
-									"Grupo de despesas compartilhadas no Splitwise."}{" "}
+									"Grupo de despesas compartilhadas."}{" "}
 								• {grupoSelecionado.membros?.length || 0} membros
 							</p>
 						</div>
@@ -730,6 +754,19 @@ export default function Devedores() {
 								}}
 								className="px-5 py-3 bg-white text-slate-900 rounded-2xl font-black text-xs shadow-md hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap">
 								<Plus size={16} /> Adicionar Despesa ao Grupo
+							</button>
+							<button
+								onClick={() =>
+									exportarExcelGrupo({
+										grupo: grupoSelecionado,
+										despesas: despesasDoGrupoSelecionado,
+										balancos: analiseDoGrupo?.balancos,
+										acertos: analiseDoGrupo?.simplificacao,
+									}).catch(() => toast.error("Não foi possível gerar a planilha."))
+								}
+								className="px-4 py-3 bg-white/20 hover:bg-white/30 text-white rounded-2xl font-black text-xs transition-colors cursor-pointer flex items-center gap-2 whitespace-nowrap"
+								title="Baixar planilha do grupo">
+								<Download size={16} /> Excel
 							</button>
 							<button
 								onClick={() => handleExcluirGrupo(grupoSelecionado)}
@@ -924,7 +961,7 @@ export default function Devedores() {
 				</div>
 			) : activeTab === "grupos" ? (
 				/* ========================================================
-           ABA 1: LISTAGEM DE GRUPOS DO SPLITWISE
+           ABA 1: LISTAGEM DE GRUPOS COMPARTILHADAS
            ======================================================== */
 				<div className="space-y-4">
 					<div className="flex justify-between items-center">
@@ -1087,6 +1124,18 @@ export default function Devedores() {
 												onClick={() => handleCobrarWhatsApp(d)}
 												className="flex-1 py-2 px-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer">
 												<MessageSquare size={14} /> Cobrar no WhatsApp
+											</button>
+
+											<button
+												onClick={() =>
+													exportarExcelPessoa({ nome: d.contato.nome, itens: d.itens || [] }).catch(() =>
+														toast.error("Não foi possível gerar a planilha."),
+													)
+												}
+												title={`Baixar planilha com ${d.contato.nome}`}
+												aria-label={`Baixar planilha com ${d.contato.nome}`}
+												className="py-2 px-3 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-100 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer">
+												<Download size={14} /> Excel
 											</button>
 
 											<button
@@ -1257,7 +1306,7 @@ export default function Devedores() {
            ======================================================== */
 				<div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
 					<h3 className="font-black text-lg text-slate-800 dark:text-slate-100">
-						Feed de Atividades do Splitwise
+						Feed de Atividades
 					</h3>
 
 					{todasDespesasSplit.length === 0 ? (

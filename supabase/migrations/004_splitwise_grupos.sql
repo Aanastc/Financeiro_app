@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRATION 004: GRUPOS E MEMBROS DO SPLITWISE
+-- MIGRATION 004: GRUPOS E MEMBROS (DESPESAS COMPARTILHADAS)
 -- ==============================================================================
 
 -- 1. TABELA DE GRUPOS

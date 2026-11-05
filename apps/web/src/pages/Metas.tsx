@@ -105,7 +105,7 @@ export default function MetasWeb() {
 			<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-5 sm:p-8 rounded-3xl sm:rounded-[40px] shadow-sm border border-gray-100 dark:border-slate-800 transition-colors">
 				<div className="space-y-1">
 					<div className="flex items-center gap-3">
-						<div className="bg-pink-100 dark:bg-pink-955/40 p-2 rounded-xl text-pink-600 dark:text-pink-400">
+						<div className="bg-pink-100 dark:bg-pink-950/40 p-2 rounded-xl text-pink-600 dark:text-pink-400">
 							<Target size={24} />
 						</div>
 						<h1 className="text-3xl font-black text-[#3D3030] dark:text-slate-100">Metas de Economia</h1>
@@ -154,7 +154,7 @@ export default function MetasWeb() {
 									<div 
 										onClick={() => setExtratoMeta(meta)}
 										title="Clique para ver o extrato"
-										className="bg-gray-50 dark:bg-slate-800 p-4 rounded-3xl group-hover:bg-pink-50 dark:group-hover:bg-pink-955/40 transition-colors shrink-0 cursor-pointer"
+										className="bg-gray-50 dark:bg-slate-800 p-4 rounded-3xl group-hover:bg-pink-50 dark:group-hover:bg-pink-950/40 transition-colors shrink-0 cursor-pointer"
 									>
 										<PiggyBank size={24} className="text-pink-500 dark:text-pink-400" />
 									</div>
@@ -167,7 +167,7 @@ export default function MetasWeb() {
 											{meta.titulo}
 										</h3>
 										{meta.debito_automatico && (
-											<span className="inline-block mt-2 bg-pink-50 dark:bg-pink-955/20 text-pink-600 dark:text-pink-400 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider truncate max-w-full">
+											<span className="inline-block mt-2 bg-pink-50 dark:bg-pink-950/20 text-pink-600 dark:text-pink-400 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider truncate max-w-full">
 												🔄 Débito: Dia {meta.debito_dia} (R$ {Number(meta.debito_valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
 											</span>
 										)}
@@ -179,7 +179,7 @@ export default function MetasWeb() {
 										<p className="text-[10px] font-black text-gray-400 uppercase">Progresso</p>
 										<p className="text-2xl font-black text-pink-500">{progresso.toFixed(0)}%</p>
 									</div>
-									<div className="w-full bg-gray-150 dark:bg-slate-800 h-3 rounded-full overflow-hidden">
+									<div className="w-full bg-gray-100 dark:bg-slate-800 h-3 rounded-full overflow-hidden">
 										<div 
 											className="h-full bg-pink-500 rounded-full transition-all duration-1000" 
 											style={{ width: `${Math.min(progresso, 100)}%` }}
@@ -188,7 +188,7 @@ export default function MetasWeb() {
 								</div>
 
 								{invVinculados.length > 0 && (
-									<div className="pt-3 border-t border-slate-150 dark:border-slate-800 space-y-1.5 text-left">
+									<div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-1.5 text-left">
 										<p className="text-[9px] font-black text-indigo-500 dark:text-indigo-400 uppercase tracking-wider">Investimentos Vinculados</p>
 										<div className="space-y-1 max-h-24 overflow-y-auto no-scrollbar">
 											{invVinculados.map(inv => (
@@ -216,7 +216,7 @@ export default function MetasWeb() {
 											<FileText size={11} className="text-pink-500 opacity-0 group-hover/cardacc:opacity-100 transition-opacity" />
 										</div>
 										<p className="font-black text-[#3D3030] dark:text-slate-200 text-sm">R$ {totalAcumulado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
-										<p className="text-[8px] text-slate-400 dark:text-slate-550 font-bold mt-0.5">
+										<p className="text-[8px] text-slate-400 dark:text-slate-500 font-bold mt-0.5">
 											Dep: R$ {totalDepositado.toLocaleString()} • Inv: R$ {totalInvestido.toLocaleString()}
 										</p>
 									</div>
@@ -229,7 +229,7 @@ export default function MetasWeb() {
 								<div className="grid grid-cols-2 gap-2">
 									<button 
 										onClick={() => setExtratoMeta(meta)}
-										className="py-3.5 px-3 bg-pink-50 dark:bg-pink-955/20 text-pink-600 dark:text-pink-400 hover:bg-pink-100 dark:hover:bg-pink-900/40 rounded-2xl font-black text-[10px] uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+										className="py-3.5 px-3 bg-pink-50 dark:bg-pink-950/20 text-pink-600 dark:text-pink-400 hover:bg-pink-100 dark:hover:bg-pink-900/40 rounded-2xl font-black text-[10px] uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer"
 										title="Visualizar histórico e excluir lançamentos incorretos"
 									>
 										<FileText size={14} /> Extrato

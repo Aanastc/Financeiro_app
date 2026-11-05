@@ -27,10 +27,14 @@ import {
 } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
 import { authService } from "../../../../packages/services/auth.service";
+import { conviteService } from "../../../../packages/services/convite.service";
+import { toast } from "react-hot-toast";
 import EditProfileModal from "../components/EditProfileModal";
 import { ImportarProvider } from "../contexts/ImportarContext";
 import GlobalTransactionModal from "../components/GlobalTransactionModal";
 import PageLoader from "../components/PageLoader";
+import Copyright from "../components/Copyright";
+import DesbloquearContaModal from "../components/DesbloquearContaModal";
 
 export default function DashboardLayout() {
   const navigate = useNavigate();
@@ -67,6 +71,35 @@ export default function DashboardLayout() {
   }, [theme]);
 
   const toggleTheme = () => setTheme((prev) => (prev === "light" ? "dark" : "light"));
+
+  // Convite pendente (link /register?convite=...): vincula a conta ao contato de quem convidou
+  useEffect(() => {
+    conviteService.aceitarPendente().then((res) => {
+      if (!res) return;
+      if (res.ok) {
+        toast.success(res.convidante ? `Conta conectada com ${res.convidante}!` : "Convite aceito!");
+      } else if (res.motivo === "email_diferente") {
+        toast.error("Este convite foi enviado para outro e-mail.");
+      } else if (res.motivo === "ja_vinculado") {
+        toast.error("Este convite já foi usado por outra conta.");
+      }
+    });
+  }, []);
+
+  // Convidado (entrou sem cadastro): só acessa a divisão de contas
+  const convidado = Boolean(userProfile?.convidado);
+  const [modalDesbloqueio, setModalDesbloqueio] = useState<"converter" | "senha" | null>(null);
+
+  useEffect(() => {
+    if (convidado && !location.pathname.startsWith("/devedores")) {
+      navigate("/devedores", { replace: true });
+    }
+  }, [convidado, location.pathname, navigate]);
+
+  // Convidado que confirmou o e-mail: falta só criar a senha
+  useEffect(() => {
+    if (userProfile?.precisaDefinirSenha) setModalDesbloqueio("senha");
+  }, [userProfile?.precisaDefinirSenha]);
 
   const fetchUser = async () => {
     const user = await authService.getCurrentUser();
@@ -167,6 +200,23 @@ export default function DashboardLayout() {
 
       {/* Navegação */}
       <nav className="flex-1 overflow-y-auto pr-1 pb-6 custom-scrollbar space-y-0.5">
+        {convidado ? (
+          <>
+            <NavGroup title="Convidado">
+              <NavItem to="/devedores" icon={Users} label="Divisão de Contas" colorClass="text-purple-500" />
+            </NavGroup>
+            {!isSidebarCollapsed && (
+              <button
+                onClick={() => setModalDesbloqueio("converter")}
+                className="mt-4 w-full text-left rounded-2xl p-4 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900 hover:bg-indigo-100 dark:hover:bg-indigo-950/70 transition-colors cursor-pointer"
+              >
+                <p className="text-sm font-black text-indigo-700 dark:text-indigo-300">Desbloquear tudo</p>
+                <p className="text-xs text-indigo-600/80 dark:text-indigo-300/80 mt-0.5">Contas, cartões, metas, investimentos e relatórios.</p>
+              </button>
+            )}
+          </>
+        ) : (
+        <>
         <NavGroup title="Visão Geral">
           <NavItem to="/home" icon={LayoutDashboard} label="Dashboard" />
           <NavItem to="/home?tab=pj" icon={Building2} label="Finanças PJ & MEI" colorClass="text-emerald-500" badge="Em Breve" />
@@ -185,7 +235,7 @@ export default function DashboardLayout() {
 
         <NavGroup title="Planejamento">
           <NavItem to="/dividas" icon={AlertTriangle} label="Dívidas" colorClass="text-amber-500" />
-          <NavItem to="/devedores" icon={Users} label="Devedores (Splitwise)" colorClass="text-purple-500" badge="Em Breve" />
+          <NavItem to="/devedores" icon={Users} label="Devedores" colorClass="text-purple-500" />
           <NavItem to="/metas" icon={Target} label="Metas" colorClass="text-blue-500" />
         </NavGroup>
 
@@ -197,6 +247,8 @@ export default function DashboardLayout() {
           <NavItem to="/importar" icon={Upload} label="Importar" />
           <NavItem to="/consultor" icon={Brain} label="Consultor IA" colorClass="text-pink-500" />
         </NavGroup>
+        </>
+        )}
       </nav>
     </div>
   );
@@ -314,15 +366,43 @@ export default function DashboardLayout() {
           {/* PAGE CONTENT */}
           <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6 relative">
             <div className="max-w-6xl mx-auto w-full pb-24" id="main-outlet-wrapper">
+              {convidado && (
+                <div role="status" className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50 dark:bg-indigo-950/30 px-4 py-3">
+                  <p className="text-sm font-semibold text-indigo-900 dark:text-indigo-200">
+                    Você está como <strong>convidado</strong>: só a divisão de contas está disponível.
+                  </p>
+                  <button
+                    onClick={() => setModalDesbloqueio("converter")}
+                    className="shrink-0 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black cursor-pointer"
+                  >
+                    Desbloquear todas as funcionalidades
+                  </button>
+                </div>
+              )}
+              {userProfile && !convidado && (!userProfile.cpf || !userProfile.telefone) && (
+                <div role="status" className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3">
+                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                    Complete seu cadastro: informe seu <strong>CPF</strong> e <strong>celular</strong> para proteger sua conta.
+                  </p>
+                  <button
+                    onClick={() => setIsEditModalOpen(true)}
+                    className="shrink-0 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black cursor-pointer"
+                  >
+                    Completar agora
+                  </button>
+                </div>
+              )}
               <Suspense fallback={<PageLoader />}>
                 <Outlet context={{ userProfile, fetchUser }} />
               </Suspense>
+              <Copyright className="mt-16" />
             </div>
           </main>
 
         </div>
 
         {/* FLOATING ACTION BUTTON (NOVA MOVIMENTAÇÃO) */}
+        {!convidado && (
         <div className="fixed bottom-6 right-6 sm:bottom-8 sm:right-8 z-40">
           <div className="relative">
             {isNewTxMenuOpen && (
@@ -403,6 +483,14 @@ export default function DashboardLayout() {
             </button>
           </div>
         </div>
+        )}
+
+        <DesbloquearContaModal
+          isOpen={modalDesbloqueio !== null}
+          modo={modalDesbloqueio || "converter"}
+          onClose={() => setModalDesbloqueio(null)}
+          onSuccess={() => { fetchUser(); navigate("/home"); }}
+        />
 
         <EditProfileModal 
           isOpen={isEditModalOpen} 

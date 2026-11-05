@@ -21,3 +21,24 @@ body {
   -ms-overflow-style: none;  /* IE and Edge */
   scrollbar-width: none;  /* Firefox */
 }
+
+/* Autopreenchimento do navegador: mantém o fundo e o texto do tema (antes ficava azul-claro no modo escuro) */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+	-webkit-text-fill-color: #1e293b;
+	-webkit-box-shadow: 0 0 0 1000px #f8fafc inset;
+	caret-color: #1e293b;
+	transition: background-color 9999s ease-out 0s;
+}
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover,
+.dark input:-webkit-autofill:focus,
+.dark textarea:-webkit-autofill,
+.dark select:-webkit-autofill {
+	-webkit-text-fill-color: #f1f5f9;
+	-webkit-box-shadow: 0 0 0 1000px #0f172a inset;
+	caret-color: #f1f5f9;
+}
