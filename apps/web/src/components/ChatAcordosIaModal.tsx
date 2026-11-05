@@ -298,70 +298,163 @@ Responda SOMENTE um objeto JSON válido (sem tags markdown de bloco, sem explica
 		}
 	};
 
+	const agora = () =>
+		new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
+	const responder = (text: string, acordoPreview?: AcordoEstruturado | null) =>
+		setMessages((prev) => [
+			...prev,
+			{ id: `${Date.now()}-${Math.random()}`, sender: "ai", text, acordoPreview, timestamp: agora() },
+		]);
+
+	/** Garante formato válido mesmo que a IA devolva campos faltando ou um id inventado. */
+	const normalizarAcordo = (bruto: any): AcordoEstruturado => {
+		const r = bruto && typeof bruto === "object" ? bruto : {};
+		const numero = (v: any) => {
+			const n = typeof v === "number" ? v : parseFloat(String(v ?? "").replace(/\./g, "").replace(",", "."));
+			return Number.isFinite(n) ? n : 0;
+		};
+		const contato = (contatosDisponiveis || []).find((c) => c.id === r.contatoId);
+		return {
+			...r,
+			contatoId: contato?.id,
+			contatoNome: contato?.nome || (typeof r.contatoNome === "string" && r.contatoNome.trim()) || undefined,
+			itens: (Array.isArray(r.itens) ? r.itens : [])
+				.filter((i: any) => i && i.titulo)
+				.map((i: any) => ({ ...i, valor: numero(i.valor) })),
+			cronograma: (Array.isArray(r.cronograma) ? r.cronograma : [])
+				.filter((p: any) => p && /^\d{1,2}\/\d{1,2}/.test(String(p.data || "")))
+				.map((p: any) => ({ ...p, data: String(p.data), valor: numero(p.valor), pago: Boolean(p.pago) })),
+		};
+	};
+
+	const semAcento = (t: string) =>
+		t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+
+	/** Procura um contato cadastrado citado na mensagem (nome completo ou primeiro nome único). */
+	const encontrarContato = (texto: string) => {
+		const alvo = semAcento(texto);
+		const lista = contatosDisponiveis || [];
+		const completo = lista
+			.filter((c) => c.nome && alvo.includes(semAcento(c.nome)))
+			.sort((a, b) => b.nome.length - a.nome.length)[0];
+		if (completo) return completo;
+		const palavras = new Set(alvo.split(/[^a-z0-9]+/).filter(Boolean));
+		const porPrimeiroNome = lista.filter((c) => c.nome && palavras.has(semAcento(c.nome).split(/\s+/)[0]));
+		return porPrimeiroNome.length === 1 ? porPrimeiroNome[0] : null;
+	};
+
+	/** "Para Julia de Souza no grupo 69" -> "Julia de Souza" */
+	const extrairNomeDaResposta = (texto: string) =>
+		texto
+			.replace(/\s+(?:no|do|na|da|em)\s+grupo\b.*$/i, "")
+			.replace(/^(?:[eé]\s+)?(?:para|pra|com|de)\s+(?:[oa]\s+)?/i, "")
+			.replace(/[.!?]+$/, "")
+			.trim();
+
+	const ehRespostaDeContato = (texto: string) =>
+		texto.length <= 120 && !/\d{1,2}\/\d{1,2}|r\$|\d+[.,]\d{2}/i.test(texto);
+
 	const handleEnviarMensagem = async () => {
 		const texto = input.trim();
 		if (!texto || loading) return;
 
-		const userMsg: ChatMessage = {
-			id: Date.now().toString(),
-			sender: "user",
-			text: texto,
-			timestamp: new Date().toLocaleTimeString("pt-BR", {
-				hour: "2-digit",
-				minute: "2-digit",
-			}),
-		};
-
-		setMessages((prev) => [...prev, userMsg]);
+		setMessages((prev) => [...prev, { id: Date.now().toString(), sender: "user", text: texto, timestamp: agora() }]);
 		setInput("");
-		setLoading(true);
 
-		try {
-			// Processa o texto com a IA
-			const resultado = await processarTextoComIa(texto);
+		const avisoGrupo = /\bgrupo\b/i.test(texto)
+			? "\n\nObs.: aqui eu registro acordos entre você e **uma pessoa**. Para dividir entre os membros de um grupo, use **Nova despesa → Grupo**."
+			: "";
 
-			// Se o usuário selecionou contato previamente, aplica
-			if (contatoSelecionadoId && !resultado.contatoId) {
-				const c = contatosDisponiveis.find(
-					(x) => x.id === contatoSelecionadoId,
+		// Resposta à pergunta "para quem é este acordo?": completa o acordo atual em vez de começar outro
+		if (acordoAtual && !acordoAtual.contatoNome && ehRespostaDeContato(texto)) {
+			const existente = encontrarContato(texto);
+			if (existente) {
+				vincularContato(existente.id, avisoGrupo);
+				return;
+			}
+			const nome = extrairNomeDaResposta(texto);
+			if (nome.length >= 2) {
+				const atualizado: AcordoEstruturado = {
+					...acordoAtual,
+					contatoId: undefined,
+					contatoNome: nome,
+					campoFaltante: undefined,
+					prontoParaLancar: true,
+				};
+				setAcordoAtual(atualizado);
+				responder(
+					`**${nome}** ainda não está nos seus contatos — vou cadastrar ao confirmar. Confira os dados e clique em **"Confirmar e Registrar Acordo"**:${avisoGrupo}`,
+					atualizado,
 				);
-				if (c) {
-					resultado.contatoId = c.id;
-					resultado.contatoNome = c.nome;
-					delete resultado.campoFaltante;
+				return;
+			}
+		}
+
+		setLoading(true);
+		try {
+			const limiteMs = 90_000;
+			const resultado = normalizarAcordo(
+				await Promise.race([
+					processarTextoComIa(texto),
+					new Promise<AcordoEstruturado>((resolve) =>
+						setTimeout(() => resolve(extrairAcordoFallback(texto)), limiteMs),
+					),
+				]),
+			);
+
+			// Mensagem só com complemento (ex.: nome) sobre um acordo já interpretado: mantém as parcelas
+			if (acordoAtual && resultado.cronograma.length === 0 && resultado.itens.length === 0) {
+				const contato = encontrarContato(texto);
+				const nome = contato?.nome || resultado.contatoNome;
+				if (nome) {
+					const atualizado: AcordoEstruturado = {
+						...acordoAtual,
+						contatoId: contato?.id,
+						contatoNome: nome,
+						campoFaltante: undefined,
+						prontoParaLancar: true,
+					};
+					setAcordoAtual(atualizado);
+					responder(`Vinculei o acordo a **${nome}**. Confira e confirme:${avisoGrupo}`, atualizado);
+					return;
 				}
 			}
 
-			setAcordoAtual(resultado);
-
-			let respostaTexto = "";
-			if (!resultado.contatoNome && !resultado.contatoId) {
-				respostaTexto =
-					"Entendi o cronograma e os valores com perfeição! 🎉\n\nPorém, **para quem você deve** esse valor (ou quem deve para você)?\n\nSelecione um contato abaixo ou me informe o nome da pessoa para vincularmos ao acordo:";
-			} else {
-				respostaTexto = `Organizei todos os itens com **${resultado.contatoNome}**! Veja o demonstrativo de conferência abaixo para validar antes de lançar:`;
+			if (resultado.cronograma.length === 0) {
+				responder(
+					`Não encontrei datas e valores de pagamento nessa mensagem.\n\nCole o acordo com as parcelas (ex.: "05/12 — R$ 379,61") para eu montar o cronograma.${avisoGrupo}`,
+				);
+				return;
 			}
 
-			const aiMsg: ChatMessage = {
-				id: (Date.now() + 1).toString(),
-				sender: "ai",
-				text: respostaTexto,
-				acordoPreview: resultado,
-				timestamp: new Date().toLocaleTimeString("pt-BR", {
-					hour: "2-digit",
-					minute: "2-digit",
-				}),
-			};
+			// Se o usuário selecionou contato previamente, aplica
+			if (contatoSelecionadoId && !resultado.contatoId) {
+				const c = contatosDisponiveis.find((x) => x.id === contatoSelecionadoId);
+				if (c) {
+					resultado.contatoId = c.id;
+					resultado.contatoNome = c.nome;
+				}
+			}
+			if (resultado.contatoNome) delete resultado.campoFaltante;
+			else resultado.campoFaltante = "contato";
 
-			setMessages((prev) => [...prev, aiMsg]);
+			setAcordoAtual(resultado);
+			responder(
+				resultado.contatoNome
+					? `Organizei todos os itens com **${resultado.contatoNome}**! Veja o demonstrativo de conferência abaixo para validar antes de lançar:${avisoGrupo}`
+					: "Entendi o cronograma e os valores! 🎉\n\nPorém, **para quem você deve** esse valor (ou quem deve para você)?\n\nSelecione um contato abaixo ou escreva o nome da pessoa:",
+				resultado,
+			);
 		} catch (err) {
-			toast.error("Ocorreu um erro ao processar o acordo.");
+			console.error("[ChatAcordos]", err);
+			responder("Não consegui processar essa mensagem. Tente novamente em instantes.");
 		} finally {
 			setLoading(false);
 		}
 	};
 
-	const vincularContato = (contatoId: string) => {
+	const vincularContato = (contatoId: string, complemento = "") => {
 		setContatoSelecionadoId(contatoId);
 		const c = contatosDisponiveis.find((x) => x.id === contatoId);
 		if (!c || !acordoAtual) return;
@@ -379,7 +472,7 @@ Responda SOMENTE um objeto JSON válido (sem tags markdown de bloco, sem explica
 		const msg: ChatMessage = {
 			id: Date.now().toString(),
 			sender: "ai",
-			text: `Perfeito! Vinculei este acordo a **${c.nome}**. Confira os dados completos e clique em **"Confirmar e Registrar Acordo"** para salvar:`,
+			text: `Perfeito! Vinculei este acordo a **${c.nome}**. Confira os dados completos e clique em **"Confirmar e Registrar Acordo"** para salvar:${complemento}`,
 			acordoPreview: atualizado,
 			timestamp: new Date().toLocaleTimeString("pt-BR", {
 				hour: "2-digit",
@@ -540,7 +633,9 @@ Responda SOMENTE um objeto JSON válido (sem tags markdown de bloco, sem explica
 											? "bg-purple-600 text-white font-medium rounded-tr-xs shadow-xs"
 											: "bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 rounded-tl-xs border border-slate-200/50 dark:border-slate-700/50"
 									}`}>
-									{msg.text}
+									{msg.text.split(/\*\*(.+?)\*\*/g).map((parte, i) =>
+										i % 2 === 1 ? <strong key={i}>{parte}</strong> : parte,
+									)}
 								</div>
 
 								{/* SELETOR RÁPIDO DE CONTATO SE ESTIVER FALTANDO */}
