@@ -4,8 +4,11 @@ import { financeService } from "../../../../packages/services/finance.service";
 import { despesasCompartilhadasService } from "../../../../packages/services/despesas-compartilhadas.service";
 import type { Grupo } from "../../../../packages/services/despesas-compartilhadas.service";
 import { supabase } from "../../../../packages/services/supabase";
+import { buscarTodasPaginas } from "../../../../packages/services/paginacao";
 import { motion } from "framer-motion";
+import { useSearchParams } from "react-router-dom";
 import {
+	ChevronLeft,
 	Download,
 	Users,
 	CheckCircle2,
@@ -30,6 +33,9 @@ import AddSplitDespesaModal from "../components/AddSplitDespesaModal";
 import ConviteAmigoModal from "../components/ConviteAmigoModal";
 import CompartilhadoComigo from "../components/CompartilhadoComigo";
 import ChatAcordosIaModal from "../components/ChatAcordosIaModal";
+import ReceberPagamentoModal from "../components/ReceberPagamentoModal";
+import ListaPorData from "../components/ListaPorData";
+import PedirTelefoneModal from "../components/PedirTelefoneModal";
 import CriarGrupoModal from "../components/CriarGrupoModal";
 import { telefoneWhatsApp } from "../../../../packages/services/convite.service";
 import { exportarExcelGrupo, exportarExcelPessoa } from "../lib/relatorioDivisao";
@@ -57,6 +63,13 @@ export default function Devedores() {
 
 	// VISÃO DETALHADA DE UM GRUPO SELECIONADO
 	const [grupoSelecionado, setGrupoSelecionado] = useState<Grupo | null>(null);
+	// Link direto para um grupo (ex.: botão "Abrir" no card da Home): /devedores?grupo=<id>
+	const [searchParams, setSearchParams] = useSearchParams();
+	const grupoDaUrl = searchParams.get("grupo");
+	// Ao entrar/sair de um grupo, a página começa do topo
+	useEffect(() => {
+		window.scrollTo({ top: 0, behavior: "smooth" });
+	}, [grupoSelecionado?.id]);
 
 	// MODAIS
 	const [isAddSplitOpen, setIsAddSplitOpen] = useState(false);
@@ -64,6 +77,9 @@ export default function Devedores() {
 	const [isCriarGrupoOpen, setIsCriarGrupoOpen] = useState(false);
 	const [isChatIaOpen, setIsChatIaOpen] = useState(false);
 	const [contatoParaConvite, setContatoParaConvite] = useState<any>(null);
+	// Recebimento de quem te deve (com a conta onde o dinheiro entrou)
+	const [cobrarSemTelefone, setCobrarSemTelefone] = useState<any>(null);
+	const [receberDe, setReceberDe] = useState<{ contato: { id: string; nome: string }; itemIds?: string[]; valorSugerido?: number } | null>(null);
 	const [initialGrupoIdForSplit, setInitialGrupoIdForSplit] = useState<
 		string | null
 	>(null);
@@ -96,14 +112,21 @@ export default function Devedores() {
 						.select("*")
 						.eq("usuario_id", user.id)
 						.order("nome"),
-					supabase
-						.from("transacoes")
-						.select("*, cartoes(id, nome, cor_hex), contas_bancarias(id, nome, banco)")
-						.eq("usuario_id", user.id)
-						.or(
-							"terceiro.eq.true,observacao.ilike.%is_split%,observacao.ilike.%parceria_credor_id%",
-						)
-						.order("data", { ascending: false }),
+					// Todas as páginas (o Supabase devolve no máximo 1000 linhas por consulta)
+					buscarTodasPaginas<any>((de, ate) =>
+						supabase
+							.from("transacoes")
+							.select("*, cartoes(id, nome, cor_hex), contas_bancarias(id, nome, instituicao)")
+							.eq("usuario_id", user.id)
+							.or("terceiro.eq.true,observacao.ilike.%is_split%,observacao.ilike.%parceria_credor_id%")
+							.order("data", { ascending: false })
+							.order("id")
+							.range(de, ate),
+					).catch((erro) => {
+						console.error("[Devedores] Falha ao carregar despesas compartilhadas:", erro);
+						toast.error("Não foi possível carregar as despesas compartilhadas.");
+						return [] as any[];
+					}),
 					despesasCompartilhadasService.getGrupos(user.id),
 				]);
 
@@ -127,7 +150,7 @@ export default function Devedores() {
 			setContatos(contatosList);
 			setGrupos(gruposRes || []);
 
-			const txs = transacoesRes.data || [];
+			const txs = transacoesRes || [];
 			setTodasDespesasSplit(txs);
 
 			// Mapeia e-mails que possuem conta no sistema
@@ -219,6 +242,14 @@ export default function Devedores() {
 			if (grupoSelecionado) {
 				const atualizado = gruposRes.find((g) => g.id === grupoSelecionado.id);
 				if (atualizado) setGrupoSelecionado(atualizado);
+			} else if (grupoDaUrl) {
+				const doLink = (gruposRes || []).find((g) => g.id === grupoDaUrl);
+				if (doLink) setGrupoSelecionado(doLink);
+				setSearchParams((prev) => {
+					const p = new URLSearchParams(prev);
+					p.delete("grupo");
+					return p;
+				}, { replace: true });
 			}
 		} catch (error) {
 			console.error(error);
@@ -277,11 +308,16 @@ export default function Devedores() {
 	};
 
 	// COBRAR VIA WHATSAPP COM RELATÓRIO COMPARTILHADAS
-	const handleCobrarWhatsApp = (devedor: any) => {
-		const telefone = telefoneWhatsApp(devedor.contato?.telefone);
+	const handleCobrarWhatsApp = (devedor: any, telefoneInformado?: string | null) => {
+		const telefone = telefoneWhatsApp(telefoneInformado ?? devedor.contato?.telefone);
+		// Sem celular cadastrado: pede antes (uma vez só; fica salvo no contato)
+		if (!telefone && telefoneInformado === undefined) {
+			setCobrarSemTelefone(devedor);
+			return;
+		}
 
 		const itensPendentes = (devedor.itens || []).filter(
-			(i: any) => !i.terceiro_pago,
+			(i: any) => !i.terceiro_pago && getPaymentInfo(i.observacao)?.resposta_cobranca !== "recusada",
 		);
 		if (itensPendentes.length === 0) {
 			toast.error("Não há despesas pendentes para este contato.");
@@ -298,7 +334,8 @@ export default function Devedores() {
 					const restante = Math.max(0, Number(i.valor) - payInfo.valor_pago);
 					return `• ${i.descricao} (${dataFormatada}): R$ ${Number(i.valor).toFixed(2)} (Resta: R$ ${restante.toFixed(2)})`;
 				}
-				return `• ${i.descricao} (${dataFormatada}): R$ ${Number(i.valor).toFixed(2)}`;
+				const opcional = payInfo?.opcional ? " — opcional" : "";
+				return `• ${i.descricao} (${dataFormatada}): R$ ${Number(i.valor).toFixed(2)}${opcional}`;
 			})
 			.join("\n");
 
@@ -308,6 +345,124 @@ export default function Devedores() {
 		// Sem telefone válido, o WhatsApp abre para escolher o contato manualmente
 		const destino = telefone ? `https://wa.me/${telefone}` : "https://wa.me/";
 		window.open(`${destino}?text=${encodeURIComponent(mensagem)}`, "_blank", "noopener");
+	};
+
+	const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+
+	const contatoTemConta = (c: any) =>
+		Boolean(c && (c.usuario_vinculado_id || (c.email && usuariosComConta.has(String(c.email).toLowerCase()))));
+
+	const contatoDoMembro = (m: any) =>
+		contatos.find((c) => c.id === m.contato_id) ||
+		(m.usuario_id ? contatos.find((c) => c.usuario_vinculado_id === m.usuario_id) : undefined);
+
+	/** Convite a partir do grupo: usa o contato do membro ou cria um (e liga ao membro). */
+	const handleConvidarMembro = async (membro: any) => {
+		const existente = contatoDoMembro(membro);
+		if (existente) {
+			setContatoParaConvite(existente);
+			return;
+		}
+		try {
+			const mesmoNome = contatos.find(
+				(c) => (c.nome || "").trim().toLowerCase() === (membro.nome || "").trim().toLowerCase(),
+			);
+			let contato = mesmoNome;
+			if (!contato) {
+				const { data, error } = await supabase
+					.from("contatos")
+					.insert([{ usuario_id: userId, nome: membro.nome, email: membro.email || null, telefone: membro.telefone || null }])
+					.select()
+					.single();
+				if (error) throw error;
+				contato = data;
+			}
+			await supabase.from("grupo_membros").update({ contato_id: contato.id }).eq("id", membro.id).is("contato_id", null);
+			setContatoParaConvite(contato);
+			loadAllData();
+		} catch (e) {
+			console.error(e);
+			toast.error("Não foi possível preparar o convite.");
+		}
+	};
+
+	const normalizarNome = (t?: string | null) =>
+		(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+
+	/** Grupos em que o contato é membro (pelo vínculo ou pelo mesmo nome). */
+	const gruposDoContato = (contato: any) =>
+		grupos
+			.map((g) => ({
+				grupo: g,
+				membro: (g.membros || []).find(
+					(m) => !m.is_user && (m.contato_id === contato?.id || normalizarNome(m.nome) === normalizarNome(contato?.nome)),
+				),
+			}))
+			.filter((x) => x.membro);
+
+	/**
+	 * Leva lançamentos feitos fora do grupo para dentro dele: só acrescenta ao
+	 * JSON de observação o grupo, quem pagou e a parte do membro. Valores,
+	 * datas e situação de pagamento não mudam.
+	 */
+	const handleMoverParaGrupo = async (devedor: any, grupo: Grupo, membro: any) => {
+		const itens = (devedor.itens || []).filter((i: any) => !getPaymentInfo(i.observacao)?.grupo_id);
+		if (itens.length === 0) return;
+		if (!window.confirm(`Mover ${itens.length} lançamento(s) de ${devedor.contato.nome} para o grupo "${grupo.nome}"?
+
+Valores, datas e pagamentos continuam iguais.`)) return;
+		const eu = (grupo.membros || []).find((m) => m.is_user);
+		const carregando = toast.loading("Movendo para o grupo...");
+		try {
+			for (let i = 0; i < itens.length; i += 20) {
+				const lote = itens.slice(i, i + 20);
+				const resultados = await Promise.all(
+					lote.map((item: any) => {
+						const obs = (item.observacao || "").trim();
+						const meta = getPaymentInfo(obs) || (obs ? { observacao_original: obs } : {});
+						// Sua parte da parcela, quando dá para saber (lançado pelo assistente: valor da compra / parcelas)
+						const parteDele = Number(item.valor);
+						const minhaParte =
+							Number(meta.valor_compra) > 0
+								? Math.max(0, Math.round((Number(meta.valor_compra) / (Number(meta.total_parcelas) || 1) - parteDele) * 100) / 100)
+								: Number(meta.minha_cota) > 0
+									? Number(meta.minha_cota)
+									: 0;
+						const novo = {
+							...meta,
+							grupo_id: grupo.id,
+							grupo_nome: grupo.nome,
+							valor_total: Math.round((parteDele + minhaParte) * 100) / 100,
+							pago_por_id: eu?.id,
+							participantes: [
+								{ id: membro.id, nome: membro.nome, valor_devido: parteDele, contato_id: devedor.contato.id },
+								{ id: eu?.id, nome: "Você", valor_devido: minhaParte, is_user: true },
+							],
+						};
+						return supabase.from("transacoes").update({ observacao: JSON.stringify(novo) }).eq("id", item.id);
+					}),
+				);
+				const erro = resultados.find((r) => r.error)?.error;
+				if (erro) throw erro;
+			}
+			await supabase.from("grupo_membros").update({ contato_id: devedor.contato.id }).eq("id", membro.id).is("contato_id", null);
+			toast.success(`${itens.length} lançamento(s) movidos para o grupo "${grupo.nome}".`, { id: carregando });
+			loadAllData();
+		} catch (e) {
+			console.error(e);
+			toast.error("Não foi possível mover todos os lançamentos. Tente de novo.", { id: carregando });
+			loadAllData();
+		}
+	};
+
+	const handleAlternarOpcional = async (item: any, opcional: boolean) => {
+		try {
+			await financeService.definirCobrancaOpcional(item, opcional);
+			toast.success(opcional ? "Marcada como opcional: a pessoa poderá recusar." : "Cobrança marcada como obrigatória.");
+			loadAllData();
+		} catch {
+			toast.error("Não foi possível alterar a cobrança.");
+		}
 	};
 
 	const handleDeleteContato = async (contatoId: string, nomeContato: string) => {
@@ -328,6 +483,18 @@ export default function Devedores() {
 
 	// LIQUIDAÇÃO (SETTLE UP)
 	const handleOpenPaymentModal = (item: any) => {
+		if (item.terceiro && item.contato_id) {
+			const contato = contatos.find((c) => c.id === item.contato_id) || item.contatos;
+			if (contato) {
+				const pago = Number(getPaymentInfo(item.observacao)?.valor_pago) || 0;
+				setReceberDe({
+					contato: { id: contato.id, nome: contato.nome },
+					itemIds: [item.id],
+					valorSugerido: Math.max(0, Math.round((Number(item.valor) - pago) * 100) / 100),
+				});
+				return;
+			}
+		}
 		setSelectedItemForPayment(item);
 		setPaymentDate(new Date().toISOString().split("T")[0]);
 		setPaymentType("total");
@@ -491,10 +658,35 @@ export default function Devedores() {
 	// DESPESAS DO GRUPO SELECIONADO
 	const despesasDoGrupoSelecionado = useMemo(() => {
 		if (!grupoSelecionado) return [];
-		return todasDespesasSplit.filter((d) => {
-			const meta = getPaymentInfo(d.observacao);
-			return meta?.grupo_id === grupoSelecionado.id;
-		});
+		const membros = grupoSelecionado.membros || [];
+		return todasDespesasSplit
+			.filter((d) => getPaymentInfo(d.observacao)?.grupo_id === grupoSelecionado.id)
+			.map((d) => {
+				// Lançamentos levados ao grupo só com a parte de quem deve: completa a parte de
+				// quem pagou (valor da compra / parcelas − partes dos outros). Só na exibição;
+				// nada é gravado.
+				const meta = getPaymentInfo(d.observacao);
+				const parts: any[] = Array.isArray(meta?.participantes) ? meta.participantes : [];
+				const pagadorId = meta?.pago_por_id;
+				const valorCompra = Number(meta?.valor_compra) || 0;
+				if (!pagadorId || valorCompra <= 0 || parts.some((p) => p.id === pagadorId)) return d;
+				const pagador = membros.find((m) => m.id === pagadorId);
+				if (!pagador) return d;
+				const outros = parts.reduce((s, p) => s + (Number(p.valor_devido) || 0), 0);
+				const parteDoPagador = Math.max(
+					0,
+					Math.round((valorCompra / (Number(meta.total_parcelas) || 1) - outros) * 100) / 100,
+				);
+				const corrigido = {
+					...meta,
+					valor_total: Math.round((outros + parteDoPagador) * 100) / 100,
+					participantes: [
+						...parts,
+						{ id: pagador.id, nome: pagador.nome, valor_devido: parteDoPagador, ...(pagador.is_user ? { is_user: true } : {}) },
+					],
+				};
+				return { ...d, observacao: JSON.stringify(corrigido) };
+			});
 	}, [grupoSelecionado, todasDespesasSplit]);
 
 	// BALANÇO E SIMPLIFICAÇÃO DO GRUPO SELECIONADO
@@ -511,6 +703,8 @@ export default function Devedores() {
 			initial={{ opacity: 0 }}
 			animate={{ opacity: 1 }}
 			className="space-y-6 sm:space-y-8 pb-20">
+			{!grupoSelecionado && (
+			<>
 			<CompartilhadoComigo />
 			{/* ========================================================
           CABEÇALHO COM IDENTIDADE COMPARTILHADAS
@@ -627,24 +821,21 @@ export default function Devedores() {
 					</span>
 				</div>
 
-				{/* Grupos e Conexões */}
+				{/* Grupos e Contatos */}
 				<div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
-					<p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-						Grupos & Conexões
+					<p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+						Grupos & Contatos
 					</p>
 					<h3 className="text-2xl font-black text-slate-800 dark:text-slate-100 mt-1">
-						{grupos.length} grupos • {contatos.length} amigos
+						{plural(grupos.length, "grupo", "grupos")} • {plural(contatos.length, "contato", "contatos")}
 					</h3>
 					<span className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 block font-bold">
-						{
-							contatos.filter(
-								(c) => c.email && usuariosComConta.has(c.email.toLowerCase()),
-							).length
-						}{" "}
-						com conta ativa no app
+						{contatos.filter(contatoTemConta).length} com conta ativa no app
 					</span>
 				</div>
 			</div>
+			</>
+			)}
 
 			{/* ========================================================
           ABAS DE NAVEGAÇÃO 
@@ -726,238 +917,363 @@ export default function Devedores() {
            VISÃO DETALHADA DO GRUPO SELECIONADO
            ======================================================== */
 				<div className="space-y-6 animate-in fade-in duration-200">
-					{/* BARRA SUPERIOR DO GRUPO */}
-					<div
-						className="p-6 sm:p-8 rounded-3xl text-white shadow-lg relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6"
-						style={{ backgroundColor: grupoSelecionado.cor_hex || "#8b5cf6" }}>
-						<div>
-							<button
-								onClick={() => setGrupoSelecionado(null)}
-								className="inline-flex items-center gap-1.5 bg-white/20 hover:bg-white/30 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-white mb-3 transition-colors cursor-pointer">
-								← Voltar para todos os grupos
-							</button>
-							<h2 className="text-2xl sm:text-3xl font-black">
-								{grupoSelecionado.nome}
-							</h2>
-							<p className="text-white/80 text-xs sm:text-sm mt-1 max-w-xl">
-								{grupoSelecionado.descricao ||
-									"Grupo de despesas compartilhadas."}{" "}
-								• {grupoSelecionado.membros?.length || 0} membros
-							</p>
-						</div>
+					{/* CABEÇALHO DO GRUPO */}
+					{(() => {
+						const cor = grupoSelecionado.cor_hex || "#8b5cf6";
+						const membros = grupoSelecionado.membros || [];
+						const meuBalanco = analiseDoGrupo?.balancos.find(
+							(b) => membros.find((m) => m.id === b.membroId)?.is_user,
+						);
+						const saldo = meuBalanco?.saldoLiquido || 0;
+						const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+						const kpis = [
+							{ rotulo: "Total gasto no grupo", valor: fmt(analiseDoGrupo?.totalGastoGrupo || 0), cor: "text-slate-800 dark:text-slate-100" },
+							{ rotulo: "Você pagou", valor: fmt(meuBalanco?.totalPago || 0), cor: "text-slate-800 dark:text-slate-100" },
+							{ rotulo: "Sua parte", valor: fmt(meuBalanco?.totalDevido || 0), cor: "text-slate-800 dark:text-slate-100" },
+							{
+								rotulo: saldo > 0.01 ? "Te devem no grupo" : saldo < -0.01 ? "Você deve no grupo" : "Seu saldo",
+								valor: Math.abs(saldo) > 0.01 ? fmt(Math.abs(saldo)) : "Tudo certo",
+								cor:
+									saldo > 0.01
+										? "text-emerald-600 dark:text-emerald-400"
+										: saldo < -0.01
+											? "text-rose-600 dark:text-rose-400"
+											: "text-slate-500 dark:text-slate-400",
+							},
+						];
+						return (
+							<>
+								<div
+									className="bg-white dark:bg-slate-900 p-5 sm:p-7 rounded-3xl sm:rounded-[36px] shadow-sm border border-slate-100 dark:border-slate-800 border-t-4 space-y-5"
+									style={{ borderTopColor: cor }}>
+									<button
+										onClick={() => setGrupoSelecionado(null)}
+										className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 transition-colors cursor-pointer">
+										<ChevronLeft size={15} /> Todos os grupos
+									</button>
 
-						<div className="flex flex-wrap items-center gap-3">
-							<button
-								onClick={() => {
-									setInitialGrupoIdForSplit(grupoSelecionado.id);
-									setIsAddSplitOpen(true);
-								}}
-								className="px-5 py-3 bg-white text-slate-900 rounded-2xl font-black text-xs shadow-md hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap">
-								<Plus size={16} /> Adicionar Despesa ao Grupo
-							</button>
-							<button
-								onClick={() =>
-									exportarExcelGrupo({
-										grupo: grupoSelecionado,
-										despesas: despesasDoGrupoSelecionado,
-										balancos: analiseDoGrupo?.balancos,
-										acertos: analiseDoGrupo?.simplificacao,
-									}).catch(() => toast.error("Não foi possível gerar a planilha."))
-								}
-								className="px-4 py-3 bg-white/20 hover:bg-white/30 text-white rounded-2xl font-black text-xs transition-colors cursor-pointer flex items-center gap-2 whitespace-nowrap"
-								title="Baixar planilha do grupo">
-								<Download size={16} /> Excel
-							</button>
-							<button
-								onClick={() => handleExcluirGrupo(grupoSelecionado)}
-								className="p-3 bg-white/20 hover:bg-rose-600/80 text-white rounded-2xl transition-colors cursor-pointer"
-								title="Excluir Grupo">
-								<Trash2 size={16} />
-							</button>
-						</div>
-					</div>
-
-					{/* BALANÇOS E SIMPLIFICAÇÃO DO GRUPO */}
-					{analiseDoGrupo && (
-						<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-							{/* QUEM DEVE A QUEM (SIMPLIFICAÇÃO DE DÍVIDAS) */}
-							<div className="lg:col-span-1 bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
-								<div className="flex items-center justify-between">
-									<h3 className="font-black text-base text-slate-800 dark:text-slate-100 flex items-center gap-2">
-										<Sparkles size={18} className="text-amber-500" /> Como
-										Liquidar (Settle Up)
-									</h3>
-									<span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-										Menos pagamentos
-									</span>
-								</div>
-
-								{analiseDoGrupo.simplificacao.length === 0 ? (
-									<div className="p-6 text-center text-slate-400 text-xs font-semibold bg-slate-50 dark:bg-slate-800/40 rounded-2xl">
-										<CheckCircle2
-											size={32}
-											className="mx-auto text-emerald-500 mb-2"
-										/>
-										Tudo quitado neste grupo! Não há saldos pendentes.
-									</div>
-								) : (
-									<div className="space-y-2.5">
-										{analiseDoGrupo.simplificacao.map((s, idx) => (
+									<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+										<div className="flex items-center gap-4 min-w-0">
 											<div
-												key={idx}
-												className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs gap-3">
-												<div className="min-w-0">
-													<span className="font-black text-slate-800 dark:text-slate-100">
-														{s.devedorNome}
-													</span>
-													<span className="text-slate-400 mx-1">paga para</span>
-													<span className="font-black text-purple-600 dark:text-purple-400">
-														{s.credorNome}
-													</span>
-												</div>
-												<span className="font-black text-emerald-600 dark:text-emerald-400 text-sm whitespace-nowrap">
-													R${" "}
-													{s.valor.toLocaleString("pt-BR", {
-														minimumFractionDigits: 2,
-													})}
-												</span>
+												className="w-14 h-14 shrink-0 rounded-2xl text-white flex items-center justify-center shadow-md"
+												style={{ backgroundColor: cor }}>
+												<Users size={26} />
 											</div>
-										))}
-									</div>
-								)}
-							</div>
+											<div className="min-w-0">
+												<p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Grupo</p>
+												<h1 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight truncate">
+													{grupoSelecionado.nome}
+												</h1>
+												<div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+													{membros.map((m) => {
+														const ativo = !m.is_user && contatoTemConta(contatoDoMembro(m));
+														return (
+															<span
+																key={m.id}
+																className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+																{m.is_user ? `${m.nome} (você)` : m.nome}
+																{ativo && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Conta ativa no app" />}
+															</span>
+														);
+													})}
+												</div>
+											</div>
+										</div>
 
-							{/* SALDO DE CADA MEMBRO */}
-							<div className="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
-								<div className="flex items-center justify-between">
-									<h3 className="font-black text-base text-slate-800 dark:text-slate-100">
-										Balanço dos Membros do Grupo
-									</h3>
-									<span className="text-xs font-bold text-slate-400">
-										Total gasto no grupo:{" "}
-										<strong className="text-slate-800 dark:text-slate-100">
-											R${" "}
-											{analiseDoGrupo.totalGastoGrupo.toLocaleString("pt-BR", {
-												minimumFractionDigits: 2,
-											})}
-										</strong>
-									</span>
+										<div className="flex flex-wrap items-center gap-2">
+											<button
+												onClick={() => {
+													setInitialGrupoIdForSplit(grupoSelecionado.id);
+													setIsAddSplitOpen(true);
+												}}
+												className="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-xs shadow-md shadow-emerald-600/20 transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap">
+												<Plus size={16} /> Adicionar despesa
+											</button>
+											<button
+												onClick={() => setIsChatIaOpen(true)}
+												className="px-4 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-2xl font-black text-xs shadow-md shadow-purple-500/20 transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap">
+												<Sparkles size={16} /> Lançar com IA
+											</button>
+											<button
+												onClick={() =>
+													exportarExcelGrupo({
+														grupo: grupoSelecionado,
+														despesas: despesasDoGrupoSelecionado,
+														balancos: analiseDoGrupo?.balancos,
+														acertos: analiseDoGrupo?.simplificacao,
+													}).catch(() => toast.error("Não foi possível gerar a planilha."))
+												}
+												className="px-4 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-2xl font-bold text-xs transition-colors cursor-pointer flex items-center gap-2 whitespace-nowrap"
+												title="Baixar planilha do grupo">
+												<Download size={16} /> Excel
+											</button>
+											<button
+												onClick={() => handleExcluirGrupo(grupoSelecionado)}
+												className="p-3 bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 dark:bg-slate-800 dark:hover:bg-rose-950/50 dark:text-slate-400 dark:hover:text-rose-400 rounded-2xl transition-colors cursor-pointer"
+												title="Excluir grupo"
+												aria-label="Excluir grupo">
+												<Trash2 size={16} />
+											</button>
+										</div>
+									</div>
 								</div>
 
-								<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-									{analiseDoGrupo.balancos.map((b) => (
+								<div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+									{kpis.map((k) => (
 										<div
-											key={b.membroId}
-											className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-between gap-3">
-											<div>
-												<h4 className="font-black text-xs text-slate-800 dark:text-slate-100">
-													{b.nome}
-												</h4>
-												<p className="text-[10px] text-slate-400 mt-0.5">
-													Pagou: R$ {b.totalPago.toFixed(2)} • Consumiu: R${" "}
-													{b.totalDevido.toFixed(2)}
-												</p>
-											</div>
-
-											<div className="text-right shrink-0">
-												{b.saldoLiquido > 0.01 ? (
-													<span className="inline-block px-2.5 py-1 rounded-full text-xs font-black bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-														+R$ {b.saldoLiquido.toFixed(2)}
-													</span>
-												) : b.saldoLiquido < -0.01 ? (
-													<span className="inline-block px-2.5 py-1 rounded-full text-xs font-black bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
-														-R$ {Math.abs(b.saldoLiquido).toFixed(2)}
-													</span>
-												) : (
-													<span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-														Quitado
-													</span>
-												)}
-											</div>
+											key={k.rotulo}
+											className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
+											<p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{k.rotulo}</p>
+											<p className={`text-lg sm:text-2xl font-black tabular-nums mt-1 ${k.cor}`}>{k.valor}</p>
 										</div>
 									))}
 								</div>
-							</div>
-						</div>
-					)}
+							</>
+						);
+					})()}
 
-					{/* HISTÓRICO DE DESPESAS DO GRUPO */}
-					<div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
-						<h3 className="font-black text-base text-slate-800 dark:text-slate-100">
-							Despesas Divididas neste Grupo (
-							{despesasDoGrupoSelecionado.length})
-						</h3>
+					{/* ACERTOS E MEMBROS DO GRUPO */}
+					{analiseDoGrupo && (() => {
+						const membros = grupoSelecionado.membros || [];
+						const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+						const nomeExibido = (nome: string, id?: string) =>
+							membros.find((m) => m.id === id)?.is_user ? `${nome.split(" ")[0]} (você)` : nome;
+						return (
+							<div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+								{/* QUEM PAGA QUEM (menor número de transferências) */}
+								<div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
+									<div>
+										<h3 className="font-black text-base text-slate-800 dark:text-slate-100">Quem paga quem</h3>
+										<p className="text-xs text-slate-500 dark:text-slate-400">Com o menor número de transferências</p>
+									</div>
 
-						{despesasDoGrupoSelecionado.length === 0 ? (
-							<div className="p-8 text-center text-slate-400 text-xs font-medium bg-slate-50 dark:bg-slate-800/40 rounded-2xl">
-								Nenhuma despesa dividida neste grupo ainda. Clique em "Adicionar
-								Despesa ao Grupo" para começar!
-							</div>
-						) : (
-							<div className="space-y-3">
-								{despesasDoGrupoSelecionado.map((d) => {
-									const meta = getPaymentInfo(d.observacao);
-									return (
-										<div
-											key={d.id}
-											className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-											<div className="flex items-center gap-3">
-												<div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black shrink-0">
-													<Split size={18} />
-												</div>
-												<div>
-													<h4 className="font-black text-xs text-slate-800 dark:text-slate-100">
-														{d.descricao}
-													</h4>
-													<p className="text-[10px] text-slate-400 mt-0.5">
-														Pago por{" "}
-														<strong className="text-slate-600 dark:text-slate-300">
-															{meta?.pago_por_nome || "Participante"}
-														</strong>{" "}
-														em{" "}
-														{new Date(d.data + "T12:00:00").toLocaleDateString(
-															"pt-BR",
-														)}
-														{meta?.metodo_divisao &&
-															` • Método: ${meta.metodo_divisao}`}
-													</p>
-												</div>
-											</div>
-
-											<div className="flex items-center justify-between sm:justify-end gap-3">
-												<span className="font-black text-sm text-slate-900 dark:text-slate-100">
-													R${" "}
-													{Number(meta?.valor_total || d.valor).toLocaleString(
-														"pt-BR",
-														{ minimumFractionDigits: 2 },
-													)}
-												</span>
-												{d.terceiro_pago ? (
-													<span className="flex items-center gap-2">
-														<span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-														Quitado
-													</span>
-														<button
-															onClick={() => handleDesfazerPagamento(d.id)}
-															title="Reabrir esta despesa"
-															className="text-[10px] font-bold text-slate-400 hover:text-rose-600 underline cursor-pointer">
-															Desfazer
-														</button>
-													</span>
-												) : (
-													<button
-														onClick={() => handleOpenPaymentModal(d)}
-														className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer">
-														Quitar / Settle
-													</button>
-												)}
-											</div>
+									{analiseDoGrupo.simplificacao.length === 0 ? (
+										<div className="p-6 text-center text-slate-500 dark:text-slate-400 text-xs font-semibold bg-slate-50 dark:bg-slate-800/40 rounded-2xl">
+											<CheckCircle2 size={28} className="mx-auto text-emerald-500 mb-2" />
+											Tudo acertado neste grupo.
 										</div>
-									);
-								})}
+									) : (
+										<div className="space-y-2">
+											{analiseDoGrupo.simplificacao.map((s, idx) => (
+												<div
+													key={idx}
+													className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-100 dark:border-slate-800 text-xs space-y-1">
+													<div className="flex items-center gap-1.5 min-w-0 font-bold text-slate-800 dark:text-slate-100">
+														<span className="truncate">{nomeExibido(s.devedorNome, s.devedorId)}</span>
+														<ArrowRight size={13} className="shrink-0 text-slate-400" />
+														<span className="truncate text-purple-700 dark:text-purple-300">{nomeExibido(s.credorNome, s.credorId)}</span>
+													</div>
+													<p className="font-black text-base tabular-nums text-slate-900 dark:text-slate-100">{fmt(s.valor)}</p>
+												</div>
+											))}
+										</div>
+									)}
+								</div>
+
+								{/* MEMBROS */}
+								<div className="lg:col-span-2 bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
+									<div>
+										<h3 className="font-black text-base text-slate-800 dark:text-slate-100">Membros</h3>
+										<p className="text-xs text-slate-500 dark:text-slate-400">Quanto cada um pagou e quanto era a parte de cada um</p>
+									</div>
+
+									<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+										{analiseDoGrupo.balancos.map((b) => {
+											const membro = membros.find((m) => m.id === b.membroId);
+											const ehVoce = Boolean(membro?.is_user);
+											const contato = membro && !ehVoce ? contatoDoMembro(membro) : undefined;
+											const ativo = !ehVoce && contatoTemConta(contato);
+											return (
+												<div
+													key={b.membroId}
+													className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 space-y-3">
+													<div className="flex items-start justify-between gap-2">
+														<div className="min-w-0">
+															<h4 className="font-black text-sm text-slate-800 dark:text-slate-100 truncate">
+																{b.nome}
+																{ehVoce && <span className="ml-1 text-xs font-bold text-slate-500 dark:text-slate-400">(você)</span>}
+															</h4>
+															<p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+																Pagou {fmt(b.totalPago)} · Parte {fmt(b.totalDevido)}
+															</p>
+														</div>
+														{b.saldoLiquido > 0.01 ? (
+															<span className="shrink-0 px-2.5 py-1 rounded-full text-xs font-black tabular-nums bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+																recebe {fmt(b.saldoLiquido)}
+															</span>
+														) : b.saldoLiquido < -0.01 ? (
+															<span className="shrink-0 px-2.5 py-1 rounded-full text-xs font-black tabular-nums bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+																deve {fmt(Math.abs(b.saldoLiquido))}
+															</span>
+														) : (
+															<span className="shrink-0 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+																em dia
+															</span>
+														)}
+													</div>
+													{membro && !ehVoce && (
+														<div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/70 dark:border-slate-700/60">
+															<span className={`text-[11px] font-bold ${ativo ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"}`}>
+																{ativo ? "Conta ativa no app" : "Ainda não está no app"}
+															</span>
+															{!ativo && (
+																<button
+																	onClick={() => handleConvidarMembro(membro)}
+																	className="px-2.5 py-1 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 dark:text-indigo-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors">
+																	<Send size={12} /> Convidar
+																</button>
+															)}
+														</div>
+													)}
+												</div>
+											);
+										})}
+									</div>
+								</div>
 							</div>
-						)}
-					</div>
+						);
+					})()}
+
+					{/* DESPESAS DO GRUPO (agrupadas por data: uma compra parcelada vira uma linha por mês) */}
+					{(() => {
+						const membros = grupoSelecionado.membros || [];
+						const fmt = (v: number) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+						const info = (d: any) => {
+							const meta = getPaymentInfo(d.observacao) || {};
+							const pagador = membros.find((m) => m.id === meta.pago_por_id);
+							const voce = Boolean(pagador?.is_user || meta.voce_pagou);
+							const minha = (meta.participantes || []).find((p: any) => p.is_user || membros.find((m) => m.id === p.id)?.is_user);
+							return {
+								meta,
+								quemPagou: voce ? "você" : meta.pago_por_nome || pagador?.nome || "outra pessoa",
+								minhaParte: minha ? Number(minha.valor_devido) || 0 : null,
+								total: Number(meta.valor_total || d.valor) || 0,
+								titulo: String(meta.descricao_original || d.descricao || "")
+									.replace(new RegExp(`\\s*\\[${grupoSelecionado.nome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]\\s*$`), "")
+									.trim(),
+							};
+						};
+						const compras = new Set(despesasDoGrupoSelecionado.map((d) => info(d).titulo)).size;
+						const datas = new Set(despesasDoGrupoSelecionado.map((d) => d.data)).size;
+
+						const statusItem = (d: any, pequeno = false) =>
+							d.terceiro_pago ? (
+								<span className="flex items-center gap-2">
+									<span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+										Quitado
+									</span>
+									<button
+										onClick={() => handleDesfazerPagamento(d.id)}
+										title="Reabrir esta despesa"
+										className="text-[11px] font-bold text-slate-500 hover:text-rose-600 dark:text-slate-400 underline cursor-pointer">
+										Desfazer
+									</button>
+								</span>
+							) : pequeno ? null : (
+								<button
+									onClick={() => handleOpenPaymentModal(d)}
+									className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer">
+									Registrar pagamento
+								</button>
+							);
+
+						return (
+							<div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
+								<div>
+									<h3 className="font-black text-base text-slate-800 dark:text-slate-100">Despesas do grupo</h3>
+									{despesasDoGrupoSelecionado.length > 0 && (
+										<p className="text-xs text-slate-500 dark:text-slate-400">
+											{compras} {compras === 1 ? "compra" : "compras"} · {datas} {datas === 1 ? "vencimento" : "vencimentos"}
+										</p>
+									)}
+								</div>
+
+								{despesasDoGrupoSelecionado.length === 0 ? (
+									<div className="p-8 text-center text-slate-500 dark:text-slate-400 text-xs font-medium bg-slate-50 dark:bg-slate-800/40 rounded-2xl">
+										Nenhuma despesa neste grupo ainda. Use "Adicionar despesa" ou "Lançar com IA".
+									</div>
+								) : (
+									<ListaPorData
+										itens={despesasDoGrupoSelecionado}
+										dataDe={(d: any) => d.data}
+										ordem="asc"
+										resumo={(lista: any[]) => {
+											const infos = lista.map(info);
+											const minha = infos.reduce((s, i) => s + (i.minhaParte || 0), 0);
+											const opcionais = lista.filter((d) => info(d).meta.opcional).length;
+											const pagadores = [...new Set(infos.map((i) => i.quemPagou))];
+											return {
+												total: infos.reduce((s, i) => s + i.total, 0),
+												quitado: lista.every((d) => d.terceiro_pago),
+												detalhe: `pago por ${pagadores.join(" e ")} · sua parte ${fmt(minha)}${opcionais ? ` · ${opcionais} opcional(is)` : ""}`,
+											};
+										}}
+										acao={(lista: any[]) => {
+											const abertos = lista.filter((d) => !d.terceiro_pago);
+											if (abertos.length === 0) return null;
+											const contatoId = abertos[0].contato_id;
+											const mesmoContato = abertos.every((d) => d.terceiro && d.contato_id && d.contato_id === contatoId);
+											const contato = contatos.find((c) => c.id === contatoId);
+											if (!mesmoContato || !contato) return null; // dívidas mistas: pagar item a item
+											const aberto = abertos.reduce(
+												(s, d) => s + Math.max(0, Number(d.valor) - (Number(getPaymentInfo(d.observacao)?.valor_pago) || 0)),
+												0,
+											);
+											return (
+												<button
+													onClick={() =>
+														setReceberDe({
+															contato: { id: contato.id, nome: contato.nome },
+															itemIds: abertos.map((d) => d.id),
+															valorSugerido: Math.round(aberto * 100) / 100,
+														})
+													}
+													className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap">
+													Registrar pagamento
+												</button>
+											);
+										}}
+										renderItem={(d: any, dentroDoMes: boolean) => {
+											const i = info(d);
+											return (
+												<div className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+													<div className="flex items-center gap-3 min-w-0">
+														<div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+															<Receipt size={15} />
+														</div>
+														<div className="min-w-0">
+															<h4 className="font-bold text-[13px] text-slate-800 dark:text-slate-100 truncate">
+																{i.titulo}
+																{i.meta.total_parcelas > 1 && (
+																	<span className="ml-1 font-semibold text-slate-500 dark:text-slate-400">
+																		({i.meta.parcela}/{i.meta.total_parcelas})
+																	</span>
+																)}
+															</h4>
+															<p className="text-[11px] text-slate-500 dark:text-slate-400">
+																{new Date(d.data + "T12:00:00").toLocaleDateString("pt-BR")} · pago por{" "}
+																<strong className="text-slate-700 dark:text-slate-200">{i.quemPagou}</strong>
+																{i.minhaParte !== null && ` · sua parte ${fmt(i.minhaParte)}`}
+																{i.meta.opcional && (
+																	<span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 text-[9px] font-black uppercase">
+																		Opcional
+																	</span>
+																)}
+															</p>
+														</div>
+													</div>
+													<div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+														<span className="font-black text-[13px] tabular-nums text-slate-900 dark:text-slate-100">{fmt(i.total)}</span>
+														{statusItem(d, dentroDoMes)}
+													</div>
+												</div>
+											);
+										}}
+									/>
+								)}
+							</div>
+						);
+					})()}
 				</div>
 			) : activeTab === "grupos" ? (
 				/* ========================================================
@@ -1119,6 +1435,84 @@ export default function Devedores() {
 											</div>
 										</div>
 
+										{(() => {
+											const pendentes = (d.itens || []).filter((i: any) => !i.terceiro_pago);
+											if (pendentes.length === 0) return null;
+											const fmt = (v: number) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+											const aberto = (i: any) => Math.max(0, Number(i.valor) - (Number(getPaymentInfo(i.observacao)?.valor_pago) || 0));
+											return (
+												<ListaPorData
+													compacto
+													limite={3}
+													itens={pendentes}
+													dataDe={(i: any) => i.data}
+													resumo={(lista: any[]) => {
+														const recusadas = lista.filter((i) => getPaymentInfo(i.observacao)?.resposta_cobranca === "recusada");
+														const opcionais = lista.filter((i) => getPaymentInfo(i.observacao)?.opcional);
+														const valido = lista.filter((i) => !recusadas.includes(i));
+														return {
+															total: valido.reduce((s, i) => s + aberto(i), 0),
+															detalhe: [
+																opcionais.length ? `${fmt(opcionais.filter((i) => !recusadas.includes(i)).reduce((s, i) => s + aberto(i), 0))} opcional` : "",
+																recusadas.length ? `${recusadas.length} recusado(s)` : "",
+															]
+																.filter(Boolean)
+																.join(" · ") || undefined,
+														};
+													}}
+													renderItem={(i: any) => {
+														const meta = getPaymentInfo(i.observacao) || {};
+														const recusada = meta.resposta_cobranca === "recusada";
+														return (
+															<div className="flex items-center justify-between gap-2 text-[11px] py-1">
+																<span className={`truncate ${recusada ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-600 dark:text-slate-300"}`}>
+																	{new Date(i.data + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ·{" "}
+																	{meta.descricao_original || i.descricao}
+																</span>
+																<span className="flex items-center gap-1.5 shrink-0">
+																	{recusada ? (
+																		<span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 text-[9px] font-black uppercase">Recusada</span>
+																	) : meta.resposta_cobranca === "aceita" ? (
+																		<span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 text-[9px] font-black uppercase">Aceita</span>
+																	) : null}
+																	<button
+																		onClick={() => handleAlternarOpcional(i, !meta.opcional)}
+																		title={meta.opcional ? "Tornar obrigatória" : "Tornar opcional (a pessoa poderá recusar)"}
+																		className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase cursor-pointer transition-colors ${meta.opcional ? "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200" : "bg-slate-100 text-slate-500 hover:text-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-200"}`}>
+																		{meta.opcional ? "Opcional" : "Obrigatória"}
+																	</button>
+																	<span className="font-bold tabular-nums text-slate-700 dark:text-slate-200">{fmt(aberto(i))}</span>
+																</span>
+															</div>
+														);
+													}}
+												/>
+											);
+										})()}
+
+										{(() => {
+											const foraDoGrupo = (d.itens || []).filter((i: any) => !getPaymentInfo(i.observacao)?.grupo_id).length;
+											const opcoes = gruposDoContato(d.contato);
+											if (foraDoGrupo === 0 || opcoes.length === 0) return null;
+											return (
+												<div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/50">
+													<span className="text-[11px] font-semibold text-purple-800 dark:text-purple-200">
+														{foraDoGrupo} lançamento(s) fora de grupo
+													</span>
+													<div className="flex flex-wrap gap-1.5">
+														{opcoes.map(({ grupo, membro }) => (
+															<button
+																key={grupo.id}
+																onClick={() => handleMoverParaGrupo(d, grupo, membro)}
+																className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold cursor-pointer transition-colors">
+																Mover para o grupo {grupo.nome}
+															</button>
+														))}
+													</div>
+												</div>
+											);
+										})()}
+
 										<div className="flex items-center gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
 											<button
 												onClick={() => handleCobrarWhatsApp(d)}
@@ -1139,15 +1533,9 @@ export default function Devedores() {
 											</button>
 
 											<button
-												onClick={() => {
-													const primeiroItem = d.itens.find(
-														(i: any) => !i.terceiro_pago,
-													);
-													if (primeiroItem)
-														handleOpenPaymentModal(primeiroItem);
-												}}
-												className="py-2 px-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer">
-												Quitar (Settle Up)
+												onClick={() => setReceberDe({ contato: { id: d.contato.id, nome: d.contato.nome } })}
+												className="py-2 px-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer">
+												Receber pagamento
 											</button>
 										</div>
 									</div>
@@ -1315,7 +1703,16 @@ export default function Devedores() {
 						</div>
 					) : (
 						<div className="space-y-3">
-							{todasDespesasSplit.map((d) => {
+							<ListaPorData
+								ordem="desc"
+								itens={todasDespesasSplit}
+								dataDe={(d: any) => d.data}
+								resumo={(lista: any[]) => ({
+									total: lista.reduce((soma, d) => soma + Number(d.valor || 0), 0),
+									quitado: lista.every((d) => d.terceiro_pago),
+									detalhe: [...new Set(lista.map((d) => getPaymentInfo(d.observacao)?.grupo_nome || ""))].map((g) => (g ? `Grupo ${g}` : "Sem grupo")).join(" · "),
+								})}
+								renderItem={(d: any) => {
 								const meta = getPaymentInfo(d.observacao);
 								return (
 									<div
@@ -1374,7 +1771,8 @@ export default function Devedores() {
 										</div>
 									</div>
 								);
-							})}
+								}}
+							/>
 						</div>
 					)}
 				</div>
@@ -1402,9 +1800,7 @@ export default function Devedores() {
 
 					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 						{contatos.map((contato) => {
-							const temConta =
-								contato.email &&
-								usuariosComConta.has(contato.email.toLowerCase());
+							const temConta = contatoTemConta(contato);
 							return (
 								<div
 									key={contato.id}
@@ -1505,8 +1901,32 @@ export default function Devedores() {
 					onClose={() => setContatoParaConvite(null)}
 					contato={contatoParaConvite}
 					userName={userName}
+					onContatoAtualizado={loadAllData}
 				/>
 			)}
+
+			<PedirTelefoneModal
+				isOpen={Boolean(cobrarSemTelefone)}
+				contato={cobrarSemTelefone?.contato || null}
+				titulo={cobrarSemTelefone ? `Para cobrar: qual o celular de ${cobrarSemTelefone.contato.nome.split(" ")[0]}?` : undefined}
+				onClose={() => setCobrarSemTelefone(null)}
+				onContinuar={(tel) => {
+					const devedor = cobrarSemTelefone;
+					setCobrarSemTelefone(null);
+					handleCobrarWhatsApp(devedor, tel);
+					if (tel) loadAllData();
+				}}
+			/>
+
+			<ReceberPagamentoModal
+				isOpen={Boolean(receberDe)}
+				onClose={() => setReceberDe(null)}
+				onSuccess={loadAllData}
+				userId={userId}
+				contato={receberDe?.contato || null}
+				itemIds={receberDe?.itemIds}
+				valorSugerido={receberDe?.valorSugerido}
+			/>
 
 			{/* 5. Modal de Chat IA de Acordos */}
 			{isChatIaOpen && (
@@ -1519,6 +1939,8 @@ export default function Devedores() {
 					}}
 					userId={userId}
 					contatosDisponiveis={contatos}
+					grupos={grupos}
+					grupoInicial={grupoSelecionado}
 				/>
 			)}
 

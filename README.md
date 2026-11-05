@@ -131,7 +131,7 @@ finance-app/
 │       └── instituicoes.ts                # Detecção genérica de bancos/instituições
 ├── supabase/
 │   ├── functions/ai-generate/             # Edge Function: proxy autenticado para o Gemini
-│   └── migrations/                        # Scripts SQL idempotentes e versionados
+│   └── migrations/                        # (ignorado pelo git) SQL rodado no SQL Editor — ajustes_supabase.sql
 ├── scripts/                               # Scripts de automação e testes automatizados
 │   └── test_auditoria_regras_financeiras.mjs
 └── lançamentos/                           # (ignorado pelo git) amostras locais de documentos
@@ -143,7 +143,7 @@ finance-app/
 
 ### Pré-requisitos
 - Node.js 20+
-- [Supabase CLI](https://supabase.com/docs/guides/cli) (para migrations e Edge Functions)
+- [Supabase CLI](https://supabase.com/docs/guides/cli) (para as Edge Functions)
 - Chave de API do Google AI Studio (Gemini) — fica **somente no servidor**
 
 ### 1. Clonar e Instalar Dependências
@@ -156,11 +156,12 @@ npm install
 ### 2. Configurar o Supabase (banco + IA)
 ```bash
 supabase link --project-ref <seu-project-ref>
-supabase db push                                   # aplica as migrations (inclui RLS)
 supabase secrets set GEMINI_API_KEY=sua_chave      # a chave NUNCA vai para o front-end
 supabase functions deploy ai-generate
 ```
 > ⚠️ Não use variáveis `VITE_*` para chaves secretas: tudo que começa com `VITE_` é embutido no JavaScript publicado.
+
+O SQL do banco (tabelas extras, funções, regras de acesso) fica em `supabase/migrations/ajustes_supabase.sql`, fora do git. Rode o arquivo inteiro no **SQL Editor** do Supabase: ele é idempotente e não altera dados existentes.
 
 No painel do Supabase, em **Authentication → URL Configuration**, inclua `https://<seu-dominio>/reset-password` (e `http://localhost:5173/reset-password`) em **Redirect URLs** para a recuperação de senha.
 

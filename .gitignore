@@ -21,3 +21,6 @@ consolidado/
 # Supabase temp
 supabase/.temp/
 
+
+# SQL do banco (rodado à mão no SQL Editor do Supabase)
+supabase/migrations/

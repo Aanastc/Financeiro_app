@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X, Copy, Check, MessageSquare, Sparkles, Mail } from "lucide-react";
-import { conviteService } from "../../../../packages/services/convite.service";
+import { conviteService, telefoneWhatsApp } from "../../../../packages/services/convite.service";
+import PedirTelefoneModal from "./PedirTelefoneModal";
 import toast from "react-hot-toast";
 
 interface ConviteAmigoModalProps {
@@ -14,10 +15,14 @@ interface ConviteAmigoModalProps {
 		temConta?: boolean;
 	} | null;
 	userName?: string;
+	/** Chamado depois de salvar o celular no contato */
+	onContatoAtualizado?: () => void;
 }
 
-export default function ConviteAmigoModal({ isOpen, onClose, contato, userName }: ConviteAmigoModalProps) {
+export default function ConviteAmigoModal({ isOpen, onClose, contato, userName, onContatoAtualizado }: ConviteAmigoModalProps) {
 	const [copiado, setCopiado] = useState(false);
+	const [pedirTelefone, setPedirTelefone] = useState(false);
+	const [telefoneSalvo, setTelefoneSalvo] = useState<string | null>(null);
 
 	if (!isOpen || !contato) return null;
 
@@ -34,9 +39,14 @@ export default function ConviteAmigoModal({ isOpen, onClose, contato, userName }
 		}
 	};
 
-	// Sem telefone válido, o WhatsApp abre para escolher o contato manualmente
+	const telefone = telefoneSalvo || contato.telefone;
+	const abrirWhatsApp = (tel?: string | null) =>
+		window.open(conviteService.urlWhatsApp({ ...contato, telefone: tel || undefined }, userName), "_blank", "noopener");
+
+	// Sem celular no contato: pede, salva e abre a conversa certa
 	const handleEnviarWhatsApp = () => {
-		window.open(conviteService.urlWhatsApp(contato, userName), "_blank", "noopener");
+		if (telefoneWhatsApp(telefone)) abrirWhatsApp(telefone);
+		else setPedirTelefone(true);
 	};
 
 	const handleEnviarEmail = () => {
@@ -71,7 +81,7 @@ export default function ConviteAmigoModal({ isOpen, onClose, contato, userName }
 						<p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Contato Selecionado</p>
 						<h4 className="font-black text-lg text-slate-800 dark:text-slate-100">{contato.nome}</h4>
 						<p className="text-xs text-slate-500 dark:text-slate-400">
-							{contato.email || "Sem e-mail cadastrado"} • {contato.telefone || "Sem telefone"}
+							{contato.email || "Sem e-mail cadastrado"} • {telefone || "Sem celular"}
 						</p>
 					</div>
 
@@ -129,6 +139,20 @@ export default function ConviteAmigoModal({ isOpen, onClose, contato, userName }
 					</div>
 				</div>
 			</div>
+			<PedirTelefoneModal
+				isOpen={pedirTelefone}
+				contato={contato}
+				titulo={`Para mandar o convite: qual o celular de ${contato.nome.split(" ")[0]}?`}
+				onClose={() => setPedirTelefone(false)}
+				onContinuar={(tel) => {
+					setPedirTelefone(false);
+					if (tel) {
+						setTelefoneSalvo(tel);
+						onContatoAtualizado?.();
+					}
+					abrirWhatsApp(tel);
+				}}
+			/>
 		</div>
 	);
 }

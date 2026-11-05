@@ -48,6 +48,7 @@ interface Linha {
   descricao: string;
   valor: number;
   sentido: "VOCE_DEVE" | "TE_DEVE"; // do ponto de vista de quem RECEBE o e-mail
+  opcional?: boolean; // cobrança que a pessoa pode recusar no app
 }
 
 function montarEmail(remetente: string, destinatario: string, linhas: Linha[], appUrl: string) {
@@ -65,7 +66,7 @@ function montarEmail(remetente: string, destinatario: string, linhas: Linha[], a
     .map(
       l => `<tr>
         <td style="padding:10px 0;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;white-space:nowrap">${dataBR(l.data)}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;color:#0f172a;font-size:14px">${escapar(l.descricao)}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;color:#0f172a;font-size:14px">${escapar(l.descricao)}${l.opcional ? ' <span style="font-size:11px;font-weight:700;color:#92400e;background:#fef3c7;border-radius:4px;padding:1px 6px">opcional</span>' : ""}</td>
         <td style="padding:10px 0;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;font-size:14px;color:${l.sentido === "VOCE_DEVE" ? "#be123c" : "#047857"};white-space:nowrap">${moeda(l.valor)}</td>
       </tr>`
     )
@@ -79,7 +80,8 @@ function montarEmail(remetente: string, destinatario: string, linhas: Linha[], a
         <p style="margin:0 0 6px;font-size:16px;color:#0f172a">Olá, ${escapar(destinatario)}!</p>
         <p style="margin:0 0 20px;font-size:14px;color:#475569;line-height:1.5"><strong>${escapar(remetente)}</strong> registrou ${linhas.length > 1 ? "despesas divididas" : "uma despesa dividida"} com você:</p>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${itens}</table>
-        <p style="margin:20px 0 24px;font-size:15px;color:#0f172a">${resumo}</p>
+        <p style="margin:20px 0 ${linhas.some(l => l.opcional) ? "8px" : "24px"};font-size:15px;color:#0f172a">${resumo}</p>
+        ${linhas.some(l => l.opcional) ? '<p style="margin:0 0 24px;font-size:13px;color:#64748b">Itens marcados como <strong>opcional</strong> podem ser aceitos ou recusados por você no app.</p>' : ""}
         <a href="${appUrl}" style="display:inline-block;background:#047857;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 22px;border-radius:10px">Ver no Tech Finance</a>
       </td></tr>
       <tr><td style="padding:16px 28px;background:#f8fafc;color:#94a3b8;font-size:11px;line-height:1.5">
@@ -92,7 +94,7 @@ function montarEmail(remetente: string, destinatario: string, linhas: Linha[], a
   const texto = [
     `Olá, ${destinatario}!`,
     `${remetente} registrou despesas divididas com você:`,
-    ...linhas.map(l => `- ${dataBR(l.data)} ${l.descricao}: ${moeda(l.valor)}`),
+    ...linhas.map(l => `- ${dataBR(l.data)} ${l.descricao}: ${moeda(l.valor)}${l.opcional ? " (opcional — você pode recusar no app)" : ""}`),
     "",
     `Ver no app: ${appUrl}`,
   ].join("\n");
@@ -169,7 +171,7 @@ Deno.serve(async req => {
         adicionar(meta.parceria_credor_id, { data: t.data, descricao, valor: Number(t.valor) || 0, sentido: "TE_DEVE" }, t.id);
       }
     } else if (t.terceiro && t.contato_id) {
-      adicionar(t.contato_id, { data: t.data, descricao, valor: Number(t.valor) || 0, sentido: "VOCE_DEVE" }, t.id);
+      adicionar(t.contato_id, { data: t.data, descricao, valor: Number(t.valor) || 0, sentido: "VOCE_DEVE", opcional: meta.opcional === true }, t.id);
     } else if (meta.parceria_credor_id) {
       adicionar(meta.parceria_credor_id, { data: t.data, descricao, valor: Number(t.valor) || 0, sentido: "TE_DEVE" }, t.id);
     }

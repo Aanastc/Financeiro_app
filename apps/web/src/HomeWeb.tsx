@@ -1458,7 +1458,7 @@ export default function HomeWeb() {
 										{grupos.slice(0, 4).map(grupo => (
 											<div
 												key={grupo.id}
-												onClick={() => navigate("/devedores")}
+												onClick={() => navigate(`/devedores?grupo=${grupo.id}`)}
 												className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 hover:border-purple-300 transition-all cursor-pointer"
 											>
 												<div className="flex items-center gap-3">
@@ -1663,6 +1663,7 @@ export default function HomeWeb() {
 				}}
 				userId={userId}
 				contatosDisponiveis={contatos}
+				grupos={grupos}
 			/>
 
 			{/* MODAL DE CRIAR GRUPO */}

@@ -1944,6 +1944,8 @@ export const financeService = {
               if (meta && typeof meta.valor_pago === "number") {
                 valorDevido = Math.max(0, valorDevido - meta.valor_pago);
               }
+              // Cobrança opcional recusada pela outra pessoa não conta como a receber
+              if (meta?.resposta_cobranca === "recusada") valorDevido = 0;
             }
           } catch (e) {
             // Ignore JSON parsing errors for plain observations
@@ -1955,6 +1957,25 @@ export const financeService = {
     });
 
     return Array.from(devedoresMap.values());
+  },
+
+  /** Marca/desmarca uma cobrança como opcional (a outra pessoa poderá recusar). */
+  async definirCobrancaOpcional(gasto: { id: string; observacao?: string | null }, opcional: boolean) {
+    let meta: Record<string, any> = {};
+    const obs = (gasto.observacao || "").trim();
+    if (obs.startsWith("{")) {
+      try {
+        meta = JSON.parse(obs);
+      } catch {
+        meta = { observacao_original: obs };
+      }
+    } else if (obs) {
+      meta = { observacao_original: obs };
+    }
+    meta.opcional = opcional;
+    if (!opcional) delete meta.resposta_cobranca;
+    const { error } = await supabase.from("transacoes").update({ observacao: JSON.stringify(meta) }).eq("id", gasto.id);
+    if (error) throw error;
   },
 
   async marcarTerceiroPago(gasto_id: string, pago: boolean) {

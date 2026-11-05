@@ -104,9 +104,10 @@ class DespesasCompartilhadasService {
         .order("criado_em", { ascending: false });
 
       if (!error && remoteGrupos) {
+        const { data: perfil } = await supabase.from("usuarios").select("nome").eq("id", userId).maybeSingle();
         return remoteGrupos.map((g: any) => ({
           ...g,
-          membros: g.grupo_membros || []
+          membros: this.marcarMembroUsuario(g.grupo_membros || [], userId, perfil?.nome)
         }));
       }
     } catch (err) {
@@ -115,6 +116,26 @@ class DespesasCompartilhadasService {
 
     // Fallback para localStorage
     return this.getLocalGrupos(userId);
+  }
+
+  /**
+   * O banco não tem coluna is_user: o membro "você" é identificado pelo usuario_id.
+   * Grupos antigos foram salvos sem esse campo; para eles a identificação é feita
+   * só na leitura (nada é regravado): único membro sem contato vinculado ou, havendo
+   * mais de um, o que tem o mesmo nome do perfil.
+   */
+  private marcarMembroUsuario(membros: GrupoMembro[], userId: string, nomePerfil?: string | null): GrupoMembro[] {
+    const norm = (t?: string | null) => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    let euId = membros.find(m => m.usuario_id === userId)?.id;
+    if (!euId) {
+      const semContato = membros.filter(m => !m.contato_id && !m.usuario_id);
+      euId =
+        semContato.length === 1
+          ? semContato[0].id
+          : semContato.find(m => nomePerfil && norm(m.nome) === norm(nomePerfil))?.id ||
+            semContato.find(m => nomePerfil && norm(m.nome).split(" ")[0] === norm(nomePerfil).split(" ")[0])?.id;
+    }
+    return membros.map(m => ({ ...m, is_user: m.id === euId }));
   }
 
   // 2. CRIAR GRUPO
@@ -152,7 +173,7 @@ class DespesasCompartilhadasService {
         id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `membro_${Date.now()}_${idx}`,
         grupo_id: grupoId,
         contato_id: m.contato_id || null,
-        usuario_id: m.usuario_id || null,
+        usuario_id: m.usuario_id || (m.is_user ? userId : null),
         nome: m.nome,
         email: m.email || null,
         telefone: m.telefone || null,
@@ -276,6 +297,9 @@ class DespesasCompartilhadasService {
     });
 
     let totalGastoGrupo = 0;
+    // Pagamentos já feitos entre membros (acertos): quem devia transferiu para quem pagou
+    const acertos = new Map<string, number>();
+    const somarAcerto = (id: string, v: number) => acertos.set(id, (acertos.get(id) || 0) + v);
 
     despesas.forEach(d => {
       let meta: any = null;
@@ -303,6 +327,31 @@ class DespesasCompartilhadasService {
         }
       }
 
+      // Já pago (total ou parcial): desconta do saldo de quem devia e de quem recebeu
+      const quemPagouCompra = pagadorId && mapaBalancos.has(pagadorId) ? pagadorId : (membros.find(m => m.is_user) || membros[0])?.id;
+      const jaAcertado = d.terceiro_pago ? Number(d.valor) || 0 : Number(meta?.valor_pago) || 0;
+      if (jaAcertado > 0 && quemPagouCompra) {
+        let devedores: { id: string; peso: number }[] = [];
+        if (d.terceiro) {
+          // Você pagou: quem te devia eram os outros participantes
+          devedores = (Array.isArray(meta?.participantes) ? meta.participantes : [])
+            .filter((p: any) => p.id !== quemPagouCompra && !p.is_user && mapaBalancos.has(p.id))
+            .map((p: any) => ({ id: p.id, peso: Number(p.valor_devido) || 0 }));
+        } else {
+          // Outra pessoa pagou: quem devia era você
+          const eu = membros.find(m => m.is_user);
+          if (eu && eu.id !== quemPagouCompra) devedores = [{ id: eu.id, peso: 1 }];
+        }
+        const somaPesos = devedores.reduce((s, x) => s + x.peso, 0);
+        if (devedores.length && somaPesos > 0) {
+          devedores.forEach(x => {
+            const parte = (jaAcertado * x.peso) / somaPesos;
+            somarAcerto(x.id, parte);
+            somarAcerto(quemPagouCompra, -parte);
+          });
+        }
+      }
+
       // Distribuição entre participantes
       if (meta?.participantes && Array.isArray(meta.participantes)) {
         meta.participantes.forEach((p: any) => {
@@ -326,7 +375,7 @@ class DespesasCompartilhadasService {
       nome: data.nome,
       totalPago: Math.round(data.pago * 100) / 100,
       totalDevido: Math.round(data.devido * 100) / 100,
-      saldoLiquido: Math.round((data.pago - data.devido) * 100) / 100
+      saldoLiquido: Math.round((data.pago - data.devido + (acertos.get(membroId) || 0)) * 100) / 100
     }));
 
     // ALGORITMO DE SIMPLIFICAÇÃO DE DÍVIDAS

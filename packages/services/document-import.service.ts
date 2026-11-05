@@ -1,4 +1,5 @@
 import { aiService, type ParteIA } from "./ai.service";
+import { recebimentosDivisaoService } from "./recebimentos-divisao.service";
 import { detectarInstituicao, mesmaInstituicao, nomeArquivoIndicaExtrato } from "../utils/instituicoes";
 import { supabase } from "./supabase";
 import { financeService } from "./finance.service";
@@ -1518,6 +1519,14 @@ ${fileContent.textContent}`];
         const metaReservaId =
           (metasUsuario || []).find(m => /reserva(\s+de)?\s+emerg[eê]ncia|caixinha/i.test(m.titulo || ""))?.id ?? null;
 
+        // Contatos para reconhecer Pix recebido de quem divide contas com você
+        const { data: contatosUsuario } = await supabase
+          .from("contatos")
+          .select("id, nome")
+          .eq("usuario_id", usuario_id);
+        let reconhecidos = 0;
+        let abatidos = 0;
+
         let total = 0;
         for (const t of (extrato.transacoes || [])) {
           const descLower = (t.descricao || "").toLowerCase();
@@ -1526,6 +1535,28 @@ ${fileContent.textContent}`];
           const isAplicacao = t.tipo === "APORTE" || t.tipo === "INVESTIMENTO" || ehAplicacaoInvestimento(t.descricao || "");
           const isResgate = t.tipo === "RESGATE" || ehResgateInvestimento(t.descricao || "");
           const isTransf = t.tipo === "TRANSFERENCIA" || t.natureza === "TRANSFERENCIA" || /mesma\s+titularidade|contas?\s+pr[oó]prias?/i.test(descLower);
+
+          // Pix recebido de alguém que te deve: reconhece pagamento já registrado ou abate a dívida
+          if (t.tipo === "RECEITA" && !isLimite && !isResgate) {
+            try {
+              const conc = await recebimentosDivisaoService.conciliarPixRecebido(
+                usuario_id,
+                { descricao: t.descricao || "", valor: t.valor, data: t.data, contaId, documentoImportadoId: documento_importado_id || null },
+                { contatos: contatosUsuario || [] },
+              );
+              if (conc?.resultado === "reconhecido") {
+                reconhecidos++;
+                continue; // já lançado quando o pagamento foi registrado: não duplica
+              }
+              if (conc?.resultado === "abatido") {
+                abatidos++;
+                total++;
+                continue;
+              }
+            } catch (e) {
+              console.warn("[import] Conciliação de recebimento falhou; lançando como receita comum:", e);
+            }
+          }
 
           if (t.tipo === "RECEITA" || isLimite) {
             const txTipo = isLimite ? "AJUSTE" : "RECEITA";
@@ -1662,10 +1693,14 @@ ${fileContent.textContent}`];
 
         await financeService.syncMetasInvestimentos(usuario_id).catch(() => {});
 
+        const extras = [
+          abatidos ? `${abatidos} Pix recebido(s) abatido(s) de quem te devia` : "",
+          reconhecidos ? `${reconhecidos} Pix já registrado(s) reconhecido(s), sem duplicar` : "",
+        ].filter(Boolean);
         return {
           success: true,
           totalItens: total,
-          mensagem: `${total} transações do extrato bancário importadas com sucesso!`
+          mensagem: `${total} transações do extrato bancário importadas com sucesso!${extras.length ? ` (${extras.join("; ")})` : ""}`
         };
       }
 

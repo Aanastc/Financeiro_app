@@ -32,6 +32,9 @@ export interface DespesaCompartilhadaComigo {
   /** VOCE_DEVE: a outra pessoa pagou; TE_DEVEM: você pagou */
   direcao: "VOCE_DEVE" | "TE_DEVEM";
   pessoa: string;
+  /** Cobrança opcional: você pode aceitar ou recusar (migration 011) */
+  opcional?: boolean;
+  resposta?: "aceita" | "recusada" | null;
 }
 
 export const conviteService = {
@@ -43,6 +46,16 @@ export const conviteService = {
       return [];
     }
     return (data || []) as DespesaCompartilhadaComigo[];
+  },
+
+  /** Aceita ou recusa uma cobrança opcional feita a você (migration 011). */
+  async responderCobranca(transacaoId: string, aceitar: boolean): Promise<{ ok: boolean; motivo?: string }> {
+    const { data, error } = await supabase.rpc("responder_cobranca_opcional", {
+      p_transacao_id: transacaoId,
+      p_aceitar: aceitar,
+    });
+    if (error) return { ok: false, motivo: error.message };
+    return (data as any) || { ok: false };
   },
 
   linkConvite(contato: ContatoConvite, origem = window.location.origin): string {
