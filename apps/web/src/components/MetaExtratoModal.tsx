@@ -8,7 +8,6 @@ import {
 	Trash2, 
 	TrendingUp, 
 	TrendingDown,
-	Target, 
 	AlertCircle 
 } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
@@ -343,7 +342,7 @@ export default function MetaExtratoModal({
 											</div>
 											<div>
 												<p className="font-bold text-sm text-slate-800 dark:text-slate-100">{inv.titulo}</p>
-												<p className="text-xs text-slate-400">{inv.tipo} • {inv.corretora?.replace(/\[Meta:\s*[^\]]+\]/, '').trim() || 'Nubank'}</p>
+												<p className="text-xs text-slate-400">{inv.tipo} • {inv.corretora?.replace(/\[Meta:\s*[^\]]+\]/, '').trim() || 'Instituição não informada'}</p>
 											</div>
 										</div>
 										<span className="font-black text-sm text-indigo-600 dark:text-indigo-400">

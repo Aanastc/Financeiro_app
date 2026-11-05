@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, CreditCard, Calendar, Palette, Edit3, Info } from "lucide-react";
+import { X,  Calendar, Palette, Edit3, Info } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
 import toast from "react-hot-toast";
 import { supabase } from "../../../../packages/services/supabase";

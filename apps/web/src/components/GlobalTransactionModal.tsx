@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { X, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, Building2, CreditCard, Tag, Calendar, AlignLeft, Info } from "lucide-react";
+import { motion } from "framer-motion";
+import { X, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, Building2, CreditCard, Tag, Calendar, AlignLeft } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
 import toast from "react-hot-toast";
 import { financeService } from "../../../../packages/services/finance.service";

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { supabase } from "../../../../packages/services/supabase";
 import { motion, AnimatePresence } from "framer-motion";
@@ -7,7 +7,7 @@ import toast from "react-hot-toast";
 import OnboardingContasModal from "../components/OnboardingContasModal";
 import EditContaModal from "../components/EditContaModal";
 import ContaExtratoModal from "../components/ContaExtratoModal";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 export default function Contas() {
 	const navigate = useNavigate();

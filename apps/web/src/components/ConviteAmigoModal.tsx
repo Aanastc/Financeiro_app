@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Send, Copy, Check, MessageSquare, Sparkles, UserCheck } from "lucide-react";
+import { X,  Copy, Check, MessageSquare, Sparkles } from "lucide-react";
 import toast from "react-hot-toast";
 
 interface ConviteAmigoModalProps {
@@ -15,7 +15,7 @@ interface ConviteAmigoModalProps {
 	userName?: string;
 }
 
-export default function ConviteAmigoModal({ isOpen, onClose, contato, userName }: ConviteAmigoModalProps) {
+export default function ConviteAmigoModal({ isOpen, onClose, contato }: ConviteAmigoModalProps) {
 	const [copiado, setCopiado] = useState(false);
 
 	if (!isOpen || !contato) return null;

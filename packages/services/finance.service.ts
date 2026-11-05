@@ -1,5 +1,7 @@
 import { supabase } from "./supabase";
 import { getFaturaCycle, getFaturaMesReferencia } from "../utils/cartao.utils";
+import { encontrarPorInstituicao } from "../utils/instituicoes";
+import { buscarTodasPaginas } from "./paginacao";
 
 export const financeService = {
   /**
@@ -30,22 +32,26 @@ export const financeService = {
    */
   async getMonthlyStats(usuario_id: string, startDate: string, endDate: string) {
     try {
-      const [txRes, movRes] = await Promise.all([
-        supabase
+      const [txData, movData] = await Promise.all([
+        buscarTodasPaginas<any>((de, ate) => supabase
           .from("transacoes")
           .select("valor, tipo, considerar_soma")
           .eq("usuario_id", usuario_id)
           .gte("data", startDate)
-          .lte("data", endDate),
-        supabase
+          .lte("data", endDate)
+          .order("id")
+          .range(de, ate)),
+        buscarTodasPaginas<any>((de, ate) => supabase
           .from("movimentacoes")
           .select("valor, tipo, transacoes(tipo)")
           .eq("usuario_id", usuario_id)
           .gte("data", startDate)
           .lte("data", endDate)
+          .order("id")
+          .range(de, ate))
       ]);
-
-      if (txRes.error) throw txRes.error;
+      const txRes = { data: txData };
+      const movRes = { data: movData };
 
       let totalReceitas = 0;
       let totalDespesas = 0;
@@ -251,9 +257,22 @@ export const financeService = {
         }
 
         if (forma_pagamento === "CARTAO") {
-            // TODO: Criar a fatura correspondente se não existir
-            // TODO: Atrelar parcelas se > 1
-            // Por enquanto, lança uma transacao atrelada ao cartao (fatura pendente)
+            // Compra parcelada: cada parcela entra no mês correspondente (mesma regra do addGasto)
+            const numParcelas = parseInt(String(parcelas ?? "1"), 10) || 1;
+            if (numParcelas > 1) {
+              return this.addGasto(usuario_id, {
+                descricao,
+                valor: numericValue,
+                data,
+                categoria_id,
+                metodo_pagamento: "Crédito",
+                cartao_id,
+                parcelas: String(numParcelas),
+                parcela_atual: 1,
+              });
+            }
+
+            // À vista no cartão: a fatura do ciclo é montada por syncCardFaturas
             const { data: tx, error: txError } = await supabase
             .from("transacoes")
             .insert([{
@@ -281,8 +300,10 @@ export const financeService = {
     const { data: contas, error } = await supabase.from("contas_bancarias").select("*").eq("usuario_id", usuario_id).order("nome");
     if (error) throw error;
 
-    const { data: movimentacoes, error: errMov } = await supabase.from("movimentacoes").select("conta_id, valor, tipo").eq("usuario_id", usuario_id);
-    if (errMov) throw errMov;
+    // Todas as movimentações (paginado: o Supabase limita 1000 linhas por consulta)
+    const movimentacoes = await buscarTodasPaginas<{ conta_id: string; valor: number; tipo: string }>((de, ate) =>
+      supabase.from("movimentacoes").select("conta_id, valor, tipo").eq("usuario_id", usuario_id).order("id").range(de, ate)
+    );
 
     // Calcula saldo em runtime: saldo_inicial + entradas - saidas
     const contasList = contas || [];
@@ -386,90 +407,14 @@ export const financeService = {
   },
 
   async getAllGastosCredito(usuario_id: string) {
-    const { data: cards } = await supabase.from("cartoes").select("*").eq("usuario_id", usuario_id);
-    const nubankCard = (cards || []).find(c => (c.nome || "").toLowerCase().includes("nubank"));
-
-    const { data, error } = await supabase
+    return buscarTodasPaginas<any>((de, ate) => supabase
       .from("transacoes")
       .select("*")
       .eq("usuario_id", usuario_id)
       .eq("tipo", "DESPESA")
-      .not("cartao_id", "is", null); 
-    if (error) throw error;
-    let list = data || [];
-
-    // 🛡️ Deleta do banco registros corrompidos ou duplicatas de parcelamento com datas divergentes
-    const corruptas = list.filter(t => 
-      (t.descricao && t.descricao.includes('"216')) || 
-      ((t.descricao || "").toLowerCase().includes("htm*operacao") && Math.abs(Number(t.valor) - 42) < 0.1) ||
-      ((t.descricao || "").includes("12/12") && t.data === "2026-11-12")
-    );
-    if (corruptas.length > 0) {
-      const corruptIds = corruptas.map(t => t.id);
-      supabase.from("transacoes").delete().in("id", corruptIds).then();
-      list = list.filter(t => !corruptIds.includes(t.id));
-    }
-
-    // 🛡️ Garante as transações reais e corretas das faturas do Nubank
-    if (nubankCard) {
-      // Parcela 12/12 real: compra em 30/11/2026 (fatura de DEZEMBRO)
-      const htm12 = list.find(t => t.cartao_id === nubankCard.id && (t.descricao || "").includes("12/12"));
-      if (htm12) {
-        if (htm12.data !== "2026-11-30" || Math.abs(Number(htm12.valor) - 216.42) > 0.01 || (htm12.descricao || "").includes('"')) {
-          supabase.from("transacoes").update({
-            data: "2026-11-30",
-            valor: 216.42,
-            descricao: "Htm*Operacao Codigo de - Parcela 12/12"
-          }).eq("id", htm12.id).then();
-          htm12.data = "2026-11-30";
-          htm12.valor = 216.42;
-          htm12.descricao = "Htm*Operacao Codigo de - Parcela 12/12";
-        }
-      } else {
-        const { data: newHtm12 } = await supabase.from("transacoes").insert([{
-          usuario_id,
-          cartao_id: nubankCard.id,
-          descricao: "Htm*Operacao Codigo de - Parcela 12/12",
-          valor: 216.42,
-          data: "2026-11-30",
-          tipo: "DESPESA",
-          status: "confirmada"
-        }]).select().single();
-        if (newHtm12) list.push(newHtm12);
-      }
-
-      // Parcela 11/12 real: compra em 30/10/2026 (fatura de NOVEMBRO)
-      const htm11 = list.find(t => t.cartao_id === nubankCard.id && (t.descricao || "").includes("11/12"));
-      if (!htm11) {
-        const { data: newHtm11 } = await supabase.from("transacoes").insert([{
-          usuario_id,
-          cartao_id: nubankCard.id,
-          descricao: "Htm*Operacao Codigo de - Parcela 11/12",
-          valor: 216.42,
-          data: "2026-10-30",
-          tipo: "DESPESA",
-          status: "confirmada"
-        }]).select().single();
-        if (newHtm11) list.push(newHtm11);
-      }
-
-      // Latam Parcela 2/2 real: compra em 24/10/2026 (fatura de NOVEMBRO)
-      const latam2 = list.find(t => t.cartao_id === nubankCard.id && (t.descricao || "").toLowerCase().includes("latam") && ((t.descricao || "").includes("2/2") || (t.descricao || "").includes("2 de 2")));
-      if (!latam2) {
-        const { data: newLatam2 } = await supabase.from("transacoes").insert([{
-          usuario_id,
-          cartao_id: nubankCard.id,
-          descricao: "Latam Air*Nesxvv - Parcela 2/2",
-          valor: 335.43,
-          data: "2026-10-24",
-          tipo: "DESPESA",
-          status: "confirmada"
-        }]).select().single();
-        if (newLatam2) list.push(newLatam2);
-      }
-    }
-
-    return list;
+      .not("cartao_id", "is", null)
+      .order("id")
+      .range(de, ate));
   },
 
   /**
@@ -548,9 +493,9 @@ export const financeService = {
       return tx;
     }
 
-    // 🔍 BUSCA CATEGORIA ID (Mapeamento Gradual)
-    let categoria_id = null;
-    if (form.categoria) {
+    // 🔍 BUSCA CATEGORIA ID (Mapeamento Gradual) — aceita o id direto quando já conhecido
+    let categoria_id = form.categoria_id || null;
+    if (!categoria_id && form.categoria) {
       const { data: cat } = await supabase
         .from("categorias")
         .select("id")
@@ -1067,7 +1012,9 @@ export const financeService = {
     }
 
     // 3. Atualizar ou criar Investimento correspondente
-    const titulo = params.titulo_investimento || (params.descricao?.includes("RDB") ? "RDB Nubank" : "Aplicação RDB / Caixinha");
+    const titulo = params.titulo_investimento || (params.descricao?.includes("RDB")
+      ? `RDB${params.instituicao ? ` ${params.instituicao}` : ""}`
+      : "Aplicação RDB / Caixinha");
     
     const { data: invs } = await supabase
       .from("investimentos")
@@ -1088,7 +1035,7 @@ export const financeService = {
         valor_atual: novoAtual
       };
       if (params.meta_id && (!targetInv.corretora || !targetInv.corretora.includes(params.meta_id))) {
-        const baseCorretora = targetInv.corretora?.replace(/\[Meta:\s*[^\]]+\]/, '').trim() || params.instituicao || "Nubank";
+        const baseCorretora = targetInv.corretora?.replace(/\[Meta:\s*[^\]]+\]/, '').trim() || params.instituicao || "";
         updateData.corretora = `[Meta: ${params.meta_id}] ${baseCorretora}`.trim();
       }
       await supabase
@@ -1103,7 +1050,7 @@ export const financeService = {
       }]);
     } else {
       // Cria novo investimento vinculando à meta no campo corretora se houver
-      const corretoraTag = params.meta_id ? `[Meta: ${params.meta_id}] ${params.instituicao || "Nubank"}`.trim() : (params.instituicao || "Nubank");
+      const corretoraTag = params.meta_id ? `[Meta: ${params.meta_id}] ${params.instituicao || ""}`.trim() : (params.instituicao || null);
       const { data: newInv } = await supabase
         .from("investimentos")
         .insert([{
@@ -1204,7 +1151,7 @@ export const financeService = {
         valor_atual: novoAtual
       };
       if (params.meta_id && (!targetInv.corretora || !targetInv.corretora.includes(params.meta_id))) {
-        const baseCorretora = targetInv.corretora?.replace(/\[Meta:\s*[^\]]+\]/, '').trim() || params.instituicao || "Nubank";
+        const baseCorretora = targetInv.corretora?.replace(/\[Meta:\s*[^\]]+\]/, '').trim() || params.instituicao || "";
         updateData.corretora = `[Meta: ${params.meta_id}] ${baseCorretora}`.trim();
       }
 
@@ -1267,7 +1214,9 @@ export const financeService = {
         return (inv.titulo || "").toLowerCase().includes("rdb") || (inv.titulo || "").toLowerCase().includes("reserva");
       });
 
-      const corretoraTag = `[Meta: ${metaReserva.id}] Nubank`;
+      // Preserva a instituição já registrada no investimento (sem assumir banco)
+      const baseCorretora = targetInv?.corretora?.replace(/\[Meta:\s*[^\]]+\]/, '').trim() || "";
+      const corretoraTag = `[Meta: ${metaReserva.id}] ${baseCorretora}`.trim();
 
       if (targetInv) {
         const needsCorretoraFix = !targetInv.corretora?.includes(metaReserva.id);
@@ -1282,7 +1231,7 @@ export const financeService = {
       } else if (saldoCalculado > 0) {
         await supabase.from("investimentos").insert([{
           usuario_id,
-          titulo: "RDB Nubank",
+          titulo: "Reserva (RDB / Caixinha)",
           tipo: "Renda Fixa",
           valor_investido: saldoCalculado,
           valor_atual: saldoCalculado,
@@ -1451,7 +1400,7 @@ export const financeService = {
                 valor_pago: Math.min(valor, pValor),
                 data_pagamento: params.data,
                 tipo_pagamento: "parcela"
-              }]).catch(() => {});
+              }]);
 
               // Abate valor_atual da dívida
               const novoSaldo = Math.max(0, Number(reneg.valor_atual || 0) - pValor);
@@ -1603,7 +1552,7 @@ export const financeService = {
                 valor_pago: Math.abs(Number(matchingTx.valor)),
                 data_pagamento: matchingTx.data,
                 tipo_pagamento: 'parcela'
-              }]).catch(() => {});
+              }]);
             }
           }
         }
@@ -2181,13 +2130,11 @@ export const financeService = {
         const conta = tx.conta_id ? contasMap.get(tx.conta_id) : null;
         const contaNomeLower = conta ? (conta.nome || "").toLowerCase() : "";
 
-        if (descLower.includes("nubank") || contaNomeLower.includes("nubank")) {
-          targetCard = cards.find(c => (c.nome || "").toLowerCase().includes("nubank"));
-        } else if (descLower.includes("santander") || contaNomeLower.includes("santander")) {
-          targetCard = cards.find(c => (c.nome || "").toLowerCase().includes("santander"));
-        } else if (cards.length === 1) {
-          targetCard = cards[0];
-        }
+        // 1º cartão vinculado à conta debitada; 2º mesma instituição citada; 3º único cartão
+        targetCard =
+          (conta && cards.find(c => c.conta_id === conta.id)) ||
+          encontrarPorInstituicao(cards, `${descLower} ${conta?.instituicao || ""} ${contaNomeLower}`) ||
+          (cards.length === 1 ? cards[0] : null);
 
         if (targetCard) {
           await supabase.from("transacoes").update({
@@ -2214,71 +2161,9 @@ export const financeService = {
         supabase.from("transacoes").select("*").eq("usuario_id", usuario_id).not("cartao_id", "is", null)
       ]);
 
-      let transacoes = txRes.data || [];
+      const cards = cardsRes.data || [];
+      const transacoes = txRes.data || [];
       if (cards.length === 0) return;
-
-      // 🛡️ Auto-repara transações corrompidas por parses anteriores com split(",") ingênuo
-      const txCorrompidas = transacoes.filter(t => 
-        (t.descricao && t.descricao.includes('"216')) || 
-        ((t.descricao || "").toLowerCase().includes("htm*operacao") && Math.abs(Number(t.valor) - 42) < 0.1)
-      );
-      if (txCorrompidas.length > 0) {
-        const idsToDel = txCorrompidas.map(t => t.id);
-        await supabase.from("transacoes").delete().in("id", idsToDel);
-        transacoes = transacoes.filter(t => !idsToDel.includes(t.id));
-      }
-
-      // 🛡️ Garante consistência dos lançamentos reais das faturas do Nubank
-      const nubankCard = cards.find(c => (c.nome || "").toLowerCase().includes("nubank"));
-      if (nubankCard) {
-        // Se houver transação HTM Parcela 12/12 que foi gerada com a data de fechamento 12/11/2026, corrige para a data real de compra 2026-11-30 (fatura de dezembro)
-        const htm12 = transacoes.find(t => 
-          t.cartao_id === nubankCard.id && 
-          (t.descricao || "").includes("12/12")
-        );
-        if (htm12 && htm12.data !== "2026-11-30") {
-          await supabase.from("transacoes").update({ data: "2026-11-30", valor: 216.42 }).eq("id", htm12.id);
-          htm12.data = "2026-11-30";
-          htm12.valor = 216.42;
-        }
-
-        // Garante que a Parcela 11/12 (2026-10-30, R$ 216.42) existe no Nubank
-        const htm11 = transacoes.find(t => 
-          t.cartao_id === nubankCard.id && 
-          (t.descricao || "").includes("11/12")
-        );
-        if (!htm11) {
-          const { data: createdHtm11 } = await supabase.from("transacoes").insert([{
-            usuario_id,
-            cartao_id: nubankCard.id,
-            descricao: "Htm*Operacao Codigo de - Parcela 11/12",
-            valor: 216.42,
-            data: "2026-10-30",
-            tipo: "DESPESA",
-            status: "confirmada"
-          }]).select().single();
-          if (createdHtm11) transacoes.push(createdHtm11);
-        }
-
-        // Garante que a Latam Parcela 2/2 (2026-10-24, R$ 335.43) existe no Nubank
-        const latam2 = transacoes.find(t => 
-          t.cartao_id === nubankCard.id && 
-          (t.descricao || "").toLowerCase().includes("latam") && 
-          ((t.descricao || "").includes("2/2") || (t.descricao || "").includes("2 de 2"))
-        );
-        if (!latam2) {
-          const { data: createdLatam2 } = await supabase.from("transacoes").insert([{
-            usuario_id,
-            cartao_id: nubankCard.id,
-            descricao: "Latam Air*Nesxvv - Parcela 2/2",
-            valor: 335.43,
-            data: "2026-10-24",
-            tipo: "DESPESA",
-            status: "confirmada"
-          }]).select().single();
-          if (createdLatam2) transacoes.push(createdLatam2);
-        }
-      }
 
       if (transacoes.length === 0) return;
 
@@ -2332,7 +2217,6 @@ export const financeService = {
         // Aplica funções canônicas de domínio
         const valorTotal = this.calculateInvoiceTotal(items);
         const valorPago = this.calculateInvoicePayments(items);
-        const saldoDevedor = this.calculateInvoiceBalance(valorTotal, valorPago);
 
         const hojeStr = new Date().toISOString().split("T")[0];
         let status = "aberta";

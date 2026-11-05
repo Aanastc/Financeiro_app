@@ -117,18 +117,24 @@ finance-app/
 │       │   │   └── Investimentos.tsx      # Carteira de investimentos
 │       │   └── index.css                  # Design system com suporte completo Dark/Light mode
 ├── packages/
-│   └── services/                          # Serviços de domínio financeiro e integrações
-│       ├── document-import.service.ts     # Pipeline de importação com IA e validação de schema
-│       ├── document-import.types.ts       # Tipagens e schemas estritos por tipo de documento
-│       ├── finance.service.ts             # Regras de negócio contábeis e persistência
-│       └── supabase.ts                    # Cliente Supabase com persistência segura
+│   ├── services/                          # Serviços de domínio financeiro e integrações
+│   │   ├── ai.service.ts                  # Cliente da IA (chama a Edge Function, sem chave no navegador)
+│   │   ├── auth.service.ts                # Cadastro, login, perfil e recuperação de senha
+│   │   ├── document-import.service.ts     # Pipeline de importação com IA e validação de schema
+│   │   ├── document-import.types.ts       # Tipagens e schemas estritos por tipo de documento
+│   │   ├── finance.service.ts             # Regras de negócio contábeis e persistência
+│   │   ├── paginacao.ts                   # Busca paginada (o Supabase limita 1000 linhas por consulta)
+│   │   ├── splitwise.service.ts           # Grupos e divisão de despesas
+│   │   └── supabase.ts                    # Cliente Supabase com persistência segura
+│   └── utils/
+│       ├── cartao.utils.ts                # Ciclos de fatura
+│       └── instituicoes.ts                # Detecção genérica de bancos/instituições
 ├── supabase/
+│   ├── functions/ai-generate/             # Edge Function: proxy autenticado para o Gemini
 │   └── migrations/                        # Scripts SQL idempotentes e versionados
-│       ├── 001_revisao_tecnica_e_seguranca_schema.sql
-│       └── 002_create_documentos_importados.sql
 ├── scripts/                               # Scripts de automação e testes automatizados
-│   └── test_import_architecture.mjs       # Bateria de testes de arquitetura e isolamento
-└── lançamentos/                           # Amostras reais de documentos (PDFs, OFX, CSVs, imagens)
+│   └── test_auditoria_regras_financeiras.mjs
+└── lançamentos/                           # (ignorado pelo git) amostras locais de documentos
 ```
 
 ---
@@ -136,8 +142,9 @@ finance-app/
 ## 🚀 6. Como Executar o Projeto
 
 ### Pré-requisitos
-- Node.js 18+ (ou Node.js 20+ recomendado)
-- Chave de API do Google AI Studio (Gemini)
+- Node.js 20+
+- [Supabase CLI](https://supabase.com/docs/guides/cli) (para migrations e Edge Functions)
+- Chave de API do Google AI Studio (Gemini) — fica **somente no servidor**
 
 ### 1. Clonar e Instalar Dependências
 ```bash
@@ -146,11 +153,16 @@ cd Financeiro_app
 npm install
 ```
 
-### 2. Configurar Variáveis de Ambiente
-No diretório `apps/web/.env`:
-```env
-VITE_GEMINI_API_KEY=sua_chave_do_google_ai_studio_aqui
+### 2. Configurar o Supabase (banco + IA)
+```bash
+supabase link --project-ref <seu-project-ref>
+supabase db push                                   # aplica as migrations (inclui RLS)
+supabase secrets set GEMINI_API_KEY=sua_chave      # a chave NUNCA vai para o front-end
+supabase functions deploy ai-generate
 ```
+> ⚠️ Não use variáveis `VITE_*` para chaves secretas: tudo que começa com `VITE_` é embutido no JavaScript publicado.
+
+No painel do Supabase, em **Authentication → URL Configuration**, inclua `https://<seu-dominio>/reset-password` (e `http://localhost:5173/reset-password`) em **Redirect URLs** para a recuperação de senha.
 
 ### 3. Iniciar o Servidor de Desenvolvimento
 ```bash
@@ -159,14 +171,15 @@ npm run dev
 ```
 Acesse a aplicação no navegador em `http://localhost:5173`.
 
-### 4. Executar os Testes Automatizados da Arquitetura
+### 4. Executar os Testes de Regras Financeiras
 ```bash
-node scripts/test_import_architecture.mjs
+node scripts/test_auditoria_regras_financeiras.mjs
 ```
 
-### 5. Validar Build de Produção
+### 5. Validar Tipos e Build de Produção
 ```bash
 cd apps/web
+npm run typecheck
 npm run build
 ```
 

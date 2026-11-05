@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { X, Calendar, CheckCircle2, CircleDashed, AlertTriangle, CreditCard, ChevronRight, DollarSign, Trash2, Zap } from "lucide-react";
+import { X, Calendar, CheckCircle2, CircleDashed,    DollarSign, Trash2, Zap } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
 import toast from "react-hot-toast";
-import { supabase } from "../../../../packages/services/supabase";
 
 export default function DividaDetalheModal({ isOpen, onClose, divida, userId, onPagamentoRealizado }: any) {
     const [isPagarModalOpen, setIsPagarModalOpen] = useState(false);
@@ -309,7 +308,7 @@ export default function DividaDetalheModal({ isOpen, onClose, divida, userId, on
                                     <DollarSign size={16} /> Lançar Saídas de Pagamento no Fluxo de Caixa
                                 </p>
                                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                    Gera os lançamentos de saída na sua conta ({contas.find(c => c.id === contaId)?.nome || "Santander"}) para refletir as quitações no fluxo de caixa bancário sem duplicar despesas de consumo.
+                                    Gera os lançamentos de saída na sua conta ({contas.find(c => c.id === contaId)?.nome || "selecionada"}) para refletir as quitações no fluxo de caixa bancário sem duplicar despesas de consumo.
                                 </p>
                             </div>
                             <button

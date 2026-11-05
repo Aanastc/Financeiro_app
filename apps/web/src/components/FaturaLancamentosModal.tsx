@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { X, FileText, Calendar, CreditCard, ShoppingBag, ArrowDownCircle, ArrowUpCircle, CheckCircle2, ShieldCheck } from "lucide-react";
+import { motion } from "framer-motion";
+import { X, FileText, Calendar, CreditCard, ShoppingBag, ArrowDownCircle, ArrowUpCircle, CheckCircle2 } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
 
 export default function FaturaLancamentosModal({ isOpen, onClose, fatura }: { isOpen: boolean, onClose: () => void, fatura: any }) {

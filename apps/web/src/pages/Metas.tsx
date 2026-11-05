@@ -1,21 +1,18 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../../../packages/services/supabase";
 import { financeService } from "../../../../packages/services/finance.service";
 import {
 	Plus,
 	Target,
-	TrendingUp,
-	Calendar,
 	ArrowUpRight,
-	Wallet,
 	PiggyBank,
-	ChevronRight,
 	FileText
 } from "lucide-react";
-import { Toaster, toast } from "react-hot-toast";
+import { toast } from "react-hot-toast";
 import AddMetaWeb from "../components/AddMetaWeb";
 import AddDepositoWeb from "../components/AddDepositoWeb";
 import MetaExtratoModal from "../components/MetaExtratoModal";
+import PageLoader from "../components/PageLoader";
 
 export default function MetasWeb() {
 	const [metas, setMetas] = useState<any[]>([]);
@@ -26,42 +23,48 @@ export default function MetasWeb() {
 	const [depositoMeta, setDepositoMeta] = useState<{id: string, titulo: string} | null>(null);
 	const [extratoMeta, setExtratoMeta] = useState<any | null>(null);
 
+	// O loader só aparece no primeiro carregamento (recargas em tempo real não piscam a tela)
 	const loadMetas = useCallback(async () => {
-		setLoading(true);
-		const { data: { user } } = await supabase.auth.getUser();
-		if (user) {
-			// Sincroniza vínculos entre metas, investimentos e transações de RDB
-			await financeService.syncMetasInvestimentos(user.id).catch(() => {});
+		try {
+			const { data: { user } } = await supabase.auth.getUser();
+			if (user) {
+				// Sincroniza vínculos entre metas, investimentos e transações de RDB
+				await financeService.syncMetasInvestimentos(user.id).catch(() => {});
 
-			const [resMetas, resInv, resTx] = await Promise.all([
-				supabase
-					.from("metas")
-					.select(`
-						*,
-						metas_depositos (
-							id,
-							valor,
-							data_deposito
-						)
-					`)
-					.eq("usuario_id", user.id)
-					.order("prazo", { ascending: true }),
-				financeService.getInvestimentos(user.id),
-				supabase
-					.from("transacoes")
-					.select("id, valor, tipo, descricao, data, conta_id")
-					.eq("usuario_id", user.id)
-					.in("tipo", ["APORTE", "RESGATE"])
-			]);
+				const [resMetas, resInv, resTx] = await Promise.all([
+					supabase
+						.from("metas")
+						.select(`
+							*,
+							metas_depositos (
+								id,
+								valor,
+								data_deposito
+							)
+						`)
+						.eq("usuario_id", user.id)
+						.order("prazo", { ascending: true }),
+					financeService.getInvestimentos(user.id),
+					supabase
+						.from("transacoes")
+						.select("id, valor, tipo, descricao, data, conta_id")
+						.eq("usuario_id", user.id)
+						.in("tipo", ["APORTE", "RESGATE"])
+				]);
 			
-			if (resMetas.error) toast.error("Erro ao carregar metas");
-			else {
-				setMetas(resMetas.data || []);
+				if (resMetas.error) toast.error("Erro ao carregar metas");
+				else {
+					setMetas(resMetas.data || []);
+				}
+				setInvestimentos(resInv || []);
+				setTransacoesPatrimoniais(resTx.data || []);
 			}
-			setInvestimentos(resInv || []);
-			setTransacoesPatrimoniais(resTx.data || []);
+		} catch (e) {
+			console.error("Erro ao carregar metas:", e);
+			toast.error("Erro ao carregar metas");
+		} finally {
+			setLoading(false);
 		}
-		setLoading(false);
 	}, []);
 
 	const parseMetaId = (corretora: string) => {
@@ -94,6 +97,8 @@ export default function MetasWeb() {
 			if (channelTransacoes) supabase.removeChannel(channelTransacoes);
 		};
 	}, [loadMetas]);
+
+	if (loading) return <PageLoader />;
 
 	return (
 		<div className="space-y-6 sm:space-y-8 pb-20">

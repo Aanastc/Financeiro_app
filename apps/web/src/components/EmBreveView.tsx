@@ -1,6 +1,5 @@
-import React from "react";
 import { motion } from "framer-motion";
-import { Clock, Sparkles, ArrowLeft, ShieldCheck, Zap, Rocket } from "lucide-react";
+import { Clock, Sparkles, ArrowLeft, ShieldCheck,  Rocket } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface EmBreveViewProps {

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { Building2, CreditCard, Wallet, Plus, Check, X, ChevronLeft, UserPlus } from "lucide-react";
 import toast from "react-hot-toast";
+import { detectarInstituicao } from "../../../../packages/utils/instituicoes";
 
 interface Props {
   isOpen: boolean;
@@ -18,7 +19,8 @@ export default function OnboardingContasModal({ isOpen, userId, onComplete, init
   // Form State
   const [nome, setNome] = useState("");
   const [tipo, setTipo] = useState("Conta Corrente");
-  const [corHex, setCorHex] = useState("#111827");
+  // Cor da marca detectada pelo nome da conta (ex.: "Nubank" → roxo)
+  const corHex = detectarInstituicao(nome)?.cor || "#111827";
   const [temDebito, setTemDebito] = useState(true);
 
   const [temCredito, setTemCredito] = useState(false);

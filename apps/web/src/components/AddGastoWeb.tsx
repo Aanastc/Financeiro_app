@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, ShoppingBag, CreditCard, Wallet, Zap } from "lucide-react";
+import { X, ShoppingBag, CreditCard, Wallet } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { supabase } from "../../../../packages/services/supabase";
 import { AddCartaoWeb } from "./AddCartaoWeb";
@@ -369,7 +369,7 @@ export function AddGastoWeb({
 				onClose={() => setIsAddCartaoOpen(false)}
 				onSuccess={() => {
 					setIsAddCartaoOpen(false);
-					carregarCartoes();
+					carregarDados();
 				}}
 			/>
 		</div>

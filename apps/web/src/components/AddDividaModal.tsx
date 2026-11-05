@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { X, HandCoins, Building, Calendar, DollarSign, Percent } from "lucide-react";
+import { motion } from "framer-motion";
+import { X, HandCoins, Building, Calendar, DollarSign } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
 import toast from "react-hot-toast";
 

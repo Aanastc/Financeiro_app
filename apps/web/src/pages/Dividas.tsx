@@ -11,15 +11,10 @@ import {
 	RefreshCw,
 	CreditCard,
 	Calendar,
-	Filter,
-	AlertTriangle,
-	Banknote,
-	ShieldAlert
-} from "lucide-react";
+	Banknote } from "lucide-react";
 import { Toaster, toast } from "react-hot-toast";
 import AddDividaModal from "../components/AddDividaModal";
 import DividaDetalheModal from "../components/DividaDetalheModal";
-import { motion } from "framer-motion";
 
 export default function DividasWeb() {
 	const [dividas, setDividas] = useState<any[]>([]);

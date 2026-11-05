@@ -1,28 +1,52 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { lazy, Suspense, useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { supabase } from "../../../packages/services/supabase";
 import { Toaster } from "react-hot-toast";
-import DashboardLayout from "./layouts/DashboardLayout";
-import HomeWeb from "./HomeWeb";
-import LoginWeb from "./pages/LoginWeb";
-import VerifyWeb from "./pages/VerifyWeb";
-import ForgotPasswordWeb from "./pages/ForgotPasswordWeb";
-import ResetPasswordWeb from "./pages/ResetPasswordWeb";
-import EntradasWeb from "./pages/Entradas";
-import GastosWeb from "./pages/Gastos";
-import RegisterWeb from "./pages/RegisterWeb";
-import Cartoes from "./pages/Cartoes";
-import DividasWeb from "./pages/Dividas";
-import MetasWeb from "./pages/Metas";
-import InvestimentosWeb from "./pages/Investimentos";
-import Contas from "./pages/Contas";
-import ImportadorWeb from "./pages/Importador";
-import Devedores from "./pages/Devedores";
-import Faturas from "./pages/Faturas";
+import PageLoader from "./components/PageLoader";
 import LandingPage from "./pages/LandingPage";
-import ConsultorInteligente from "./pages/ConsultorInteligente";
+
+// Páginas carregadas sob demanda: a landing não baixa ExcelJS, Recharts, Gemini etc.
+const DashboardLayout = lazy(() => import("./layouts/DashboardLayout"));
+const HomeWeb = lazy(() => import("./HomeWeb"));
+const LoginWeb = lazy(() => import("./pages/LoginWeb"));
+const VerifyWeb = lazy(() => import("./pages/VerifyWeb"));
+const ForgotPasswordWeb = lazy(() => import("./pages/ForgotPasswordWeb"));
+const ResetPasswordWeb = lazy(() => import("./pages/ResetPasswordWeb"));
+const EntradasWeb = lazy(() => import("./pages/Entradas"));
+const GastosWeb = lazy(() => import("./pages/Gastos"));
+const RegisterWeb = lazy(() => import("./pages/RegisterWeb"));
+const Cartoes = lazy(() => import("./pages/Cartoes"));
+const DividasWeb = lazy(() => import("./pages/Dividas"));
+const MetasWeb = lazy(() => import("./pages/Metas"));
+const InvestimentosWeb = lazy(() => import("./pages/Investimentos"));
+const Contas = lazy(() => import("./pages/Contas"));
+const ImportadorWeb = lazy(() => import("./pages/Importador"));
+const Devedores = lazy(() => import("./pages/Devedores"));
+const Faturas = lazy(() => import("./pages/Faturas"));
+const ConsultorInteligente = lazy(() => import("./pages/ConsultorInteligente"));
+
+/**
+ * Se o link de recuperação de senha cair em qualquer rota (ex.: Redirect URL não
+ * configurada no Supabase), leva o usuário para a tela de nova senha em vez de
+ * deixá-lo logado sem trocar a senha.
+ */
+function RecuperacaoSenhaListener() {
+	const navigate = useNavigate();
+	useEffect(() => {
+		const { data } = supabase.auth.onAuthStateChange((event) => {
+			if (event === "PASSWORD_RECOVERY" && window.location.pathname !== "/reset-password") {
+				navigate("/reset-password", { replace: true });
+			}
+		});
+		return () => data.subscription.unsubscribe();
+	}, [navigate]);
+	return null;
+}
 
 export default function App() {
 	return (
 		<BrowserRouter>
+			<RecuperacaoSenhaListener />
 			<Toaster
 				position="top-right"
 				toastOptions={{
@@ -36,6 +60,7 @@ export default function App() {
 					},
 				}}
 			/>
+			<Suspense fallback={<PageLoader fullScreen />}>
 			<Routes>
 				{/* Landing Page Inicial */}
 				<Route path="/" element={<LandingPage />} />
@@ -69,6 +94,7 @@ export default function App() {
 				{/* Redirecionamento se a rota não for encontrada */}
 				<Route path="*" element={<Navigate to="/" replace />} />
 			</Routes>
+			</Suspense>
 		</BrowserRouter>
 	);
 }

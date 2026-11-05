@@ -29,6 +29,7 @@ export interface ParcelaObrigacao {
   numero_parcela: number;
   valor: number;
   data_vencimento: string; // YYYY-MM-DD
+  status?: 'paga' | 'pendente' | string;
 }
 
 export interface DadosContratoEmprestimo {
@@ -72,6 +73,7 @@ export interface ItemFatura {
   total_parcelas?: number;
   terceiro?: boolean;
   nome_terceiro?: string;
+  natureza?: string;
 }
 
 export interface PagamentoFaturaDetectado {
@@ -95,7 +97,8 @@ export interface TransacaoExtrato {
   data: string; // YYYY-MM-DD
   descricao: string;
   valor: number;
-  tipo: 'RECEITA' | 'DESPESA' | 'TRANSFERENCIA' | 'PAGAMENTO_DIVIDA' | 'PAGAMENTO_FATURA' | 'APORTE' | 'RESGATE';
+  tipo: 'RECEITA' | 'DESPESA' | 'TRANSFERENCIA' | 'PAGAMENTO_DIVIDA' | 'PAGAMENTO_FATURA' | 'APORTE' | 'INVESTIMENTO' | 'RESGATE';
+  natureza?: string;
   categoria_sugerida: string;
   subtipo?: 'APLICACAO_RDB' | 'RESGATE_RDB' | 'TRANSFERENCIA_PROPRIA' | null;
   principal?: number;

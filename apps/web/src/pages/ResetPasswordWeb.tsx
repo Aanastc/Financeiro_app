@@ -15,24 +15,51 @@ export default function ResetPasswordWeb() {
 	const navigate = useNavigate();
 
 	useEffect(() => {
-		const verifySession = async () => {
-			// Supabase pega automaticamente as credenciais do hash do link e gera a sessão
-			const { data: { session } } = await supabase.auth.getSession();
-			
-			if (!session) {
-				toast.error("Link de redefinição inválido ou expirado. Por favor, solicite um novo e-mail.");
-				navigate("/forgot-password");
-			} else {
-				setCheckingSession(false);
-			}
+		let resolvido = false;
+		const liberar = () => {
+			if (resolvido) return;
+			resolvido = true;
+			setCheckingSession(false);
+		};
+		const rejeitar = (mensagem: string) => {
+			if (resolvido) return;
+			resolvido = true;
+			toast.error(mensagem);
+			navigate("/forgot-password");
 		};
 
-		// Pequeno delay para garantir que o Supabase processou os fragmentos da URL hash
-		const timer = setTimeout(() => {
-			verifySession();
-		}, 1000);
+		// Link expirado/inválido: o Supabase devolve o erro na própria URL
+		const params = new URLSearchParams(window.location.hash.replace(/^#/, "") || window.location.search);
+		const erroUrl = params.get("error_code") || params.get("error");
+		if (erroUrl) {
+			rejeitar(
+				erroUrl === "otp_expired"
+					? "Este link de redefinição expirou. Solicite um novo e-mail."
+					: "Link de redefinição inválido. Solicite um novo e-mail."
+			);
+			return;
+		}
 
-		return () => clearTimeout(timer);
+		// O token do link é processado de forma assíncrona: escuta o evento em vez de esperar um tempo fixo
+		const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+			if (session && (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN" || event === "INITIAL_SESSION")) {
+				liberar();
+			}
+		});
+
+		supabase.auth.getSession().then(({ data: { session } }) => {
+			if (session) liberar();
+		});
+
+		// Rede lenta: só desiste depois de um tempo razoável
+		const timeout = setTimeout(() => {
+			rejeitar("Link de redefinição inválido ou expirado. Por favor, solicite um novo e-mail.");
+		}, 8000);
+
+		return () => {
+			clearTimeout(timeout);
+			listener.subscription.unsubscribe();
+		};
 	}, [navigate]);
 
 	const handleResetPassword = async (e: React.FormEvent) => {

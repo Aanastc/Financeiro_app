@@ -1,32 +1,27 @@
 import { useState, useEffect, useMemo } from "react";
 import { authService } from "../../../../packages/services/auth.service";
 import { financeService } from "../../../../packages/services/finance.service";
-import { supabase } from "../../../../packages/services/supabase";
 import { getFaturaMesReferencia } from "../../../../packages/utils/cartao.utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
 	CreditCard, 
 	Calendar, 
 	CheckCircle2, 
-	CircleDashed, 
 	ChevronLeft, 
 	ChevronRight, 
 	FileText, 
 	AlertTriangle,
 	Eye,
 	TrendingUp,
-	ArrowRightLeft,
 	Filter,
 	Search,
 	RotateCcw,
 	Table as TableIcon,
-	LayoutGrid,
-	AlertCircle,
-	Check
-} from "lucide-react";
+	LayoutGrid } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import FaturaLancamentosModal from "../components/FaturaLancamentosModal";
+import { mesmaInstituicao } from "../../../../packages/utils/instituicoes";
 
 const NOMES_MESES = [
 	"Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -171,14 +166,9 @@ export default function Faturas() {
 	const renegociacoesVisiveis = useMemo(() => {
 		if (filtroCartaoId === "TODOS") return dividasRenegociacao;
 		const cartaoSel = cartoes.find(c => c.id === filtroCartaoId);
-		const cNome = (cartaoSel?.nome || "").toLowerCase();
 		return dividasRenegociacao.filter(d => {
 			if (d.cartao_id === filtroCartaoId) return true;
-			const dDesc = (d.descricao || "").toLowerCase();
-			const dInst = (d.instituicao || "").toLowerCase();
-			if (cNome.includes("santander") && (dInst.includes("santander") || dDesc.includes("santander"))) return true;
-			if (cNome.includes("nubank") && (dInst.includes("nubank") || dDesc.includes("nubank"))) return true;
-			return false;
+			return mesmaInstituicao(`${d.instituicao || ""} ${d.descricao || ""}`, cartaoSel?.nome);
 		});
 	}, [dividasRenegociacao, filtroCartaoId, cartoes]);
 
@@ -187,13 +177,6 @@ export default function Faturas() {
 		const baseItens = transacoesCredito.filter(t => {
 			if (!t.data) return false;
 
-			// 🛡️ Filtro de proteção: descarta itens corrompidos residuais (como "216 ou valor 42)
-			if ((t.descricao && t.descricao.includes('"216')) || 
-				((t.descricao || "").toLowerCase().includes("htm*operacao") && Math.abs(Number(t.valor) - 42) < 0.1) ||
-				((t.descricao || "").includes("12/12") && t.data === "2026-11-12")) {
-				return false;
-			}
-			
 			// Filtro de cartão
 			if (filtroCartaoId !== "TODOS" && t.cartao_id !== filtroCartaoId) return false;
 
@@ -237,19 +220,12 @@ export default function Faturas() {
 		// Projeta parcelas de renegociação de cartão com vencimento neste mês
 		const mesAlvo = `${filtroAno}-${filtroMes}`;
 		const parcelasRenegDoMes: any[] = [];
-		const cartaoSel = cartoes.find(c => c.id === filtroCartaoId);
-		const isFiltroNubank = cartaoSel && (cartaoSel.nome || "").toLowerCase().includes("nubank");
-
 		renegociacoesVisiveis.forEach(reneg => {
-			const isRenegSantander = ((reneg.descricao || "") + (reneg.instituicao || "")).toLowerCase().includes("santander");
-			if (filtroCartaoId !== "TODOS" && isFiltroNubank && isRenegSantander) {
-				return;
-			}
-
-			const cartaoAssociado = cartoes.find(c => 
-				c.id === reneg.cartao_id || 
-				((reneg.descricao || "").toLowerCase().includes("8282") && (c.nome || "").toLowerCase().includes("8282")) ||
-				((reneg.instituicao || "").toLowerCase().includes("santander") && (c.nome || "").toLowerCase().includes("santander"))
+			const textoReneg = `${reneg.instituicao || ""} ${reneg.descricao || ""}`;
+			const cartaoAssociado = cartoes.find(c =>
+				c.id === reneg.cartao_id ||
+				(c.nome && textoReneg.toLowerCase().includes(c.nome.toLowerCase())) ||
+				mesmaInstituicao(textoReneg, c.nome)
 			);
 
 			if (filtroCartaoId !== "TODOS" && cartaoAssociado && cartaoAssociado.id !== filtroCartaoId) {

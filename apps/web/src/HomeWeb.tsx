@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../../../packages/services/supabase";
 import {
-	BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell,
+	BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import {
 	ArrowUpRight, ArrowDownRight, Wallet, TrendingUp, TrendingDown, Sparkles, AlertCircle, Phone, CreditCard, ChevronDown, Calendar, Brain, HandCoins, Users, Bell, ArrowRight,
-	Briefcase, Building2, Split, Share2, Send, CheckCircle2, DollarSign, ExternalLink, ShieldCheck, UserCheck, Plus, Check, MessageSquare, ArrowDownLeft
+	Briefcase,     CheckCircle2,    UserCheck, Plus,   ArrowDownLeft
 } from "lucide-react";
 import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { authService } from "../../../packages/services/auth.service";
@@ -19,8 +19,12 @@ import AddSplitDespesaModal from "./components/AddSplitDespesaModal";
 import ConviteAmigoModal from "./components/ConviteAmigoModal";
 import AddContatoWeb from "./components/AddContatoWeb";
 import ChatAcordosIaModal from "./components/ChatAcordosIaModal";
+import CriarGrupoModal from "./components/CriarGrupoModal";
+import { splitwiseService } from "../../../packages/services/splitwise.service";
+import type { Grupo } from "../../../packages/services/splitwise.service";
 import EmBreveView from "./components/EmBreveView";
 import { getFaturaMesReferencia } from "../../../packages/utils/cartao.utils";
+import CategoryBreakdown from "./components/CategoryBreakdown";
 
 const NOME_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
@@ -30,8 +34,7 @@ export default function HomeWeb() {
 	const [stats, setStats] = useState({ entradasMes: 0, gastosMes: 0, saldoTotal: 0 });
 	const [nome, setNome] = useState("");
 	const [userId, setUserId] = useState("");
-	const [acompanhaMei, setAcompanhaMei] = useState<boolean | null>(null);
-	const [viewMode, setViewMode] = useState<"PF" | "MEI">("PF");
+	const [, setAcompanhaMei] = useState<boolean | null>(null);
 	const [isClient, setIsClient] = useState(false);
 	const [isFetchingData, setIsFetchingData] = useState(true);
 
@@ -59,9 +62,11 @@ export default function HomeWeb() {
 	const [isAddSplitOpen, setIsAddSplitOpen] = useState(false);
 	const [isAddContatoOpen, setIsAddContatoOpen] = useState(false);
 	const [isChatIaOpen, setIsChatIaOpen] = useState(false);
+	const [isCriarGrupoOpen, setIsCriarGrupoOpen] = useState(false);
 	const [contatoParaConvite, setContatoParaConvite] = useState<any>(null);
 	const [contatos, setContatos] = useState<any[]>([]);
 	const [credores, setCredores] = useState<any[]>([]);
+	const [grupos, setGrupos] = useState<Grupo[]>([]);
 
 	useEffect(() => { setIsClient(true); }, []);
 	
@@ -128,7 +133,7 @@ export default function HomeWeb() {
 
 		try {
 			const [
-				saldoAtual, resTransacoes, resInv, resDiv, resDevedores, resCartoes, resLastTransacao, resCountTransacoes, resContas, resContatos, resTransacoesCredores
+				saldoAtual, resTransacoes, resInv, resDiv, resDevedores, resCartoes, resLastTransacao, resCountTransacoes, resContas, resContatos, resTransacoesCredores, resGrupos
 			] = await Promise.all([
 				financeService.getGlobalBalance(user.id).catch(() => 0),
 				supabase.from("transacoes").select("*, categorias(nome), contas_bancarias(nome, tipo)").eq("usuario_id", user.id).gte("data", startOfYear).lte("data", endOfYear),
@@ -141,13 +146,28 @@ export default function HomeWeb() {
 				financeService.getContasBancarias(user.id).catch(() => []),
 				supabase.from("contatos").select("*").eq("usuario_id", user.id).order("nome"),
 				supabase.from("transacoes")
-					.select("id, descricao, data, valor, terceiro_pago, observacao")
+					.select("id, descricao, data, valor, terceiro_pago, observacao, cartao_id, conta_id, cartoes(nome), contas_bancarias(nome)")
 					.eq("usuario_id", user.id)
-					.or("observacao.ilike.%parceria_credor_id%,descricao.ilike.%claudney%,descricao.ilike.%claudiney%")
+					.ilike("observacao", "%parceria_credor_id%"),
+				splitwiseService.getGrupos(user.id).catch(() => [])
 			]);
 
-			const contatosList = resContatos?.data || [];
+			const contatosRaw = resContatos?.data || [];
+			const contatosList = contatosRaw.map((c: any) => {
+				const isFake = c.email && (c.email.toLowerCase().includes("@example.com") || c.email.toLowerCase().includes("@exemplo.com"));
+				return isFake ? { ...c, email: null } : c;
+			});
+
+			const idsFakeHome = contatosRaw
+				.filter((c: any) => c.email && (c.email.toLowerCase().includes("@example.com") || c.email.toLowerCase().includes("@exemplo.com")))
+				.map((c: any) => c.id);
+
+			if (idsFakeHome.length > 0) {
+				supabase.from("contatos").update({ email: null }).in("id", idsFakeHome).then(() => {});
+			}
+
 			setContatos(contatosList);
+			setGrupos(resGrupos || []);
 
 			// Processamento de Credores (quem o usuário deve em despesas divididas)
 			const txsCredores = resTransacoesCredores?.data || [];
@@ -169,30 +189,31 @@ export default function HomeWeb() {
 					} catch (e) {}
 				}
 
-				if (!isCredorItem) {
-					const descLower = (g.descricao || "").toLowerCase();
-					if (descLower.includes("claudney") || descLower.includes("claudiney")) {
-						contatoEncontrado = contatosList.find((c: any) => 
-							(c.nome && descLower.includes(c.nome.toLowerCase()))
-						) || { id: "claudiney-fallback", nome: "Claudiney", telefone: "" };
-						isCredorItem = true;
-						valorOriginal = valorParcela * 2;
-					}
-				}
-
 				if (isCredorItem && contatoEncontrado) {
 					const cId = contatoEncontrado.id;
 					if (!credoresMap.has(cId)) {
 						credoresMap.set(cId, { contato: contatoEncontrado, total_devido: 0, itens: [] });
 					}
 					const credor = credoresMap.get(cId);
+					const cartaoNome = g.cartoes?.nome || null;
+					const contaNome = g.contas_bancarias?.nome || null;
+					const formaPagamento = g.cartao_id
+						? (cartaoNome ? `Crédito (${cartaoNome})` : "Crédito")
+						: g.conta_id
+						? (contaNome ? `Débito (${contaNome})` : "Débito")
+						: "Débito / Pix";
+
 					credor.itens.push({
 						id: g.id,
 						descricao: g.descricao,
 						data: g.data,
 						valor_parcela_usuario: valorParcela,
 						valor_original: valorOriginal,
-						quitado: g.terceiro_pago || false
+						quitado: g.terceiro_pago || false,
+						cartao_nome: cartaoNome,
+						conta_nome: contaNome,
+						forma_pagamento: formaPagamento,
+						is_credito: Boolean(g.cartao_id),
 					});
 				}
 			});
@@ -274,7 +295,7 @@ export default function HomeWeb() {
 			setHasLaunchesThisMonth((resCountTransacoes?.count || 0) > 0);
 
 			if (resCartoes && resCartoes.length > 0) {
-				const lastMonths = [];
+				const lastMonths: string[] = [];
 				const dDate = new Date();
 				for (let i = 0; i < 3; i++) {
 					lastMonths.push(`${dDate.getFullYear()}-${String(dDate.getMonth() + 1).padStart(2, '0')}`);
@@ -559,8 +580,6 @@ export default function HomeWeb() {
 		return Object.keys(grouped).map(name => ({ name, value: grouped[name] }));
 	}, [rawGastos, filterYear, filterMonth]);
 
-	const totalEntradasPie = useMemo(() => entradaPieData.reduce((acc, cur) => acc + Number(cur.value), 0), [entradaPieData]);
-	const totalGastosPie = useMemo(() => gastoPieData.reduce((acc, cur) => acc + Number(cur.value), 0), [gastoPieData]);
 	const saldoFiltrado = useMemo(() => dashboardData.totaisMes.entradas - dashboardData.totaisMes.gastos, [dashboardData]);
 
 	const previsaoGastoProximoMes = useMemo(() => {
@@ -821,76 +840,6 @@ export default function HomeWeb() {
 
 	const devedoresAtivos = devedores.filter(d => d.total_devido > 0);
 
-	const PALETA_CORES_DISTINTAS = [
-		"#3B82F6", // Azul
-		"#10B981", // Esmeralda / Verde
-		"#F59E0B", // Âmbar / Dourado
-		"#8B5CF6", // Roxo
-		"#EC4899", // Rosa
-		"#06B6D4", // Ciano / Turquesa
-		"#F97316", // Laranja
-		"#6366F1", // Índigo
-		"#14B8A6", // Teal
-		"#EF4444", // Vermelho
-		"#84CC16", // Lima
-		"#A855F7", // Violeta
-		"#EAB308", // Amarelo
-		"#D946EF", // Fúcsia
-		"#0284C7", // Azul oceano
-		"#059669", // Verde escuro
-		"#E11D48", // Rubi
-		"#4F46E5", // Índigo escuro
-		"#F43F5E", // Rose
-		"#64748B", // Slate
-		"#22C55E", // Verde vibrante
-		"#38BDF8", // Azul céu
-		"#FB923C", // Tangerina
-		"#C084FC"  // Lilás
-	];
-
-	const CATEGORY_COLOR_MAP: Record<string, string> = {
-		// Entradas
-		"salário": "#10B981",
-		"salario": "#10B981",
-		"investimentos": "#3B82F6",
-		"pix recebido": "#8B5CF6",
-		"presente": "#EC4899",
-		"fgts": "#F59E0B",
-		"anulação de gasto de terceiro": "#06B6D4",
-		"anulacao de gasto de terceiro": "#06B6D4",
-		"ir": "#84CC16",
-		"viagem": "#6366F1",
-		"assinaturas": "#D946EF",
-		
-		// Gastos
-		"alimentação": "#F97316",
-		"alimentacao": "#F97316",
-		"transporte": "#3B82F6",
-		"moradia": "#8B5CF6",
-		"academia": "#10B981",
-		"supermercado": "#F59E0B",
-		"compras": "#EC4899",
-		"lazer": "#06B6D4",
-		"contabilidade": "#6366F1",
-		"cinema": "#E11D48",
-		"salão": "#D946EF",
-		"salao": "#D946EF",
-		"papelaria": "#84CC16",
-		"educação": "#EAB308",
-		"educacao": "#EAB308",
-		"saúde": "#EF4444",
-		"saude": "#EF4444",
-		"outros": "#64748B"
-	};
-
-	const getCategoryColor = (categoryName: string, index: number): string => {
-		const normalized = (categoryName || "").toLowerCase().trim();
-		if (CATEGORY_COLOR_MAP[normalized]) {
-			return CATEGORY_COLOR_MAP[normalized];
-		}
-		return PALETA_CORES_DISTINTAS[index % PALETA_CORES_DISTINTAS.length];
-	};
-
 	return (
 		<motion.div className="space-y-6 sm:space-y-8 pb-20" initial={{ opacity: 0 }} animate={{ opacity: 1, transition: { staggerChildren: 0.05 } }}>
 			
@@ -965,9 +914,7 @@ export default function HomeWeb() {
 							<Users size={22} />
 						</div>
 						<div className="flex items-center gap-1.5">
-							<span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 shadow-xs">
-								Em Breve
-							</span>
+							
 							<span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
 								caminhoAtivo === "SPLITWISE"
 									? "bg-white/25 text-white"
@@ -1016,9 +963,7 @@ export default function HomeWeb() {
 							<Briefcase size={22} />
 						</div>
 						<div className="flex items-center gap-1.5">
-							<span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 shadow-xs">
-								Em Breve
-							</span>
+							
 							<span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
 								caminhoAtivo === "PJ"
 									? "bg-white/25 text-white"
@@ -1346,50 +1291,20 @@ export default function HomeWeb() {
 				)}
 			</div>
 
-			{/* 7. GRÁFICOS DE PIZZA (ORIGENS E DESTINOS) */}
+			{/* 7. DISTRIBUIÇÃO POR CATEGORIA (ORIGENS E DESTINOS) */}
 			<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-				<div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col items-center">
-					<h3 className="text-md font-black text-slate-800 dark:text-slate-100 mb-4 self-start flex items-center gap-2"><TrendingUp className="text-emerald-500" size={18} /> Origem das Entradas</h3>
-					<div className="h-64 w-full relative flex items-center justify-center">
-						{entradaPieData.length > 0 ? (
-							<>
-								<ResponsiveContainer width="100%" height="100%">
-									<PieChart>
-										<Pie data={entradaPieData} innerRadius={65} outerRadius={90} paddingAngle={2} dataKey="value" stroke="none">
-											{entradaPieData.map((entry: any, i: number) => (
-												<Cell key={i} fill={getCategoryColor(entry.name, i)} />
-											))}
-										</Pie>
-										<Tooltip formatter={(val: number) => `R$ ${val.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} />
-										<Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: 13, paddingTop: 10 }} />
-									</PieChart>
-								</ResponsiveContainer>
-								<div className="absolute pb-10 flex flex-col items-center pointer-events-none"><span className="text-xs text-slate-400 dark:text-slate-500 font-bold">TOTAL</span><span className="text-xl font-black text-slate-800 dark:text-slate-100">R$ {totalEntradasPie.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}</span></div>
-							</>
-						) : <p className="text-slate-400 italic text-sm">Sem dados.</p>}
-					</div>
-				</div>
-				<div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col items-center">
-					<h3 className="text-md font-black text-slate-800 dark:text-slate-100 mb-4 self-start flex items-center gap-2"><TrendingDown className="text-rose-500" size={18} /> Destino dos Gastos</h3>
-					<div className="h-64 w-full relative flex items-center justify-center">
-						{gastoPieData.length > 0 ? (
-							<>
-								<ResponsiveContainer width="100%" height="100%">
-									<PieChart>
-										<Pie data={gastoPieData} innerRadius={65} outerRadius={90} paddingAngle={2} dataKey="value" stroke="none">
-											{gastoPieData.map((entry: any, i: number) => (
-												<Cell key={i} fill={getCategoryColor(entry.name, i)} />
-											))}
-										</Pie>
-										<Tooltip formatter={(val: number) => `R$ ${val.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} />
-										<Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: 13, paddingTop: 10 }} />
-									</PieChart>
-								</ResponsiveContainer>
-								<div className="absolute pb-10 flex flex-col items-center pointer-events-none"><span className="text-xs text-slate-400 dark:text-slate-500 font-bold">TOTAL</span><span className="text-xl font-black text-slate-800 dark:text-slate-100">R$ {totalGastosPie.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}</span></div>
-							</>
-						) : <p className="text-slate-400 italic text-sm">Sem dados.</p>}
-					</div>
-				</div>
+				<CategoryBreakdown
+					title="Origem das Entradas"
+					icon={<TrendingUp className="text-emerald-500" size={18} />}
+					data={entradaPieData}
+					barClassName="bg-emerald-500"
+				/>
+				<CategoryBreakdown
+					title="Destino dos Gastos"
+					icon={<TrendingDown className="text-rose-500" size={18} />}
+					data={gastoPieData}
+					barClassName="bg-rose-500"
+				/>
 			</div>
 
 			{/* 8. ÚLTIMOS LANÇAMENTOS */}
@@ -1402,7 +1317,299 @@ export default function HomeWeb() {
 				</div>
 				</>
 			) : caminhoAtivo === "SPLITWISE" ? (
-				<EmBreveView modulo="SPLITWISE" onVoltarPessoal={() => handleMudarCaminho("PESSOAL")} />
+				/* ========================================================
+				   CAMINHO 2: FINANÇAS ENTRE PESSOAS (SPLITWISE HUB)
+				   ======================================================== */
+				<motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 sm:space-y-8">
+					{/* BANNER SPLITWISE HUB */}
+					<div className="bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-700 rounded-3xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden">
+						<div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+							<div>
+								<div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider mb-3">
+									<Users size={14} /> Splitwise & Despesas Compartilhadas
+								</div>
+								<h2 className="text-2xl sm:text-3xl font-black tracking-tight">
+									Finanças entre Amigos e Grupos
+								</h2>
+								<p className="text-purple-100 text-sm max-w-xl mt-1">
+									Divida despesas de viagens, casa, casal e rolês. Rateio inteligente por partes iguais, valores exatos ou cotas com sincronização em tempo real.
+								</p>
+							</div>
+
+							<div className="flex flex-wrap items-center gap-3">
+								<button
+									onClick={() => setIsAddSplitOpen(true)}
+									className="flex items-center gap-2 bg-white text-purple-700 hover:bg-purple-50 px-5 py-3 rounded-2xl font-black text-sm shadow-md transition-all cursor-pointer whitespace-nowrap"
+								>
+									<Plus size={18} /> Dividir Nova Despesa
+								</button>
+								<button
+									onClick={() => setIsCriarGrupoOpen(true)}
+									className="flex items-center gap-2 bg-purple-500/30 hover:bg-purple-500/50 text-white border border-white/20 px-4 py-3 rounded-2xl font-bold text-sm backdrop-blur-md transition-all cursor-pointer whitespace-nowrap"
+								>
+									<Users size={18} /> Novo Grupo
+								</button>
+								<button
+									onClick={() => setIsChatIaOpen(true)}
+									className="flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-slate-900 px-4 py-3 rounded-2xl font-black text-sm shadow-md transition-all cursor-pointer whitespace-nowrap"
+								>
+									<Sparkles size={18} className="text-amber-700 animate-pulse" /> Assistente IA
+								</button>
+								<button
+									onClick={() => navigate("/devedores")}
+									className="flex items-center gap-2 bg-purple-900/40 hover:bg-purple-900/60 text-white px-4 py-3 rounded-2xl font-bold text-sm border border-white/20 transition-all cursor-pointer whitespace-nowrap"
+								>
+									Painel Completo <ArrowRight size={16} />
+								</button>
+							</div>
+						</div>
+					</div>
+
+					{/* KPIS DO SPLITWISE */}
+					<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+						<div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-xs flex items-center gap-4">
+							<div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-500 shrink-0">
+								<ArrowDownLeft size={24} />
+							</div>
+							<div className="min-w-0">
+								<p className="text-slate-400 dark:text-slate-500 font-bold text-[10px] uppercase tracking-wider">
+									Total a Receber
+								</p>
+								<h3 className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5 truncate">
+									{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalAReceberSplit)}
+								</h3>
+								<span className="text-[10px] text-slate-400 block mt-0.5">
+									{devedores.filter(d => d.total_devido > 0).length} amigo(s) com valor pendente
+								</span>
+							</div>
+						</div>
+
+						<div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-xs flex items-center gap-4">
+							<div className="w-12 h-12 rounded-xl bg-rose-50 dark:bg-rose-950/40 flex items-center justify-center text-rose-500 shrink-0">
+								<ArrowUpRight size={24} />
+							</div>
+							<div className="min-w-0">
+								<p className="text-slate-400 dark:text-slate-500 font-bold text-[10px] uppercase tracking-wider">
+									Total a Pagar
+								</p>
+								<h3 className="text-xl sm:text-2xl font-black text-rose-500 mt-0.5 truncate">
+									{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalAPagarSplit)}
+								</h3>
+								<span className="text-[10px] text-slate-400 block mt-0.5">
+									{credores.filter(c => c.total_devido > 0).length} amigo(s) a quem você deve
+								</span>
+							</div>
+						</div>
+
+						<div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-xs flex items-center gap-4">
+							<div className="w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-950/40 flex items-center justify-center text-purple-600 dark:text-purple-400 shrink-0">
+								<Users size={24} />
+							</div>
+							<div className="min-w-0">
+								<p className="text-slate-400 dark:text-slate-500 font-bold text-[10px] uppercase tracking-wider">
+									Saldo Líquido Geral
+								</p>
+								<h3 className={`text-xl sm:text-2xl font-black mt-0.5 truncate ${
+									(totalAReceberSplit - totalAPagarSplit) >= 0 ? "text-purple-600 dark:text-purple-400" : "text-rose-500"
+								}`}>
+									{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalAReceberSplit - totalAPagarSplit)}
+								</h3>
+								<span className="text-[10px] text-slate-400 block mt-0.5">
+									{grupos.length} grupos cadastrados
+								</span>
+							</div>
+						</div>
+					</div>
+
+					{/* GRUPOS ATIVOS & DEVEDORES (SPLIIT STYLE) */}
+					<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+						{/* SEÇÃO 1: SEUS GRUPOS (SPLIIT / TRICOUNT) */}
+						<div className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+							<div>
+								<div className="flex justify-between items-center mb-6">
+									<div>
+										<h3 className="font-black text-slate-800 dark:text-slate-100 text-lg">
+											Seus Grupos de Rateio
+										</h3>
+										<p className="text-xs text-slate-400">Viagens, república, eventos e compras conjuntas</p>
+									</div>
+									<button
+										onClick={() => setIsCriarGrupoOpen(true)}
+										className="text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
+									>
+										<Plus size={14} /> Novo Grupo
+									</button>
+								</div>
+
+								{grupos.length === 0 ? (
+									<div className="text-center py-10 px-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 space-y-3">
+										<Users size={32} className="mx-auto text-purple-400" />
+										<p className="text-xs font-bold text-slate-600 dark:text-slate-300">Nenhum grupo criado ainda.</p>
+										<p className="text-[11px] text-slate-400 max-w-xs mx-auto">Crie um grupo para dividir as despesas de viagens, moradia ou churrasco!</p>
+										<button
+											onClick={() => setIsCriarGrupoOpen(true)}
+											className="px-4 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold hover:bg-purple-700 transition-colors cursor-pointer"
+										>
+											+ Criar Primeiro Grupo
+										</button>
+									</div>
+								) : (
+									<div className="space-y-3">
+										{grupos.slice(0, 4).map(grupo => (
+											<div
+												key={grupo.id}
+												onClick={() => navigate("/devedores")}
+												className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 hover:border-purple-300 transition-all cursor-pointer"
+											>
+												<div className="flex items-center gap-3">
+													<div 
+														className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black shrink-0"
+														style={{ backgroundColor: grupo.cor_hex || "#8b5cf6" }}
+													>
+														<Users size={18} />
+													</div>
+													<div className="min-w-0">
+														<h4 className="font-bold text-xs text-slate-800 dark:text-slate-100 truncate">{grupo.nome}</h4>
+														<p className="text-[10px] text-slate-400 truncate">
+															{grupo.membros?.map(m => m.nome).join(", ") || "Sem membros"}
+														</p>
+													</div>
+												</div>
+
+												<span className="text-xs font-bold text-purple-600 dark:text-purple-400 flex items-center gap-1">
+													Abrir <ArrowRight size={12} />
+												</span>
+											</div>
+										))}
+									</div>
+								)}
+							</div>
+
+							<div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
+								<span className="text-xs text-slate-400 font-medium">Total de {grupos.length} grupo(s) ativos</span>
+								<button
+									onClick={() => navigate("/devedores")}
+									className="text-xs font-bold text-purple-600 hover:underline cursor-pointer"
+								>
+									Ver todos os grupos →
+								</button>
+							</div>
+						</div>
+
+						{/* SEÇÃO 2: QUEM TE DEVE & ACERTOS PENDENTES */}
+						<div className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+							<div>
+								<div className="flex justify-between items-center mb-6">
+									<div>
+										<h3 className="font-black text-slate-800 dark:text-slate-100 text-lg">
+											Amigos com Acertos Pendentes
+										</h3>
+										<p className="text-xs text-slate-400">Cobrança rápida via WhatsApp e quitações</p>
+									</div>
+									<button
+										onClick={() => navigate("/devedores")}
+										className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+									>
+										Ver todos
+									</button>
+								</div>
+
+								{(devedores.length === 0 && credores.filter((c: any) => c.total_devido > 0).length === 0) ? (
+									<div className="text-center py-10 px-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 space-y-2">
+										<CheckCircle2 size={32} className="mx-auto text-emerald-500" />
+										<p className="text-xs font-bold text-slate-700 dark:text-slate-300">Tudo em dia!</p>
+										<p className="text-[11px] text-slate-400">Nenhum amigo possui saldo pendente ou a pagar no momento.</p>
+									</div>
+								) : (
+									<div className="space-y-3">
+										{/* Quem você deve (Credores / Acertos de compras conjuntas) */}
+										{credores.filter((c: any) => c.total_devido > 0).slice(0, 3).map((c: any) => (
+											<div
+												key={c.contato.id}
+												className="flex items-center justify-between p-3.5 rounded-2xl border border-rose-100 dark:border-rose-950/50 bg-rose-50/40 dark:bg-rose-950/20"
+											>
+												<div>
+													<div className="flex items-center gap-2">
+														<h4 className="font-bold text-xs text-slate-800 dark:text-slate-100">{c.contato.nome}</h4>
+														<span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300">
+															Você deve
+														</span>
+													</div>
+													<p className="text-[10px] text-slate-400">{c.itens?.length || 1} despesa(s) em aberto</p>
+												</div>
+
+												<div className="flex items-center gap-3">
+													<div className="text-right">
+														<span className="text-[9px] font-bold uppercase text-slate-400 block">A Pagar</span>
+														<span className="font-black text-xs text-rose-600 dark:text-rose-400">
+															R$ {Number(c.total_devido).toFixed(2)}
+														</span>
+													</div>
+													<button
+														onClick={() => navigate("/devedores?tab=amigos")}
+														className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[11px] font-bold shadow-xs transition-colors cursor-pointer"
+														title="Ver detalhes e quitar"
+													>
+														Quitar
+													</button>
+												</div>
+											</div>
+										))}
+
+										{/* Quem te deve (Devedores) */}
+										{devedores.slice(0, 3).map((d: any) => (
+											<div
+												key={d.contato.id}
+												className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30"
+											>
+												<div>
+													<div className="flex items-center gap-2">
+														<h4 className="font-bold text-xs text-slate-800 dark:text-slate-100">{d.contato.nome}</h4>
+														<span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">
+															Te deve
+														</span>
+													</div>
+													<p className="text-[10px] text-slate-400">{d.contato.telefone || "Sem telefone"}</p>
+												</div>
+
+												<div className="flex items-center gap-3">
+													<div className="text-right">
+														<span className="text-[9px] font-bold uppercase text-slate-400 block">Pendente</span>
+														<span className="font-black text-xs text-emerald-600 dark:text-emerald-400">
+															R$ {Number(d.total_devido).toFixed(2)}
+														</span>
+													</div>
+													<button
+														onClick={() => handleCobrarWhatsApp(d)}
+														className="p-2 bg-[#25D366] hover:bg-[#20BD5A] text-white rounded-xl shadow-xs transition-colors cursor-pointer"
+														title="Cobrar no WhatsApp"
+													>
+														<Phone size={14} />
+													</button>
+												</div>
+											</div>
+										))}
+									</div>
+								)}
+							</div>
+
+							<div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
+								<button
+									onClick={() => setIsAddContatoOpen(true)}
+									className="text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 flex items-center gap-1 cursor-pointer"
+								>
+									<UserCheck size={14} /> Convidar novo amigo
+								</button>
+								<button
+									onClick={() => navigate("/devedores")}
+									className="text-xs font-bold text-purple-600 hover:underline cursor-pointer"
+								>
+									Painel de Acertos →
+								</button>
+							</div>
+						</div>
+					</div>
+				</motion.div>
 			) : (
 				<EmBreveView modulo="PJ" onVoltarPessoal={() => handleMudarCaminho("PESSOAL")} />
 			)}
@@ -1419,6 +1626,10 @@ export default function HomeWeb() {
 				onOpenAddContato={() => {
 					setIsAddSplitOpen(false);
 					setIsAddContatoOpen(true);
+				}}
+				onOpenCriarGrupo={() => {
+					setIsAddSplitOpen(false);
+					setIsCriarGrupoOpen(true);
 				}}
 			/>
 
@@ -1450,6 +1661,21 @@ export default function HomeWeb() {
 					setIsChatIaOpen(false);
 					loadDashboardData();
 				}}
+				userId={userId}
+				contatosDisponiveis={contatos}
+			/>
+
+			{/* MODAL DE CRIAR GRUPO */}
+			<CriarGrupoModal
+				isOpen={isCriarGrupoOpen}
+				onClose={() => setIsCriarGrupoOpen(false)}
+				onSuccess={() => {
+					setIsCriarGrupoOpen(false);
+					loadDashboardData();
+				}}
+				userId={userId}
+				userName={nome}
+				contatosDisponiveis={contatos}
 			/>
 
 			{/* MODALS */}

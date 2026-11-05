@@ -15,3 +15,9 @@ consolidado/
 .env.local
 .env.*.local
 
+# IDE
+.vscode/
+
+# Supabase temp
+supabase/.temp/
+

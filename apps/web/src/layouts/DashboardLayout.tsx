@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Outlet, useNavigate, useLocation, Link } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -23,7 +23,6 @@ import {
   ArrowLeftRight,
   Receipt,
   PiggyBank,
-  Undo2,
   Building2
 } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
@@ -31,6 +30,7 @@ import { authService } from "../../../../packages/services/auth.service";
 import EditProfileModal from "../components/EditProfileModal";
 import { ImportarProvider } from "../contexts/ImportarContext";
 import GlobalTransactionModal from "../components/GlobalTransactionModal";
+import PageLoader from "../components/PageLoader";
 
 export default function DashboardLayout() {
   const navigate = useNavigate();
@@ -314,7 +314,9 @@ export default function DashboardLayout() {
           {/* PAGE CONTENT */}
           <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6 relative">
             <div className="max-w-6xl mx-auto w-full pb-24" id="main-outlet-wrapper">
-              <Outlet context={{ userProfile, fetchUser }} />
+              <Suspense fallback={<PageLoader />}>
+                <Outlet context={{ userProfile, fetchUser }} />
+              </Suspense>
             </div>
           </main>
 

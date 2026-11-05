@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Briefcase, User } from "lucide-react";
 import { authService } from "../../../../packages/services/auth.service";
 import toast from "react-hot-toast";
@@ -10,7 +10,7 @@ interface MeiOnboardingModalProps {
 	userId: string;
 }
 
-export default function MeiOnboardingModal({ isOpen, onClose, onComplete, userId }: MeiOnboardingModalProps) {
+export default function MeiOnboardingModal({ isOpen, onClose, onComplete }: MeiOnboardingModalProps) {
 	const [loading, setLoading] = useState(false);
 	const [selection, setSelection] = useState<boolean | null>(null);
 
@@ -31,10 +31,10 @@ export default function MeiOnboardingModal({ isOpen, onClose, onComplete, userId
 			await authService.updateProfile(
 				user.nome,
 				user.avatar_url || undefined,
-				user.email,
+				user.email ?? undefined,
 				undefined,
-				user.telefone,
-				user.cpf,
+				user.telefone ?? undefined,
+				user.cpf ?? undefined,
 				selection
 			);
 			

@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { X, UserPlus, Save, Mail, CheckCircle2, AlertCircle } from "lucide-react";
+import { X, UserPlus, Save,  CheckCircle2, AlertCircle } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { supabase } from "../../../../packages/services/supabase";
+import { authService } from "../../../../packages/services/auth.service";
 import { toast } from "react-hot-toast";
 
 interface AddContatoProps {
@@ -28,14 +29,10 @@ export default function AddContatoWeb({ onClose, onSuccess }: AddContatoProps) {
 		}
 		setChecouLoading(true);
 		try {
-			const { data } = await supabase
-				.from("usuarios")
-				.select("id, nome, email")
-				.eq("email", email.trim().toLowerCase())
-				.maybeSingle();
+			const comConta = await authService.emailsComConta([email]);
 
 			setChecouUsuario(true);
-			setTemContaNoApp(!!data);
+			setTemContaNoApp(comConta.has(email.trim().toLowerCase()));
 		} catch (e) {
 			setChecouUsuario(false);
 		} finally {

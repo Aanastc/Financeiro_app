@@ -1,15 +1,11 @@
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import type { Variants } from "framer-motion";
 import { 
-	TrendingUp, 
 	ArrowRight, 
-	Shield, 
 	Sparkles, 
 	CreditCard, 
-	Users, 
-	BarChart3, 
-	Download 
-} from "lucide-react";
+	Users } from "lucide-react";
 import { useEffect } from "react";
 import { supabase } from "../../../../packages/services/supabase";
 
@@ -20,14 +16,16 @@ export default function LandingPage() {
 		// Se o usuário cair na Landing Page após o OAuth (por conta do redirecionamento do Supabase) 
 		// ou já estiver logado, manda ele direto pra Home.
 		supabase.auth.getSession().then(({ data: { session } }) => {
-			if (session) {
+			// Link de recuperação na URL: não pula para a home antes de trocar a senha
+			if (session && !window.location.hash.includes("type=recovery")) {
 				navigate("/home");
 			}
 		});
 
 		// Também escuta por mudanças de autenticação (como o retorno do login social)
 		const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-			if (session) {
+			// Recuperação de senha é tratada pelo RecuperacaoSenhaListener (App.tsx)
+			if (session && event !== "PASSWORD_RECOVERY") {
 				navigate("/home");
 			}
 		});
@@ -42,7 +40,7 @@ export default function LandingPage() {
 		visible: { opacity: 1, transition: { staggerChildren: 0.15 } }
 	};
 
-	const itemVariants = {
+	const itemVariants: Variants = {
 		hidden: { y: 30, opacity: 0 },
 		visible: { y: 0, opacity: 1, transition: { type: "spring", stiffness: 100 } }
 	};

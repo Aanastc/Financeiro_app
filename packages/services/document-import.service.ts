@@ -1,4 +1,5 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { aiService, type ParteIA } from "./ai.service";
+import { detectarInstituicao, mesmaInstituicao, nomeArquivoIndicaExtrato } from "../utils/instituicoes";
 import { supabase } from "./supabase";
 import { financeService } from "./finance.service";
 import ExcelJS from "exceljs";
@@ -7,7 +8,6 @@ import type {
   StatusProcessamento,
   ExtracaoIAOutput,
   DocumentoImportado,
-  ConfirmacaoImportacaoPayload,
   DadosContratoEmprestimo,
   DadosRenegociacaoCartao,
   DadosFaturaCartao,
@@ -15,21 +15,20 @@ import type {
   DadosComprovantePagamento,
   DadosComprovanteTransferencia,
   NaturezaLancamento,
-  LancamentoNormalizado,
   ValidacaoTotalFatura,
   CausaDivergenciaFatura
 } from "./document-import.types";
 
 /**
- * SERVIÃO DE IMPORTAÃÃO DE DOCUMENTOS FINANCEIROS POR IA
+ * SERVIÇO DE IMPORTAÇÃO DE DOCUMENTOS FINANCEIROS POR IA
  * 
  * Arquitetura em Camadas:
- * Documento -> Hash (IdempotÃªncia) -> IA (ClassificaÃ§Ã£o + ExtraÃ§Ã£o) 
- * -> Schema Validation -> Business Validation -> ConfirmaÃ§Ã£o -> ServiÃ§os de DomÃ­nio -> Supabase
+ * Documento -> Hash (Idempotência) -> IA (Classificação + Extração) 
+ * -> Schema Validation -> Business Validation -> Confirmação -> Serviços de Domínio -> Supabase
  */
 export class DocumentImportService {
   /**
-   * 1. CALCULAR HASH SHA-256 DO ARQUIVO PARA IDEMPOTÃNCIA
+   * 1. CALCULAR HASH SHA-256 DO ARQUIVO PARA IDEMPOTÊNCIA
    */
   static async calculateFileHash(file: File): Promise<string> {
     const arrayBuffer = await file.arrayBuffer();
@@ -44,7 +43,7 @@ export class DocumentImportService {
   }
 
   /**
-   * 2. VERIFICAÃÃO DE IDEMPOTÃNCIA NO BANCO
+   * 2. VERIFICAÇÃO DE IDEMPOTÊNCIA NO BANCO
    */
   static async checkIdempotency(usuario_id: string, hash: string): Promise<DocumentoImportado | null> {
     try {
@@ -56,11 +55,11 @@ export class DocumentImportService {
         .maybeSingle();
 
       if (error && error.code !== "PGRST116" && error.code !== "42P01") {
-        console.warn("Erro ao verificar idempotÃªncia:", error);
+        console.warn("Erro ao verificar idempotência:", error);
       }
       return data || null;
     } catch (e) {
-      console.warn("Tabela documentos_importados ainda nÃ£o acessÃ­vel via REST:", e);
+      console.warn("Tabela documentos_importados ainda não acessível via REST:", e);
       return null;
     }
   }
@@ -78,7 +77,7 @@ export class DocumentImportService {
     status: StatusProcessamento;
   }): Promise<string | null> {
     try {
-      // 1. Tenta verificar se jÃ¡ existe documento com este hash
+      // 1. Tenta verificar se já existe documento com este hash
       const { data: existing } = await supabase
         .from("documentos_importados")
         .select("id")
@@ -144,7 +143,7 @@ export class DocumentImportService {
   }
 
   /**
-   * 5. PREPARAR CONTEÃDO DO ARQUIVO PARA O MODELO MULTIMODAL GEMINI
+   * 5. PREPARAR CONTEÚDO DO ARQUIVO PARA O MODELO MULTIMODAL GEMINI
    */
   static async prepareFileContent(file: File): Promise<{
     isMultimodal: boolean;
@@ -193,7 +192,7 @@ export class DocumentImportService {
       const arrayBuffer = await file.arrayBuffer();
       await workbook.xlsx.load(arrayBuffer);
       const worksheet = workbook.worksheets[0];
-      if (!worksheet) throw new Error("A planilha do Excel estÃ¡ vazia.");
+      if (!worksheet) throw new Error("A planilha do Excel está vazia.");
 
       let excelText = "";
       worksheet.eachRow((row, rowNumber) => {
@@ -206,44 +205,44 @@ export class DocumentImportService {
       return { isMultimodal: false, mimeType: "text/plain", textContent: excelText };
     }
 
-    throw new Error("Formato de arquivo nÃ£o suportado. Use PDF, Imagem, CSV, OFX ou Excel.");
+    throw new Error("Formato de arquivo não suportado. Use PDF, Imagem, CSV, OFX ou Excel.");
   }
 
   /**
    * 6. PROMPT ESTRUTURADO ESPECIALIZADO (SEM SQL, SEM INSERT)
    */
   static getStructuredPrompt(): string {
-    return `VocÃª Ã© um motor de extraÃ§Ã£o e classificaÃ§Ã£o de documentos financeiros de altÃ­ssima precisÃ£o contÃ¡bil.
-Sua Ãºnica responsabilidade Ã© INTERPRETAR e EXTRAIR dados estruturados do documento fornecido, diferenciando com rigor:
-1) Despesa real de consumo (compras no dÃ©bito, compras no cartÃ£o, juros e encargos);
-2) LiquidaÃ§Ã£o/pagamento de obrigaÃ§Ã£o (PAGAMENTO_FATURA, PAGAMENTO_DIVIDA);
-3) MovimentaÃ§Ã£o patrimonial / fluxo de caixa (TRANSFERENCIA, AJUSTE, APORTE, RESGATE);
-4) DÃ­vidas e renegociaÃ§Ãµes (renegociacao_cartao, emprestimo_pessoal);
+    return `Você é um motor de extração e classificação de documentos financeiros de altíssima precisão contábil.
+Sua única responsabilidade é INTERPRETAR e EXTRAIR dados estruturados do documento fornecido, diferenciando com rigor:
+1) Despesa real de consumo (compras no débito, compras no cartão, juros e encargos);
+2) Liquidação/pagamento de obrigação (PAGAMENTO_FATURA, PAGAMENTO_DIVIDA);
+3) Movimentação patrimonial / fluxo de caixa (TRANSFERENCIA, AJUSTE, APORTE, RESGATE);
+4) Dívidas e renegociações (renegociacao_cartao, emprestimo_pessoal);
 5) Compras parceladas (ciclo completo X/Y).
 
-Ã EXPRESSAMENTE PROIBIDO gerar cÃ³digo SQL, comandos INSERT/UPDATE ou instruÃ§Ãµes de manipulaÃ§Ã£o de banco de dados.
+É EXPRESSAMENTE PROIBIDO gerar código SQL, comandos INSERT/UPDATE ou instruções de manipulação de banco de dados.
 Retorne APENAS um objeto JSON estrito, sem markdown (\`\`\`json), sem textos antes ou depois.
 
 O JSON deve seguir OBRIGATORIAMENTE esta estrutura:
 {
   "tipo_documento": "contrato_emprestimo" | "contrato_financiamento" | "renegociacao_cartao" | "fatura_cartao" | "extrato_bancario" | "comprovante_pagamento" | "comprovante_transferencia" | "documento_investimento" | "outros",
   "confianca": 0.95, // float entre 0.00 e 1.00
-  "resumo": "Breve resumo legÃ­vel do documento",
+  "resumo": "Breve resumo legível do documento",
   "dados": { ... }
 }
 
-REGRAS DE CLASSIFICAÃÃO E EXTRAÃÃO:
+REGRAS DE CLASSIFICAÇÃO E EXTRAÇÃO:
 
 1. SE FOR "contrato_emprestimo" OU "contrato_financiamento":
-   - Identifique termos como "Quadro Resumo", "Contrato de EmprÃ©stimo", "Termos do EmprÃ©stimo", "Valor Financiado", "Cronograma de Parcelas".
+   - Identifique termos como "Quadro Resumo", "Contrato de Empréstimo", "Termos do Empréstimo", "Valor Financiado", "Cronograma de Parcelas".
    - "dados": {
        "tipo_divida": "emprestimo_pessoal" | "financiamento_veiculo" | "financiamento_imobiliario" | "credito_consignado",
-       "descricao": "EmprÃ©stimo " + Nome da InstituiÃ§Ã£o,
+       "descricao": "Empréstimo " + Nome da Instituição,
        "instituicao": "Santander" / "Nubank" / etc,
-       "valor_original": number (valor lÃ­quido liberado/financiado),
+       "valor_original": number (valor líquido liberado/financiado),
        "valor_total_com_juros": number (soma total a pagar com juros),
        "quantidade_parcelas": number (inteiro, ex: 24),
-       "valor_parcela": number (valor de cada prestaÃ§Ã£o),
+       "valor_parcela": number (valor de cada prestação),
        "data_contratacao": "YYYY-MM-DD",
        "data_primeira_parcela": "YYYY-MM-DD",
        "taxa_juros_mensal": number (opcional),
@@ -254,39 +253,39 @@ REGRAS DE CLASSIFICAÃÃO E EXTRAÃÃO:
      }
 
 2. SE FOR "renegociacao_cartao":
-   - Identifique "Detalhes do seu Parcelamento", "RenegociaÃ§Ã£o de CartÃ£o", "Acordo de Fatura", "Saldo Parcelado".
-   - REGRA MANDATÃRIA: RenegociaÃ§Ã£o de cartÃ£o Ã© DÃVIDA e NÃO despesa de consumo. NÃ£o duplique o valor como despesa!
+   - Identifique "Detalhes do seu Parcelamento", "Renegociação de Cartão", "Acordo de Fatura", "Saldo Parcelado".
+   - REGRA MANDATÓRIA: Renegociação de cartão é DÍVIDA e NÃO despesa de consumo. Não duplique o valor como despesa!
    - "dados": {
        "tipo_divida": "renegociacao_cartao",
-       "descricao": "RenegociaÃ§Ã£o CartÃ£o " + Nome do CartÃ£o,
+       "descricao": "Renegociação Cartão " + Nome do Cartão,
        "instituicao": "Santander" / "Nubank",
-       "cartao_nome_ou_final": "Nome ou Ãºltimos 4 dÃ­gitos",
+       "cartao_nome_ou_final": "Nome ou últimos 4 dígitos",
        "valor_original": number (saldo principal da fatura renegociada),
        "valor_total_com_juros": number (total renegociado a pagar),
        "quantidade_parcelas": number,
        "valor_parcela": number,
        "data_acordo": "YYYY-MM-DD",
        "data_primeira_parcela": "YYYY-MM-DD",
-       "fatura_origem_identificador": "Identificador ou mÃªs se visÃ­vel",
+       "fatura_origem_identificador": "Identificador ou mês se visível",
        "parcelas": [
          { "numero_parcela": 1, "valor": 400.00, "data_vencimento": "YYYY-MM-DD" }
        ]
      }
 
 3. SE FOR "fatura_cartao":
-   - ATENÃÃO DE CLASSIFICAÃÃO: NÃO CONFUNDA COM EXTRATO DE CONTA BANCÃRIA! Se o documento tiver "Extrato Consolidado", "Conta Corrente", AgÃªncia e Conta, ou depÃ³sitos e transferÃªncias Pix (como extratos do Santander), ele Ã© "extrato_bancario" e NUNCA fatura de cartÃ£o!
-   - Identifique CSVs com colunas "date, category, title, amount" ou faturas em PDF de cartÃ£o com compras, data de vencimento e fechamento.
-   - REGRA MANDATÃRIA 1: "Pagamento recebido" NUNCA Ã© RECEITA! Ã liquidaÃ§Ã£o de fatura ("PAGAMENTO_FATURA"). Coloque em "pagamentos".
-   - REGRA MANDATÃRIA 2 (COMPRAS PARCELADAS): Sempre que identificar padrÃµes como "2/10", "5/20", "1/5", "Parcela 2/12", "03/10":
-     - Extraia OBRIGATORIAMENTE "parcela_atual": nÃºmero e "total_parcelas": nÃºmero.
+   - ATENÇÃO DE CLASSIFICAÇÃO: NÃO CONFUNDA COM EXTRATO DE CONTA BANCÁRIA! Se o documento tiver "Extrato Consolidado", "Conta Corrente", Agência e Conta, ou depósitos e transferências Pix (como extratos do Santander), ele é "extrato_bancario" e NUNCA fatura de cartão!
+   - Identifique CSVs com colunas "date, category, title, amount" ou faturas em PDF de cartão com compras, data de vencimento e fechamento.
+   - REGRA MANDATÓRIA 1: "Pagamento recebido" NUNCA é RECEITA! É liquidação de fatura ("PAGAMENTO_FATURA"). Coloque em "pagamentos".
+   - REGRA MANDATÓRIA 2 (COMPRAS PARCELADAS): Sempre que identificar padrões como "2/10", "5/20", "1/5", "Parcela 2/12", "03/10":
+     - Extraia OBRIGATORIAMENTE "parcela_atual": número e "total_parcelas": número.
      - "descricao": Nome LIMPO do estabelecimento (remova o sufixo " - Parcela X/Y" ou " X/Y").
-     - "valor": Valor da parcela atual lanÃ§ado nesta fatura (positivo).
-   - REGRA MANDATÃRIA 3: "Limite convertido em saldo na sua conta do Nubank" ou "Pix no crÃ©dito" NÃO Ã© despesa de consumo. Identifique no item com categoria "Financiamento / Ajuste de Limite" e sinalize a natureza.
-   - REGRA MANDATÃRIA 4 (LINHAS NEGATIVAS, DESCONTOS E CRÃDITO DE RENEGOCIAÃÃO):
-     Em CSVs do Nubank e faturas de cartÃ£o, valores negativos (com sinal "-", ex: "-2549.22", "-2039.94", "-3695.90", "-78.37", "-21.94") representam CRÃDITOS / PAGAMENTOS / ABATIMENTOS na fatura, e NUNCA compras ou despesas de consumo!
-     * "RenegociaÃ§Ã£o de pendÃªncias" com valor negativo (ex: "-2549.22", "-2039.94"): Ã© o CRÃDITO do saldo devedor anterior que foi renegociado. Ele NUNCA deve entrar em "itens" como despesa! Coloque em "pagamentos" com valor positivo correspondente!
-     * Apenas a linha com valor POSITIVO (ex: "RenegociaÃ§Ã£o de pendÃªncias ... 1/3, 1064.07") Ã© a parcela que entra em "itens" com "parcela_atual": 1 e "total_parcelas": 3!
-     * "Desconto (NuFinanceira)" ou "Desconto de antecipaÃ§Ã£o": sÃ£o crÃ©ditos/descontos, coloque em "pagamentos" e NUNCA em "itens"!
+     - "valor": Valor da parcela atual lançado nesta fatura (positivo).
+   - REGRA MANDATÓRIA 3: "Limite convertido em saldo na sua conta do Nubank" ou "Pix no crédito" NÃO é despesa de consumo. Identifique no item com categoria "Financiamento / Ajuste de Limite" e sinalize a natureza.
+   - REGRA MANDATÓRIA 4 (LINHAS NEGATIVAS, DESCONTOS E CRÉDITO DE RENEGOCIAÇÃO):
+     Em CSVs do Nubank e faturas de cartão, valores negativos (com sinal "-", ex: "-2549.22", "-2039.94", "-3695.90", "-78.37", "-21.94") representam CRÉDITOS / PAGAMENTOS / ABATIMENTOS na fatura, e NUNCA compras ou despesas de consumo!
+     * "Renegociação de pendências" com valor negativo (ex: "-2549.22", "-2039.94"): é o CRÉDITO do saldo devedor anterior que foi renegociado. Ele NUNCA deve entrar em "itens" como despesa! Coloque em "pagamentos" com valor positivo correspondente!
+     * Apenas a linha com valor POSITIVO (ex: "Renegociação de pendências ... 1/3, 1064.07") é a parcela que entra em "itens" com "parcela_atual": 1 e "total_parcelas": 3!
+     * "Desconto (NuFinanceira)" ou "Desconto de antecipação": são créditos/descontos, coloque em "pagamentos" e NUNCA em "itens"!
    - "dados": {
        "cartao_nome_ou_final": "Nubank" / "Santander",
        "mes_referencia": "YYYY-MM",
@@ -298,7 +297,7 @@ REGRAS DE CLASSIFICAÃÃO E EXTRAÃÃO:
            "data": "YYYY-MM-DD",
            "descricao": "Nome do estabelecimento limpo (ex: 'Uber *Trip', 'Mercado Livre', 'Limite convertido em saldo')",
            "valor": number (positivo),
-           "categoria_sugerida": "AlimentaÃ§Ã£o" | "Transporte" | "SaÃºde" | "Lazer" | "EducaÃ§Ã£o" | "Assinaturas" | "Moradia" | "Financiamento / Ajuste de Limite" | "Outros",
+           "categoria_sugerida": "Alimentação" | "Transporte" | "Saúde" | "Lazer" | "Educação" | "Assinaturas" | "Moradia" | "Financiamento / Ajuste de Limite" | "Outros",
            "parcela_atual": 2,
            "total_parcelas": 10,
            "terceiro": false
@@ -310,38 +309,38 @@ REGRAS DE CLASSIFICAÃÃO E EXTRAÃÃO:
      }
 
 4. SE FOR "extrato_bancario":
-   - REGRA DE OURO DE CLASSIFICAÃÃO:
-     Documentos intitulados "EXTRATO CONSOLIDADO", "EXTRATO DE CONTA CORRENTE", extratos bancÃ¡rios com AgÃªncia e Conta (como extratos do Santander, ItaÃº, Nubank, Inter, Bradesco, BB, Caixa) contendo movimentaÃ§Ãµes de conta (saldo, depÃ³sitos, Pix, salÃ¡rio, transferÃªncias) SÃO OBRIGATORIAMENTE "extrato_bancario" e NUNCA "fatura_cartao"!
-     Mesmo que apareÃ§am linhas como "PAGAMENTO CARTAO CREDITO BCE" ou "CARTAO VISA", isso Ã© apenas o dÃ©bito na conta para pagar a fatura do cartÃ£o ("tipo": "PAGAMENTO_FATURA"), e JAMAIS transforma o documento em uma fatura de cartÃ£o!
-   - REGRA MANDATÃRIA PARA TRANSFERÃNCIAS PIX (ESPECIALMENTE NO SANTANDER):
-     * No extrato Santander e em outros bancos, o nome da pessoa fÃ­sica ou jurÃ­dica que enviou ou recebeu o Pix aparece impresso na LINHA LOGO ABAIXO de "PIX RECEBIDO" ou "PIX ENVIADO".
+   - REGRA DE OURO DE CLASSIFICAÇÃO:
+     Documentos intitulados "EXTRATO CONSOLIDADO", "EXTRATO DE CONTA CORRENTE", extratos bancários com Agência e Conta (como extratos do Santander, Itaú, Nubank, Inter, Bradesco, BB, Caixa) contendo movimentações de conta (saldo, depósitos, Pix, salário, transferências) SÃO OBRIGATORIAMENTE "extrato_bancario" e NUNCA "fatura_cartao"!
+     Mesmo que apareçam linhas como "PAGAMENTO CARTAO CREDITO BCE" ou "CARTAO VISA", isso é apenas o débito na conta para pagar a fatura do cartão ("tipo": "PAGAMENTO_FATURA"), e JAMAIS transforma o documento em uma fatura de cartão!
+   - REGRA MANDATÓRIA PARA TRANSFERÊNCIAS PIX (ESPECIALMENTE NO SANTANDER):
+     * No extrato Santander e em outros bancos, o nome da pessoa física ou jurídica que enviou ou recebeu o Pix aparece impresso na LINHA LOGO ABAIXO de "PIX RECEBIDO" ou "PIX ENVIADO".
        Exemplo real no Santander:
          "02/02 PIX RECEBIDO"
-         "Ana Leticia Alves Claudia"
+         "Maria Souza Lima"
          "- 1.110,00"
-       VocÃª DEVE OBRIGATORIAMENTE capturar o nome e colocar:
-         "descricao": "Pix Recebido: Ana Leticia Alves Claudia"
-         "favorecido": "Ana Leticia Alves Claudia"
-     * TRANSFERÃNCIAS ENTRE CONTAS PRÃPRIAS (DE MIM PRA MIM / MESMA TITULARIDADE):
-       Identifique a titular da conta no cabeÃ§alho do extrato (ex: "Prezada Ana" / "Ana Leticia Alves Claudiano").
-       Se quem enviou ou recebeu o Pix for o prÃ³prio titular ou tiver o mesmo prenome e nome (ex: "Ana Leticia Alves Claudia", "Ana Leticia Alves Claudiano", "Ana Leticia"):
+       Você DEVE OBRIGATORIAMENTE capturar o nome e colocar:
+         "descricao": "Pix Recebido: Maria Souza Lima"
+         "favorecido": "Maria Souza Lima"
+     * TRANSFERÊNCIAS ENTRE CONTAS PRÓPRIAS (DE MIM PRA MIM / MESMA TITULARIDADE):
+       Identifique a titular da conta no cabeçalho do extrato (ex: "Prezada Maria" / "Maria Souza Lima").
+       Se quem enviou ou recebeu o Pix for o próprio titular ou tiver o mesmo prenome e nome (ex: "Maria Souza Lima", "Maria S Lima", "Maria Souza"):
          "tipo": "TRANSFERENCIA"
          "subtipo": "TRANSFERENCIA_PROPRIA"
-         "categoria_sugerida": "TransferÃªncia Interna"
-         "descricao": "Pix Recebido: Ana Leticia Alves Claudia"
-         "favorecido": "Ana Leticia Alves Claudia"
-     * ATENÃÃO CRÃTICA COM PARENTES / MESMO SOBRENOME:
-       Parentes ou familiares que apenas compartilham o sobrenome da famÃ­lia mas tÃªm primeiro nome diferente (ex: "Claudiney Jules Claudiano") NÃO SÃO A MESMA PESSOA que a titular Ana LetÃ­cia!
-       TransaÃ§Ãµes com Claudiney sÃ£o transaÃ§Ãµes com TERCEIROS normais:
-         Se Pix Enviado para Claudiney: "tipo": "DESPESA", "subtipo": null, "categoria_sugerida": "Outros", "favorecido": "Claudiney Jules Claudiano"
-         Se Pix Recebido de Claudiney: "tipo": "RECEITA", "subtipo": null, "categoria_sugerida": "Pix Recebido", "favorecido": "Claudiney Jules Claudiano"
-       JAMAIS classifique transaÃ§Ãµes com Claudiney como "TRANSFERENCIA_PROPRIA"!
-   - REGRA MANDATÃRIA PARA APLICAÃÃO E RESGATE RDB / CAIXINHA / INVESTIMENTOS:
-     - SaÃ­da/aporte ("AplicaÃ§Ã£o RDB", "Caixinha", "Guardar dinheiro"): "tipo": "APORTE", "subtipo": "APLICACAO_RDB", "categoria_sugerida": "Investimentos". NUNCA classifique como DESPESA de consumo!
+         "categoria_sugerida": "Transferência Interna"
+         "descricao": "Pix Recebido: Maria Souza Lima"
+         "favorecido": "Maria Souza Lima"
+     * ATENÇÃO CRÍTICA COM PARENTES / MESMO SOBRENOME:
+       Parentes ou familiares que apenas compartilham o sobrenome da família mas têm primeiro nome diferente (ex: "Jose Souza Lima") NÃO SÃO A MESMA PESSOA que a titular!
+       Transações com esses parentes são transações com TERCEIROS normais:
+         Se Pix Enviado para o parente: "tipo": "DESPESA", "subtipo": null, "categoria_sugerida": "Outros", "favorecido": "Jose Souza Lima"
+         Se Pix Recebido do parente: "tipo": "RECEITA", "subtipo": null, "categoria_sugerida": "Pix Recebido", "favorecido": "Jose Souza Lima"
+       JAMAIS classifique transações com parentes de prenome diferente como "TRANSFERENCIA_PROPRIA"!
+   - REGRA MANDATÓRIA PARA APLICAÇÃO E RESGATE RDB / CAIXINHA / INVESTIMENTOS:
+     - Saída/aporte ("Aplicação RDB", "Caixinha", "Guardar dinheiro"): "tipo": "APORTE", "subtipo": "APLICACAO_RDB", "categoria_sugerida": "Investimentos". NUNCA classifique como DESPESA de consumo!
      - Entrada/resgate ("Resgate RDB", "Resgate Caixinha"): "tipo": "RESGATE", "subtipo": "RESGATE_RDB", "categoria_sugerida": "Investimentos". NUNCA classifique como RECEITA operacional!
-   - REGRA MANDATÃRIA PARA PAGAMENTO DE FATURA E DIVIDAS:
-     - "Pagamento de fatura", "Pagamento cartÃ£o", "PAGAMENTO CARTAO CREDITO BCE": "tipo": "PAGAMENTO_FATURA". NUNCA classifique como DESPESA de consumo!
-     - "Pagamento de emprÃ©stimo", "Pagamento parcela dÃ­vida": "tipo": "PAGAMENTO_DIVIDA".
+   - REGRA MANDATÓRIA PARA PAGAMENTO DE FATURA E DIVIDAS:
+     - "Pagamento de fatura", "Pagamento cartão", "PAGAMENTO CARTAO CREDITO BCE": "tipo": "PAGAMENTO_FATURA". NUNCA classifique como DESPESA de consumo!
+     - "Pagamento de empréstimo", "Pagamento parcela dívida": "tipo": "PAGAMENTO_DIVIDA".
    - "dados": {
        "conta_nome_ou_banco": "Santander" / "Nubank" / "Inter" / "Wise",
        "data_inicio": "YYYY-MM-DD",
@@ -349,14 +348,14 @@ REGRAS DE CLASSIFICAÃÃO E EXTRAÃÃO:
        "transacoes": [
          {
            "data": "YYYY-MM-DD",
-           "descricao": "Nome limpo com pagador/favorecido (ex: 'Pix Recebido: Ana Leticia Alves Claudia')",
+           "descricao": "Nome limpo com pagador/favorecido (ex: 'Pix Recebido: Maria Souza Lima')",
            "valor": number (positivo),
            "tipo": "RECEITA" | "DESPESA" | "TRANSFERENCIA" | "PAGAMENTO_DIVIDA" | "PAGAMENTO_FATURA" | "APORTE" | "RESGATE",
-           "categoria_sugerida": "SalÃ¡rio" | "Pix Recebido" | "TransferÃªncia Interna" | "AlimentaÃ§Ã£o" | "Transporte" | "Investimentos" | "CartÃ£o de CrÃ©dito" | "Impostos e Tarifas" | "Juros e Encargos" | "Tarifas BancÃ¡rias" | "Assinaturas" | "Outros",
+           "categoria_sugerida": "Salário" | "Pix Recebido" | "Transferência Interna" | "Alimentação" | "Transporte" | "Investimentos" | "Cartão de Crédito" | "Impostos e Tarifas" | "Juros e Encargos" | "Tarifas Bancárias" | "Assinaturas" | "Outros",
            "subtipo": "APLICACAO_RDB" | "RESGATE_RDB" | "TRANSFERENCIA_PROPRIA" | "CONVERSAO_LIMITE_CARTAO" | null,
            "principal": number,
            "rendimento": number,
-           "documento_numero": "nÃºmero do doc se houver",
+           "documento_numero": "número do doc se houver",
            "favorecido": "Nome da pessoa ou empresa"
          }
        ]
@@ -367,14 +366,14 @@ REGRAS DE CLASSIFICAÃÃO E EXTRAÃÃO:
        "data": "YYYY-MM-DD",
        "valor": number,
        "instituicao": "Banco emissor",
-       "descricao": "Favorecido ou tÃ­tulo pago",
+       "descricao": "Favorecido ou título pago",
        "tipo_pagamento_sugerido": "parcela_divida" | "fatura_cartao" | "despesa_geral",
        "identificadores": {
          "codigo_barras": "...",
          "linha_digitavel": "...",
          "autenticacao": "..."
        },
-       "divida_ou_parcela_sugerida": "se houver menÃ§Ã£o no comprovante"
+       "divida_ou_parcela_sugerida": "se houver menção no comprovante"
      }
 
 6. SE FOR "comprovante_transferencia":
@@ -383,15 +382,15 @@ REGRAS DE CLASSIFICAÃÃO E EXTRAÃÃO:
        "valor": number,
        "banco_origem": "Banco A",
        "banco_destino": "Banco B",
-       "favorecido": "Nome do destinatÃ¡rio",
+       "favorecido": "Nome do destinatário",
        "cpf_cnpj": "...",
-       "descricao": "Motivo ou descriÃ§Ã£o do Pix/TED"
+       "descricao": "Motivo ou descrição do Pix/TED"
      }
 
 7. SE FOR "documento_investimento":
    - "dados": {
-       "ativo": "Nome do fundo, CDB, Tesouro Direto ou aÃ§Ã£o",
-       "tipo": "Renda Fixa" | "Fundo" | "AÃ§Ã£o" | "CDB",
+       "ativo": "Nome do fundo, CDB, Tesouro Direto ou ação",
+       "tipo": "Renda Fixa" | "Fundo" | "Ação" | "CDB",
        "instituicao": "Corretora ou Banco",
        "valor_investido": number,
        "valor_atual": number,
@@ -400,8 +399,8 @@ REGRAS DE CLASSIFICAÃÃO E EXTRAÃÃO:
      }
 
 DIRETRIZES FUNDAMENTAIS:
-- NUNCA invente despesas fictÃ­cias.
-- Se o documento trouxer compras parceladas (ex: 2/10), o valor da linha Ã© o valor daquela parcela; nÃ£o multiplique nem invente outras compras.
+- NUNCA invente despesas fictícias.
+- Se o documento trouxer compras parceladas (ex: 2/10), o valor da linha é o valor daquela parcela; não multiplique nem invente outras compras.
 - Retorne estritamente o JSON sem blocos markdown.`;
   }
 
@@ -493,8 +492,8 @@ DIRETRIZES FUNDAMENTAIS:
       let subtipo: string | null = null;
       let categoria = "Outros";
 
-      const matchEnv = descRaw.match(/Transfer[eÃª]ncia enviada pelo Pix\s*-\s*([^-]+)/i);
-      const matchRec = descRaw.match(/Transfer[eÃª]ncia recebida pelo Pix\s*-\s*([^-]+)/i);
+      const matchEnv = descRaw.match(/Transfer[eê]ncia enviada pelo Pix\s*-\s*([^-]+)/i);
+      const matchRec = descRaw.match(/Transfer[eê]ncia recebida pelo Pix\s*-\s*([^-]+)/i);
 
       if (matchEnv && matchEnv[1]) {
         favorecido = matchEnv[1].trim();
@@ -506,8 +505,8 @@ DIRETRIZES FUNDAMENTAIS:
         descLimpa = `Pix Recebido: ${favorecido}`;
         tipo = "RECEITA";
         categoria = "Pix Recebido";
-      } else if (/aplica[cÃ§][aÃ£]o\s*rdb|guardar\s*dinheiro|caixinha/i.test(descRaw)) {
-        descLimpa = "AplicaÃ§Ã£o RDB";
+      } else if (/aplica[cç][aã]o\s*rdb|guardar\s*dinheiro|caixinha/i.test(descRaw)) {
+        descLimpa = "Aplicação RDB";
         tipo = "APORTE";
         subtipo = "APLICACAO_RDB";
         categoria = "Investimentos";
@@ -521,14 +520,14 @@ DIRETRIZES FUNDAMENTAIS:
         tipo = "TRANSFERENCIA";
         subtipo = "CONVERSAO_LIMITE_CARTAO";
         categoria = "Financiamento / Ajuste de Limite";
-      } else if (/compra no d[eÃ©]bito\s*-\s*/i.test(descRaw)) {
-        descLimpa = descRaw.replace(/compra no d[eÃ©]bito\s*-\s*/i, "").trim();
+      } else if (/compra no d[eé]bito\s*-\s*/i.test(descRaw)) {
+        descLimpa = descRaw.replace(/compra no d[eé]bito\s*-\s*/i, "").trim();
         tipo = "DESPESA";
       } else if (/pagamento de fatura/i.test(descRaw)) {
         descLimpa = "Pagamento de Fatura";
         tipo = "PAGAMENTO_FATURA";
         subtipo = "PAGAMENTO_FATURA";
-        categoria = "CartÃ£o de CrÃ©dito";
+        categoria = "Cartão de Crédito";
       }
 
       transacoes.push({
@@ -548,7 +547,7 @@ DIRETRIZES FUNDAMENTAIS:
     return {
       tipo_documento: "extrato_bancario",
       confianca: 1.0,
-      resumo: `Extrato BancÃ¡rio Nubank com ${transacoes.length} lanÃ§amentos identificados com os nomes completos dos destinatÃ¡rios/pagadores do Pix.`,
+      resumo: `Extrato Bancário Nubank com ${transacoes.length} lançamentos identificados com os nomes completos dos destinatários/pagadores do Pix.`,
       dados: {
         conta_nome_ou_banco: "Nubank",
         transacoes
@@ -557,25 +556,37 @@ DIRETRIZES FUNDAMENTAIS:
   }
 
   /**
-   * Parser nativo e determinÃ­stico para CSVs de Fatura de CartÃ£o do Nubank
-   * Reconhece o cabeÃ§alho 'date,title,amount' (3 colunas) ou 'date,category,title,amount' (4 colunas)
-   * Garante que compras e limites convertidos sejam classificados como Fatura de CartÃ£o (Gasto no CartÃ£o) e NUNCA Entrada na Conta!
+   * Parser nativo e determinístico para CSVs de Fatura de Cartão do Nubank
+   * Reconhece o cabeçalho 'date,title,amount' (3 colunas) ou 'date,category,title,amount' (4 colunas)
+   * Garante que compras e limites convertidos sejam classificados como Fatura de Cartão (Gasto no Cartão) e NUNCA Entrada na Conta!
    */
+  /** Compara dois nomes: exige o mesmo primeiro nome e ao menos mais um nome em comum. */
+  static isMesmaPessoa(nomeA: string, nomeB: string): boolean {
+    const norm = (s: string) => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const stop = new Set(["de", "da", "do", "dos", "das", "e"]);
+    const partes = (s: string) => norm(s).split(/\s+/).filter(p => p.length >= 2 && !stop.has(p));
+    const a = partes(nomeA);
+    const b = partes(nomeB);
+    if (a.length === 0 || b.length === 0 || a[0] !== b[0]) return false;
+    if (a.length === 1 || b.length === 1) return norm(nomeA) === norm(nomeB);
+    return b.slice(1).some(p => a.includes(p));
+  }
+
   static tryParseNubankCardCsv(textContent: string): ExtracaoIAOutput | null {
     const lines = textContent.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     if (lines.length < 2) return null;
 
     const header = lines[0].toLowerCase();
     const hasDate = header.includes("date") || header.includes("data");
-    const hasTitle = header.includes("title") || header.includes("titulo") || header.includes("tÃ­tulo") || header.includes("descri");
+    const hasTitle = header.includes("title") || header.includes("titulo") || header.includes("título") || header.includes("descri");
     const hasAmount = header.includes("amount") || header.includes("valor");
 
-    // Deve conter data, tÃ­tulo/descriÃ§Ã£o e valor/amount
+    // Deve conter data, título/descrição e valor/amount
     if (!hasDate || !hasTitle || !hasAmount) {
       return null;
     }
 
-    // Se tiver "identificador", Ã© o extrato da conta bancÃ¡ria, nÃ£o fatura de cartÃ£o
+    // Se tiver "identificador", é o extrato da conta bancária, não fatura de cartão
     if (header.includes("identificador")) {
       return null;
     }
@@ -622,8 +633,8 @@ DIRETRIZES FUNDAMENTAIS:
       const valorFinanceiro = Math.abs(amountNum);
       const sinalOriginal = amountNum >= 0 ? 1 : -1;
 
-      const isPagamento = /pagamento\s*recebido|pagamento\s*de\s*fatura|pagamento\s*cart[aÃ£]o/i.test(titleRaw);
-      const isEstorno = /estorno|cr[eÃ©]dito\s*de\s*fatura|desconto\s*\(nufinanceira\)|reembolso/i.test(titleRaw) || (amountNum < 0 && !isPagamento);
+      const isPagamento = /pagamento\s*recebido|pagamento\s*de\s*fatura|pagamento\s*cart[aã]o/i.test(titleRaw);
+      const isEstorno = /estorno|cr[eé]dito\s*de\s*fatura|desconto\s*\(nufinanceira\)|reembolso/i.test(titleRaw) || (amountNum < 0 && !isPagamento);
       const isLimiteConvertido = /limite\s+convertido/i.test(titleRaw);
       const matchParcelas = titleRaw.match(/(\d+)\s*[/]\s*(\d+)/) || titleRaw.match(/(\d+)\s+de\s+(\d+)/i);
       const isParcela = !isPagamento && !isEstorno && Boolean(matchParcelas);
@@ -647,7 +658,7 @@ DIRETRIZES FUNDAMENTAIS:
 
         if (isEstorno) {
           natureza = "ESTORNO";
-          catSugerida = "Estorno / CrÃ©dito";
+          catSugerida = "Estorno / Crédito";
         } else if (isLimiteConvertido) {
           natureza = "LIMITE_CONVERTIDO";
           catSugerida = "Financiamento / Ajuste de Limite";
@@ -659,14 +670,14 @@ DIRETRIZES FUNDAMENTAIS:
         } else if (isTarifa) {
           natureza = "TARIFA";
           catSugerida = "Tarifas";
-        } else if (/renegocia[cÃ§][aÃ£]o/i.test(titleRaw)) {
+        } else if (/renegocia[cç][aã]o/i.test(titleRaw)) {
           catSugerida = "Emprestimo";
         } else if (/uber|99\s*app|transporte/i.test(titleRaw)) {
           catSugerida = "Transporte";
-        } else if (/restaurante|ifood|alimenta[cÃ§][aÃ£]o|pora[oÃµ]/i.test(titleRaw)) {
-          catSugerida = "AlimentaÃ§Ã£o";
-        } else if (/fiap|teacher|curso|educa[cÃ§][aÃ£]o/i.test(titleRaw)) {
-          catSugerida = "EducaÃ§Ã£o";
+        } else if (/restaurante|ifood|alimenta[cç][aã]o|pora[oõ]/i.test(titleRaw)) {
+          catSugerida = "Alimentação";
+        } else if (/fiap|teacher|curso|educa[cç][aã]o/i.test(titleRaw)) {
+          catSugerida = "Educação";
         }
 
         const parcelaAtual = matchParcelas ? parseInt(matchParcelas[1]) : 1;
@@ -699,7 +710,7 @@ DIRETRIZES FUNDAMENTAIS:
     return {
       tipo_documento: "fatura_cartao",
       confianca: 1.0,
-      resumo: `Fatura de CartÃ£o Nubank com ${itens.length} lanÃ§amentos de fatura e ${pagamentos.length} pagamentos identificados. Total apurado: R$ ${validacaoTotais.totalCalculado.toFixed(2)}.`,
+      resumo: `Fatura de Cartão Nubank com ${itens.length} lançamentos de fatura e ${pagamentos.length} pagamentos identificados. Total apurado: R$ ${validacaoTotais.totalCalculado.toFixed(2)}.`,
       dados: {
         cartao_nome_ou_final: "Nubank",
         valor_total: validacaoTotais.totalCalculado,
@@ -713,8 +724,8 @@ DIRETRIZES FUNDAMENTAIS:
   }
 
   /**
-   * 7. VALIDAÃÃO E AUDITORIA DE TOTAIS DA FATURA (REGRA OBRIGATÃRIA)
-   * Compara o total informado pelo banco com a soma dos lanÃ§amentos interpretados
+   * 7. VALIDAÇÃO E AUDITORIA DE TOTAIS DA FATURA (REGRA OBRIGATÓRIA)
+   * Compara o total informado pelo banco com a soma dos lançamentos interpretados
    */
   static validateInvoiceTotals(params: {
     totalInformadoBanco?: number;
@@ -732,22 +743,22 @@ DIRETRIZES FUNDAMENTAIS:
     const itens = params.itens || [];
     const pagamentos = params.pagamentos || [];
 
-    // 1. DÃ©bitos elegÃ­veis (compras, parcelas, juros, tarifas, limites convertidos)
+    // 1. Débitos elegíveis (compras, parcelas, juros, tarifas, limites convertidos)
     const charges = itens
       .filter(i => {
         const nat = i.natureza;
         const desc = (i.descricao || "").toLowerCase();
-        const isEstorno = nat === "ESTORNO" || desc.includes("estorno") || desc.includes("crÃ©dito de fatura") || desc.includes("desconto (nufinanceira)");
+        const isEstorno = nat === "ESTORNO" || desc.includes("estorno") || desc.includes("crédito de fatura") || desc.includes("desconto (nufinanceira)");
         return !isEstorno;
       })
       .reduce((sum, i) => sum + Math.abs(Number(i.valor || 0)), 0);
 
-    // 2. CrÃ©ditos e estornos
+    // 2. Créditos e estornos
     const credits = itens
       .filter(i => {
         const nat = i.natureza;
         const desc = (i.descricao || "").toLowerCase();
-        return nat === "ESTORNO" || desc.includes("estorno") || desc.includes("crÃ©dito de fatura") || desc.includes("desconto (nufinanceira)");
+        return nat === "ESTORNO" || desc.includes("estorno") || desc.includes("crédito de fatura") || desc.includes("desconto (nufinanceira)");
       })
       .reduce((sum, i) => sum + Math.abs(Number(i.valor || 0)), 0);
 
@@ -767,7 +778,7 @@ DIRETRIZES FUNDAMENTAIS:
       if (totalPagamentos > 0) {
         possiveisCausas.push({
           tipo: 'pagamento_identificado',
-          descricao: `Foram identificados R$ ${totalPagamentos.toFixed(2)} em pagamentos de fatura que abatem o saldo devedor, mas nÃ£o aumentam o total de compras.`,
+          descricao: `Foram identificados R$ ${totalPagamentos.toFixed(2)} em pagamentos de fatura que abatem o saldo devedor, mas não aumentam o total de compras.`,
           valor: totalPagamentos
         });
       }
@@ -777,7 +788,7 @@ DIRETRIZES FUNDAMENTAIS:
       if (totalLimites > 0) {
         possiveisCausas.push({
           tipo: 'operacao_limite',
-          descricao: `OperaÃ§Ãµes de 'Limite convertido em saldo' somam R$ ${totalLimites.toFixed(2)} na fatura do cartÃ£o.`,
+          descricao: `Operações de 'Limite convertido em saldo' somam R$ ${totalLimites.toFixed(2)} na fatura do cartão.`,
           valor: totalLimites
         });
       }
@@ -785,7 +796,7 @@ DIRETRIZES FUNDAMENTAIS:
       if (credits > 0) {
         possiveisCausas.push({
           tipo: 'estorno',
-          descricao: `CrÃ©ditos e estornos de R$ ${credits.toFixed(2)} deduzem do total da fatura.`,
+          descricao: `Créditos e estornos de R$ ${credits.toFixed(2)} deduzem do total da fatura.`,
           valor: credits
         });
       }
@@ -793,7 +804,7 @@ DIRETRIZES FUNDAMENTAIS:
       if (Math.abs(Math.abs(diferenca) - totalPagamentos) <= 0.05) {
         possiveisCausas.push({
           tipo: 'saldo_anterior',
-          descricao: `A diferenÃ§a de R$ ${Math.abs(diferenca).toFixed(2)} coincide com o total de pagamentos do perÃ­odo.`,
+          descricao: `A diferença de R$ ${Math.abs(diferenca).toFixed(2)} coincide com o total de pagamentos do período.`,
           valor: totalPagamentos
         });
       }
@@ -801,7 +812,7 @@ DIRETRIZES FUNDAMENTAIS:
 
     const resumoAuditoria = bateComBanco
       ? `Total auditado com sucesso (R$ ${totalCalculado.toFixed(2)}).`
-      : `DivergÃªncia de R$ ${Math.abs(diferenca).toFixed(2)} entre o total informado (R$ ${totalInformado.toFixed(2)}) e a soma apurada dos lanÃ§amentos (R$ ${totalCalculado.toFixed(2)}).`;
+      : `Divergência de R$ ${Math.abs(diferenca).toFixed(2)} entre o total informado (R$ ${totalInformado.toFixed(2)}) e a soma apurada dos lançamentos (R$ ${totalCalculado.toFixed(2)}).`;
 
     return {
       totalInformadoBanco: totalInformado,
@@ -820,7 +831,7 @@ DIRETRIZES FUNDAMENTAIS:
   static async extractDocumentWithAI(file: File): Promise<ExtracaoIAOutput> {
     const fileContent = await this.prepareFileContent(file);
 
-    // Atalhos determinÃ­sticos e instantÃ¢neos para CSVs do Nubank (CartÃ£o e Conta):
+    // Atalhos determinísticos e instantâneos para CSVs do Nubank (Cartão e Conta):
     if (!fileContent.isMultimodal && fileContent.textContent) {
       const parsedNubankCard = this.tryParseNubankCardCsv(fileContent.textContent);
       if (parsedNubankCard) {
@@ -832,96 +843,35 @@ DIRETRIZES FUNDAMENTAIS:
       }
     }
 
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!apiKey || apiKey === "sua_chave_aqui") {
-      throw new Error("Chave da API do Google Gemini nÃ£o configurada!");
-    }
-
-    const genAI = new GoogleGenerativeAI(apiKey);
     const prompt = this.getStructuredPrompt();
+    const fileContextPrompt = `${prompt}
 
-    const modelsToTry = [
-      "gemini-2.5-flash",
-      "gemini-flash-latest",
-      "gemini-2.5-pro",
-      "gemini-2.5-flash-lite"
-    ];
+[INFORMAÇÕES CRÍTICAS DO ARQUIVO]:
+- Nome do arquivo: "${file.name}".
+- Se o nome do arquivo indicar extrato (ex: "extrato", "conta_corrente"), este documento É OBRIGATORIAMENTE um "extrato_bancario" e JAMAIS "fatura_cartao". Extraia todas as linhas em "transacoes" com data, descrição, valor e favorecido!
+- Capture o titular da conta no cabeçalho em "titular".`;
 
-    const callWithRetry = async (modelInstance: any, contentPayload: any[], retries = 2, delay = 1500): Promise<any> => {
-      try {
-        return await modelInstance.generateContent(contentPayload);
-      } catch (err: any) {
-        const errMsg = (err?.message || "").toLowerCase();
-        const isTransient = errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("429") || errMsg.includes("overloaded");
-        if (retries > 0 && isTransient) {
-          console.warn(`[Gemini Retry] Modelo sobrecarregado (503). Aguardando ${delay}ms para tentar novamente...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          return callWithRetry(modelInstance, contentPayload, retries - 1, delay * 2);
-        }
-        throw err;
-      }
-    };
+    const partes: ParteIA[] = fileContent.isMultimodal && fileContent.base64Data
+      ? [fileContextPrompt, { inlineData: { data: fileContent.base64Data, mimeType: fileContent.mimeType } }]
+      : [fileContextPrompt, `Conteúdo do arquivo (${file.name}):
+${fileContent.textContent}`];
 
-    let result: any = null;
-    let lastError: any = null;
-
-    for (const modelName of modelsToTry) {
-      try {
-        const model = genAI.getGenerativeModel({ model: modelName });
-        const fileContextPrompt = `${prompt}\n\n[INFORMAÃÃES CRÃTICAS DO ARQUIVO]:\n- Nome do arquivo: "${file.name}".\n- Se o nome do arquivo indicar extrato (ex: "santander", "extrato", "conta_corrente"), este documento Ã OBRIGATORIAMENTE um "extrato_bancario" e JAMAIS "fatura_cartao". Extraia todas as linhas em "transacoes" com data, descriÃ§Ã£o, valor e favorecido!\n- Capture o titular da conta no cabeÃ§alho em "titular".`;
-        if (fileContent.isMultimodal && fileContent.base64Data) {
-          result = await callWithRetry(model, [
-            fileContextPrompt,
-            {
-              inlineData: {
-                data: fileContent.base64Data,
-                mimeType: fileContent.mimeType
-              }
-            }
-          ]);
-        } else {
-          result = await callWithRetry(model, [
-            fileContextPrompt,
-            `ConteÃºdo do arquivo (${file.name}):\n${fileContent.textContent}`
-          ]);
-        }
-        if (result) break;
-      } catch (err: any) {
-        console.warn(`Tentativa com ${modelName} falhou:`, err?.message || err);
-        lastError = err;
-      }
-    }
-
-    if (!result) {
-      throw lastError || new Error("NÃ£o foi possÃ­vel obter resposta da InteligÃªncia Artificial. Por favor, tente novamente em alguns instantes.");
-    }
-
-    const rawText = result.response.text();
-    const cleanText = rawText.replace(/```json/gi, "").replace(/```/g, "").trim();
-
-    let parsed: any;
-    try {
-      parsed = JSON.parse(cleanText);
-    } catch (e) {
-      console.error("Falha ao fazer parse do JSON retornado pela IA:", rawText);
-      throw new Error("A IA retornou um formato invÃ¡lido. Tente novamente.");
-    }
+    const parsed: any = await aiService.gerarJson("documento", partes);
 
     const dados = parsed.dados || {};
     let tipo = parsed.tipo_documento || "outros";
-    const fileNameLower = (file.name || "").toLowerCase();
 
-    // Se o arquivo for claramente um extrato bancÃ¡rio (ex: Santander, extrato de conta), NUNCA permitir que seja classificado como fatura_cartao
-    const isSantanderExtrato = (fileNameLower.includes("santander") || fileNameLower.includes("extrato")) && !fileNameLower.includes("fatura");
-    const temItensBancarios = (dados.itens || []).some((it: any) => /pix|sal[aÃ¡]rio|ted|doc|dep[oÃ³]sito|transfer[eÃª]ncia|rendimento|saldo|resgate|aplica[Ã§c][aÃ£]o/i.test(it.descricao || ""));
+    // Se o nome do arquivo indica extrato de conta, NUNCA permitir que seja classificado como fatura_cartao
+    const pareceExtrato = nomeArquivoIndicaExtrato(file.name || "");
+    const temItensBancarios = (dados.itens || []).some((it: any) => /pix|sal[aá]rio|ted|doc|dep[oó]sito|transfer[eê]ncia|rendimento|saldo|resgate|aplica[çc][aã]o/i.test(it.descricao || ""));
     
-    if (tipo === "fatura_cartao" && (isSantanderExtrato || temItensBancarios)) {
+    if (tipo === "fatura_cartao" && (pareceExtrato || temItensBancarios)) {
       tipo = "extrato_bancario";
       parsed.tipo_documento = "extrato_bancario";
       if (Array.isArray(dados.itens) && (!dados.transacoes || dados.transacoes.length === 0)) {
         dados.transacoes = dados.itens.map((it: any) => ({
           ...it,
-          tipo: (/recebid|sal[aÃ¡]rio|dep[oÃ³]sito|resgate|rendimento/i.test(it.descricao || "") || it.tipo === "RECEITA") ? "RECEITA" : "DESPESA"
+          tipo: (/recebid|sal[aá]rio|dep[oó]sito|resgate|rendimento/i.test(it.descricao || "") || it.tipo === "RECEITA") ? "RECEITA" : "DESPESA"
         }));
       }
       if (Array.isArray(dados.pagamentos) && Array.isArray(dados.transacoes)) {
@@ -929,13 +879,13 @@ DIRETRIZES FUNDAMENTAIS:
           dados.transacoes.push({
             ...p,
             tipo: "PAGAMENTO_FATURA",
-            categoria_sugerida: "CartÃ£o de CrÃ©dito"
+            categoria_sugerida: "Cartão de Crédito"
           });
         });
       }
     }
 
-    // PÃ³s-processamento de fatura de cartÃ£o: remove crÃ©ditos, estornos e abatimentos de renegociaÃ§Ã£o de 'itens'
+    // Pós-processamento de fatura de cartão: remove créditos, estornos e abatimentos de renegociação de 'itens'
     if (tipo === "fatura_cartao" && Array.isArray(dados.itens)) {
       const itensValidos: any[] = [];
       const pagamentos: any[] = Array.isArray(dados.pagamentos) ? dados.pagamentos : [];
@@ -949,7 +899,7 @@ DIRETRIZES FUNDAMENTAIS:
         const isNegativoNoTexto = fileContent.textContent &&
           new RegExp(`[^\n\r]*-[\\s]*${vlrAbs.toFixed(2).replace('.', '[.,]')}`, 'i').test(fileContent.textContent);
 
-        const isAbatimentoRenegociacao = desc.includes("renegociaÃ§Ã£o de pendÃªncias") || desc.includes("renegociacao");
+        const isAbatimentoRenegociacao = desc.includes("renegociação de pendências") || desc.includes("renegociacao");
         const isDesconto = desc.includes("desconto") && !desc.includes("compra");
         const isPagamentoRecebido = desc.includes("pagamento recebido") || desc.includes("pgto recebido");
 
@@ -968,34 +918,21 @@ DIRETRIZES FUNDAMENTAIS:
       dados.pagamentos = pagamentos;
     }
 
-    // Enriquecimento e auto-detecÃ§Ã£o da instituiÃ§Ã£o financeira (ex: Santander, Nubank, Inter, Wise, etc.)
-    if (!dados.instituicao || dados.instituicao === "Banco" || dados.instituicao === "Importado" || dados.instituicao.trim() === "") {
-      if (fileNameLower.includes("santander") || (dados.descricao && dados.descricao.toLowerCase().includes("santander"))) {
-        dados.instituicao = "Santander";
-      } else if (fileNameLower.includes("nubank") || fileNameLower.includes("nu") || (dados.descricao && dados.descricao.toLowerCase().includes("nubank"))) {
-        dados.instituicao = "Nubank";
-      } else if (fileNameLower.includes("inter") || (dados.descricao && dados.descricao.toLowerCase().includes("inter"))) {
-        dados.instituicao = "Inter";
-      } else if (fileNameLower.includes("wise") || (dados.descricao && dados.descricao.toLowerCase().includes("wise"))) {
-        dados.instituicao = "Wise";
-      } else if (fileNameLower.includes("itau") || fileNameLower.includes("itaÃº")) {
-        dados.instituicao = "ItaÃº";
-      } else if (fileNameLower.includes("bradesco")) {
-        dados.instituicao = "Bradesco";
-      } else if (fileNameLower.includes("caixa")) {
-        dados.instituicao = "Caixa";
-      }
+    // Enriquecimento e auto-detecção da instituição financeira (ex: Santander, Nubank, Inter, Wise, etc.)
+    if (!dados.instituicao || ["banco", "importado"].includes(String(dados.instituicao).trim().toLowerCase())) {
+      const inst = detectarInstituicao(`${file.name || ""} ${dados.descricao || ""} ${dados.conta_nome_ou_banco || ""} ${dados.cartao_nome_ou_final || ""}`);
+      if (inst) dados.instituicao = inst.nome;
     }
 
-    // PÃ³s-processamento e garantia de nomes em transaÃ§Ãµes PIX e transferÃªncias
+    // Pós-processamento e garantia de nomes em transações PIX e transferências
     if (tipo === "extrato_bancario" && Array.isArray(dados.transacoes)) {
       dados.transacoes = dados.transacoes.map((t: any) => {
         let desc = (t.descricao || "").trim();
         let fav = (t.favorecido || "").trim();
 
-        // Extrai favorecido de padrÃµes conhecidos de transferÃªncias Pix (Nubank / Santander / ItaÃº / Inter)
-        const matchEnv = desc.match(/Transfer[eÃª]ncia enviada pelo Pix\s*-\s*([^-]+)/i);
-        const matchRec = desc.match(/Transfer[eÃª]ncia recebida pelo Pix\s*-\s*([^-]+)/i);
+        // Extrai favorecido de padrões conhecidos de transferências Pix (Nubank / Santander / Itaú / Inter)
+        const matchEnv = desc.match(/Transfer[eê]ncia enviada pelo Pix\s*-\s*([^-]+)/i);
+        const matchRec = desc.match(/Transfer[eê]ncia recebida pelo Pix\s*-\s*([^-]+)/i);
 
         if (matchEnv && matchEnv[1]) {
           fav = matchEnv[1].trim();
@@ -1007,7 +944,7 @@ DIRETRIZES FUNDAMENTAIS:
           t.favorecido = fav;
         }
 
-        const isGenerico = !desc || /^(pix|pix recebido|pix enviado|transfer[eÃª]ncia|transfer[eÃª]ncia enviada|transfer[eÃª]ncia enviada pelo pix|transfer[eÃª]ncia recebida|transfer[eÃª]ncia recebida pelo pix|ted|doc|compra no d[eÃ©]bito)$/i.test(desc.trim());
+        const isGenerico = !desc || /^(pix|pix recebido|pix enviado|transfer[eê]ncia|transfer[eê]ncia enviada|transfer[eê]ncia enviada pelo pix|transfer[eê]ncia recebida|transfer[eê]ncia recebida pelo pix|ted|doc|compra no d[eé]bito)$/i.test(desc.trim());
 
         if (fav) {
           if (isGenerico) {
@@ -1021,20 +958,17 @@ DIRETRIZES FUNDAMENTAIS:
         const favLower = fav.toLowerCase();
         const titularNorm = (dados.titular || "").toLowerCase();
 
-        // Claudiney Ã© cÃ´njuge/parente/terceiro (mesmo sobrenome Claudiano, mas prenome diferente). NUNCA Ã© a titular Ana LetÃ­cia!
-        const isClaudiney = favLower.includes("claudiney") || descLower.includes("claudiney");
+        // Mesmo titular = primeiro nome igual + ao menos mais um nome em comum.
+        // Parentes que só compartilham o sobrenome (prenome diferente) NÃO são o titular.
+        const isNomeTitular = DocumentImportService.isMesmaPessoa(titularNorm, favLower);
+        const favDiferenteDoTitular = Boolean(titularNorm && favLower) && !isNomeTitular;
 
-        // Identifica titular da conta e transferÃªncias prÃ³prias (mesma titularidade)
-        const isNomeTitular = !isClaudiney && (
-          (titularNorm && favLower && titularNorm.includes("ana") && favLower.includes("ana") && (titularNorm.includes(favLower) || favLower.includes(titularNorm))) ||
-          (favLower.includes("ana leticia") || favLower.includes("ana claudia") || (favLower.includes("leticia") && favLower.includes("claudia")))
-        );
-        
-        const isPropria = !isClaudiney && (
+        const isPropria = !favDiferenteDoTitular && (
           isNomeTitular ||
-          /mesma\s+titularidade|contas?\s+pr[oÃ³]prias?|entre\s+minhas\s+contas/i.test(descLower) ||
-          ((t.subtipo === "TRANSFERENCIA_PROPRIA" || t.tipo === "TRANSFERENCIA") && (favLower.includes("ana") || descLower.includes("ana")))
+          /mesma\s+titularidade|contas?\s+pr[oó]prias?|entre\s+minhas\s+contas/i.test(descLower) ||
+          t.subtipo === "TRANSFERENCIA_PROPRIA"
         );
+        const isTerceiroComMesmoSobrenome = favDiferenteDoTitular && (t.subtipo === "TRANSFERENCIA_PROPRIA" || t.tipo === "TRANSFERENCIA");
 
         let tipoTx = t.tipo;
         let subtipoTx = t.subtipo || null;
@@ -1043,8 +977,8 @@ DIRETRIZES FUNDAMENTAIS:
         if (isPropria) {
           tipoTx = "TRANSFERENCIA";
           subtipoTx = "TRANSFERENCIA_PROPRIA";
-          catSugerida = "TransferÃªncia Interna";
-        } else if (isClaudiney) {
+          catSugerida = "Transferência Interna";
+        } else if (isTerceiroComMesmoSobrenome) {
           tipoTx = (descLower.includes("pix recebido") || t.tipo === "RECEITA") ? "RECEITA" : "DESPESA";
           subtipoTx = null;
           catSugerida = tipoTx === "RECEITA" ? "Pix Recebido" : "Outros";
@@ -1062,17 +996,15 @@ DIRETRIZES FUNDAMENTAIS:
           const descUpper = desc.toUpperCase();
           if (
             descUpper.includes("LIQUIDO DE VENCIMENTO") || 
-            descUpper.includes("LÃQUIDO DE VENCIMENTO") || 
+            descUpper.includes("LÍQUIDO DE VENCIMENTO") || 
             descUpper.includes("LIQ. VENCIMENTO") || 
             descUpper.includes("LIQ VENCIMENTO") || 
             descUpper.includes("LIQUIDACAO DE VENCIMENTO") || 
-            descUpper.includes("LIQUIDAÃÃO DE VENCIMENTO") || 
+            descUpper.includes("LIQUIDAÇÃO DE VENCIMENTO") || 
             descUpper.includes("IQUIDACAO DE VENCIMENTO") || 
-            descUpper.includes("IQUIDAÃÃO DE VENCIMENTO") || 
-            descUpper.includes("00.737.343") || 
-            descUpper.includes("00737343") || 
+            descUpper.includes("IQUIDAÇÃO DE VENCIMENTO") || 
             descUpper.includes("CREDITO SALARIO") || 
-            descUpper.includes("CRÃDITO SALÃRIO") || 
+            descUpper.includes("CRÉDITO SALÁRIO") || 
             descUpper.includes("CRED SALARIO") || 
             descUpper.includes("FOLHA DE PAGAMENTO") || 
             descUpper.includes("PROVENTOS") || 
@@ -1080,7 +1012,7 @@ DIRETRIZES FUNDAMENTAIS:
           ) {
             tipoTx = "RECEITA";
             subtipoTx = null;
-            catSugerida = "SalÃ¡rio";
+            catSugerida = "Salário";
           } else if (descUpper.includes("IOF") || descUpper.includes("IRRF") || descUpper.includes("IMPOSTO OPERA")) {
             tipoTx = "DESPESA";
             subtipoTx = null;
@@ -1092,11 +1024,11 @@ DIRETRIZES FUNDAMENTAIS:
           } else if (descUpper.includes("TARIFA") || descUpper.includes("MANUTENCAO DE CONTA") || descUpper.includes("PACOTE DE SERVICOS")) {
             tipoTx = "DESPESA";
             subtipoTx = null;
-            catSugerida = "Tarifas BancÃ¡rias";
+            catSugerida = "Tarifas Bancárias";
           } else if (descUpper.includes("PAGAMENTO FATURA") || descUpper.includes("PGTO FATURA") || descUpper.includes("PAGAMENTO CARTAO") || descUpper.includes("PGTO CARTAO")) {
             tipoTx = "PAGAMENTO_FATURA";
             subtipoTx = "PAGAMENTO_FATURA";
-            catSugerida = "CartÃ£o de CrÃ©dito";
+            catSugerida = "Cartão de Crédito";
           }
         }
 
@@ -1105,12 +1037,12 @@ DIRETRIZES FUNDAMENTAIS:
           tipo: tipoTx,
           subtipo: subtipoTx,
           categoria_sugerida: catSugerida,
-          descricao: desc || (tipoTx === "RECEITA" ? "Recebimento / Pix" : tipoTx === "TRANSFERENCIA" ? "TransferÃªncia PrÃ³pria" : "Pagamento / Pix")
+          descricao: desc || (tipoTx === "RECEITA" ? "Recebimento / Pix" : tipoTx === "TRANSFERENCIA" ? "Transferência Própria" : "Pagamento / Pix")
         };
       });
     }
 
-    // NormalizaÃ§Ã£o defensiva de cronograma de parcelas para emprÃ©stimos e renegociaÃ§Ãµes
+    // Normalização defensiva de cronograma de parcelas para empréstimos e renegociações
     if (tipo === "contrato_emprestimo" || tipo === "contrato_financiamento" || tipo === "renegociacao_cartao") {
       const qtd = parseInt(dados.quantidade_parcelas) || 0;
       const vlr = parseFloat(dados.valor_parcela) || 0;
@@ -1148,13 +1080,13 @@ DIRETRIZES FUNDAMENTAIS:
   }
 
   /**
-   * 8. VALIDAÃÃO DE SCHEMA ESTRITA (GARANTE COERÃNCIA DOS DADOS)
+   * 8. VALIDAÇÃO DE SCHEMA ESTRITA (GARANTE COERÊNCIA DOS DADOS)
    */
   static validateSchema(tipo: TipoDocumento, dados: any): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
 
     if (!dados || typeof dados !== "object") {
-      return { valid: false, errors: ["Dados extraÃ­dos ausentes ou em formato invÃ¡lido."] };
+      return { valid: false, errors: ["Dados extraídos ausentes ou em formato inválido."] };
     }
 
     switch (tipo) {
@@ -1165,7 +1097,7 @@ DIRETRIZES FUNDAMENTAIS:
           if (d.valor_total_com_juros && d.valor_total_com_juros > 0) {
             d.valor_original = d.valor_total_com_juros;
           } else {
-            errors.push("Valor do emprÃ©stimo invÃ¡lido ou ausente.");
+            errors.push("Valor do empréstimo inválido ou ausente.");
           }
         }
         if (!d.quantidade_parcelas || d.quantidade_parcelas <= 0) {
@@ -1189,8 +1121,8 @@ DIRETRIZES FUNDAMENTAIS:
 
       case "renegociacao_cartao": {
         const d = dados as DadosRenegociacaoCartao;
-        if (!d.valor_original && !d.valor_total_com_juros) errors.push("Valor da renegociaÃ§Ã£o ausente.");
-        if (!d.quantidade_parcelas || d.quantidade_parcelas <= 0) errors.push("Quantidade de parcelas invÃ¡lida.");
+        if (!d.valor_original && !d.valor_total_com_juros) errors.push("Valor da renegociação ausente.");
+        if (!d.quantidade_parcelas || d.quantidade_parcelas <= 0) errors.push("Quantidade de parcelas inválida.");
         if ((!d.parcelas || !Array.isArray(d.parcelas) || d.parcelas.length === 0) && d.quantidade_parcelas > 0) {
           const baseDate = new Date((d.data_primeira_parcela || d.data_acordo || new Date().toISOString().split("T")[0]) + "T12:00:00");
           d.parcelas = Array.from({ length: d.quantidade_parcelas }).map((_, idx) => {
@@ -1214,20 +1146,20 @@ DIRETRIZES FUNDAMENTAIS:
 
       case "extrato_bancario": {
         const d = dados as DadosExtratoBancario;
-        if (!d.transacoes || !Array.isArray(d.transacoes)) errors.push("Lista de transaÃ§Ãµes do extrato ausente.");
+        if (!d.transacoes || !Array.isArray(d.transacoes)) errors.push("Lista de transações do extrato ausente.");
         break;
       }
 
       case "comprovante_pagamento": {
         const d = dados as DadosComprovantePagamento;
-        if (!d.valor || d.valor <= 0) errors.push("Valor do comprovante de pagamento invÃ¡lido.");
+        if (!d.valor || d.valor <= 0) errors.push("Valor do comprovante de pagamento inválido.");
         if (!d.data) errors.push("Data do pagamento ausente.");
         break;
       }
 
       case "comprovante_transferencia": {
         const d = dados as DadosComprovanteTransferencia;
-        if (!d.valor || d.valor <= 0) errors.push("Valor da transferÃªncia invÃ¡lido.");
+        if (!d.valor || d.valor <= 0) errors.push("Valor da transferência inválido.");
         break;
       }
     }
@@ -1239,18 +1171,18 @@ DIRETRIZES FUNDAMENTAIS:
   }
 
   /**
-   * 9. VERIFICAR SE O DOCUMENTO REQUER CONFIRMAÃÃO DO USUÃRIO
+   * 9. VERIFICAR SE O DOCUMENTO REQUER CONFIRMAÇÃO DO USUÁRIO
    */
   static requiresUserConfirmation(tipo: TipoDocumento, confianca: number): boolean {
-    // 1. OperaÃ§Ãµes com impacto de dÃ­vida futura SEMPRE requerem confirmaÃ§Ã£o
+    // 1. Operações com impacto de dívida futura SEMPRE requerem confirmação
     if (tipo === "contrato_emprestimo" || tipo === "contrato_financiamento" || tipo === "renegociacao_cartao") {
       return true;
     }
-    // 2. Comprovantes de pagamento isolados requerem confirmaÃ§Ã£o de qual obrigaÃ§Ã£o pagar
+    // 2. Comprovantes de pagamento isolados requerem confirmação de qual obrigação pagar
     if (tipo === "comprovante_pagamento") {
       return true;
     }
-    // 3. Qualquer documento com confianÃ§a menor que 85% exige confirmaÃ§Ã£o
+    // 3. Qualquer documento com confiança menor que 85% exige confirmação
     if (confianca < 0.85) {
       return true;
     }
@@ -1258,7 +1190,7 @@ DIRETRIZES FUNDAMENTAIS:
   }
 
   /**
-   * 10. PERSISTÃNCIA VIA SERVIÃOS DE DOMÃNIO FINANCEIRO (SEM SQL DIRETO)
+   * 10. PERSISTÊNCIA VIA SERVIÇOS DE DOMÍNIO FINANCEIRO (SEM SQL DIRETO)
    */
   static async persistToDomain(params: {
     usuario_id: string;
@@ -1270,14 +1202,15 @@ DIRETRIZES FUNDAMENTAIS:
       cartao_id?: string;
       fatura_origem_id?: string;
       divida_id?: string;
+      parcela_id?: string;
     };
   }): Promise<{ success: boolean; totalItens: number; mensagem: string; detalhes?: any }> {
     const { usuario_id, tipo_documento, dados, documento_importado_id, contexto } = params;
 
     switch (tipo_documento) {
       // -------------------------------------------------------------
-      // CASO A: EMPRÃSTIMO OU FINANCIAMENTO
-      // Cria DÃVIDA + PARCELAS_DIVIDA (NÃO CRIA 24 TRANSAÃÃES DE GASTO)
+      // CASO A: EMPRÉSTIMO OU FINANCIAMENTO
+      // Cria DÍVIDA + PARCELAS_DIVIDA (NÃO CRIA 24 TRANSAÇÕES DE GASTO)
       // -------------------------------------------------------------
       case "contrato_emprestimo":
       case "contrato_financiamento": {
@@ -1316,7 +1249,7 @@ DIRETRIZES FUNDAMENTAIS:
 
         const novaDivida = {
           tipo: emp.tipo_divida || "emprestimo_pessoal",
-          descricao: emp.descricao || `EmprÃ©stimo ${emp.instituicao || "BancÃ¡rio"}`,
+          descricao: emp.descricao || `Empréstimo ${emp.instituicao || "Bancário"}`,
           instituicao: emp.instituicao || "Banco",
           valor_original: valorOriginal,
           valor_atual: valorAtual,
@@ -1330,7 +1263,7 @@ DIRETRIZES FUNDAMENTAIS:
           parcelas: parcelasParaInserir
         });
 
-        // Registra automaticamente as parcelas anteriores pagas como despesas contÃ¡beis no extrato
+        // Registra automaticamente as parcelas anteriores pagas como despesas contábeis no extrato
         if (totalPagas > 0) {
           try {
             await financeService.sincronizarGastosParcelasPagas(usuario_id, dividaCriada.id, contexto?.conta_id);
@@ -1342,14 +1275,14 @@ DIRETRIZES FUNDAMENTAIS:
         return {
           success: true,
           totalItens: parcelasParaInserir.length,
-          mensagem: `EmprÃ©stimo cadastrado com sucesso! ${parcelasParaInserir.length} parcelas registradas (${totalPagas} quitadas/anteriores, ${parcelasParaInserir.length - totalPagas} pendentes).`,
+          mensagem: `Empréstimo cadastrado com sucesso! ${parcelasParaInserir.length} parcelas registradas (${totalPagas} quitadas/anteriores, ${parcelasParaInserir.length - totalPagas} pendentes).`,
           detalhes: { divida_id: dividaCriada.id, pagas: totalPagas, pendentes: parcelasParaInserir.length - totalPagas }
         };
       }
 
       // -------------------------------------------------------------
-      // CASO B: RENEGOCIAÃÃO DE CARTÃO
-      // Cria DÃVIDA 'renegociacao_cartao' + PARCELAS + LINK COM FATURA
+      // CASO B: RENEGOCIAÇÃO DE CARTÃO
+      // Cria DÍVIDA 'renegociacao_cartao' + PARCELAS + LINK COM FATURA
       // -------------------------------------------------------------
       case "renegociacao_cartao": {
         const reneg = dados as DadosRenegociacaoCartao;
@@ -1357,7 +1290,7 @@ DIRETRIZES FUNDAMENTAIS:
         const valorOriginal = reneg.valor_original || (reneg.valor_parcela * totalParcelas);
         const valorAtual = reneg.valor_total_com_juros || (reneg.valor_parcela * totalParcelas);
 
-        // Valida que a fatura de origem pertence ao usuÃ¡rio se fornecida
+        // Valida que a fatura de origem pertence ao usuário se fornecida
         let faturaOrigemValida: string | null = null;
         if (contexto?.fatura_origem_id) {
           const { data: faturaCheck } = await supabase
@@ -1401,8 +1334,8 @@ DIRETRIZES FUNDAMENTAIS:
 
         const novaDivida = {
           tipo: "renegociacao_cartao",
-          descricao: reneg.descricao || `RenegociaÃ§Ã£o ${reneg.instituicao || "CartÃ£o"}`,
-          instituicao: reneg.instituicao || "CartÃ£o de CrÃ©dito",
+          descricao: reneg.descricao || `Renegociação ${reneg.instituicao || "Cartão"}`,
+          instituicao: reneg.instituicao || "Cartão de Crédito",
           valor_original: valorOriginal,
           valor_atual: valorAtual,
           data_contratacao: reneg.data_acordo || new Date().toISOString().split("T")[0],
@@ -1420,45 +1353,45 @@ DIRETRIZES FUNDAMENTAIS:
           try {
             await financeService.sincronizarGastosParcelasPagas(usuario_id, dividaCriada.id, contexto?.conta_id);
           } catch (syncErr) {
-            console.warn("Aviso ao sincronizar despesas de renegociaÃ§Ã£o paga:", syncErr);
+            console.warn("Aviso ao sincronizar despesas de renegociação paga:", syncErr);
           }
         }
 
         return {
           success: true,
           totalItens: parcelasParaInserir.length,
-          mensagem: `RenegociaÃ§Ã£o registrada com sucesso! ${parcelasParaInserir.length} parcelas (${totalPagas} pagas, ${parcelasParaInserir.length - totalPagas} pendentes).`,
+          mensagem: `Renegociação registrada com sucesso! ${parcelasParaInserir.length} parcelas (${totalPagas} pagas, ${parcelasParaInserir.length - totalPagas} pendentes).`,
           detalhes: { divida_id: dividaCriada.id, pagas: totalPagas, pendentes: parcelasParaInserir.length - totalPagas }
         };
       }
 
       // -------------------------------------------------------------
-      // CASO C: FATURA DE CARTÃO DE CRÃDITO
-      // Compras individuais atreladas ao cartÃ£o/fatura (SEM debitar conta!)
+      // CASO C: FATURA DE CARTÃO DE CRÉDITO
+      // Compras individuais atreladas ao cartão/fatura (SEM debitar conta!)
       // -------------------------------------------------------------
       case "fatura_cartao": {
         const fatura = dados as DadosFaturaCartao;
         const cartaoId = contexto?.cartao_id;
         if (!cartaoId) {
-          throw new Error("Ã obrigatÃ³rio selecionar o cartÃ£o de crÃ©dito associado Ã  fatura.");
+          throw new Error("É obrigatório selecionar o cartão de crédito associado à fatura.");
         }
 
-        // Valida que o cartÃ£o pertence ao mesmo usuÃ¡rio
+        // Valida que o cartão pertence ao mesmo usuário
         const { data: cartaoCheck } = await supabase
           .from("cartoes")
-          .select("id")
+          .select("id, nome, vencimento_dia")
           .eq("id", cartaoId)
           .eq("usuario_id", usuario_id)
           .single();
-        if (!cartaoCheck) throw new Error("CartÃ£o nÃ£o encontrado ou nÃ£o pertence a este usuÃ¡rio.");
+        if (!cartaoCheck) throw new Error("Cartão não encontrado ou não pertence a este usuário.");
 
         let importadas = 0;
         for (const item of (fatura.itens || [])) {
           const isLimite = item.natureza === "LIMITE_CONVERTIDO" || /limite\s+convertido/i.test(item.descricao);
-          const isRenegociacao = item.natureza === "PARCELA_RENEGOCIACAO" || /renegocia|parcelamento de fatura|f[ií]sico\s*8282|8282.*parcela/i.test(item.descricao);
+          const isRenegociacao = item.natureza === "PARCELA_RENEGOCIACAO" || /renegocia|parcelamento de fatura/i.test(item.descricao);
           
           await financeService.addGasto(usuario_id, {
-            descricao: isRenegociacao ? `Renegociação Cartão Santander (${item.parcela_atual || 1}/${item.total_parcelas || 12})` : item.descricao,
+            descricao: isRenegociacao ? `Renegociação de Cartão (${item.parcela_atual || 1}/${item.total_parcelas || 1})` : item.descricao,
             valor: item.valor,
             valor_ja_dividido: true,
             data: item.data,
@@ -1477,39 +1410,52 @@ DIRETRIZES FUNDAMENTAIS:
           // Se for renegociação de cartão, garante que exista no painel de DÍVIDAS também
           if (isRenegociacao) {
             try {
+              // Procura uma renegociação ativa do mesmo cartão/instituição antes de criar outra
               const { data: dividasExistentes } = await supabase
                 .from("dividas")
-                .select("id")
+                .select("id, descricao, instituicao")
                 .eq("usuario_id", usuario_id)
                 .eq("tipo", "renegociacao_cartao")
-                .ilike("descricao", "%8282%");
+                .neq("status", "quitada");
 
-              let dividaId = dividasExistentes && dividasExistentes.length > 0 ? dividasExistentes[0].id : null;
+              const existente = (dividasExistentes || []).find(d =>
+                (d.descricao || "").toLowerCase().includes((cartaoCheck.nome || "").toLowerCase()) ||
+                mesmaInstituicao(`${d.instituicao || ""} ${d.descricao || ""}`, cartaoCheck.nome)
+              );
 
-              if (!dividaId) {
-                // Cria a Dívida no painel de Dívidas
-                const numTotal = item.total_parcelas || 12;
-                const vlrParcela = Number(item.valor || 1054.45);
+              if (!existente) {
+                // Cria a dívida a partir dos próprios dados da parcela importada
+                const totalParcelas = Math.max(1, item.total_parcelas || 1);
+                const parcelaAtual = Math.min(Math.max(1, item.parcela_atual || 1), totalParcelas);
+                const valorParcela = Number(item.valor) || 0;
+                const diaVenc = Math.min(Math.max(1, Number(cartaoCheck.vencimento_dia) || 10), 28);
+                const [anoItem, mesItem] = (item.data || new Date().toISOString().slice(0, 10)).split("-").map(Number);
+                // mês (0-based) da 1ª parcela = mês da parcela atual - (parcelaAtual - 1)
+                const mesPrimeira = (mesItem - 1) - (parcelaAtual - 1);
+                const dataParcela = (idx: number) =>
+                  new Date(Date.UTC(anoItem, mesPrimeira + idx, diaVenc)).toISOString().split("T")[0];
+
+                const instituicao = detectarInstituicao(cartaoCheck.nome)?.nome || cartaoCheck.nome || null;
                 const { data: novaDiv } = await supabase.from("dividas").insert([{
                   usuario_id,
                   tipo: "renegociacao_cartao",
-                  descricao: "Renegociação Cartão Santander Unique 8282",
-                  instituicao: "Santander",
-                  valor_original: 11491.42,
-                  valor_atual: 12653.40,
-                  data_contratacao: "2026-06-25",
-                  status: "ativa"
+                  descricao: `Renegociação ${cartaoCheck.nome || "Cartão"}`,
+                  instituicao,
+                  valor_original: Number((valorParcela * totalParcelas).toFixed(2)),
+                  valor_atual: Number((valorParcela * (totalParcelas - parcelaAtual + 1)).toFixed(2)),
+                  data_contratacao: dataParcela(0),
+                  status: "ativa",
+                  documento_importado_id: documento_importado_id || null
                 }]).select().single();
 
-                if (novaDiv) {
-                  dividaId = novaDiv.id;
-                  const parcelasParaCriar = Array.from({ length: numTotal }).map((_, idx) => ({
-                    divida_id: dividaId,
+                if (novaDiv && valorParcela > 0) {
+                  const parcelasParaCriar = Array.from({ length: totalParcelas }).map((_, idx) => ({
+                    divida_id: novaDiv.id,
                     usuario_id,
                     numero_parcela: idx + 1,
-                    valor_esperado: vlrParcela,
-                    data_vencimento: new Date(2026, 6 + idx, 10).toISOString().split("T")[0],
-                    status: (idx + 1) < (item.parcela_atual || 1) ? "paga" : "pendente"
+                    valor_esperado: valorParcela,
+                    data_vencimento: dataParcela(idx),
+                    status: (idx + 1) < parcelaAtual ? "paga" : "pendente"
                   }));
                   await supabase.from("parcelas_divida").insert(parcelasParaCriar);
                 }
@@ -1538,30 +1484,38 @@ DIRETRIZES FUNDAMENTAIS:
         return {
           success: true,
           totalItens: importadas,
-          mensagem: `${importadas} lanÃ§amentos de cartÃ£o importados com sucesso!`
+          mensagem: `${importadas} lançamentos de cartão importados com sucesso!`
         };
       }
 
       // -------------------------------------------------------------
-      // CASO D: EXTRATO BANCÃRIO
-      // Entradas e SaÃ­das geram transaÃ§Ã£o + movimentaÃ§Ã£o de conta
-      // Diferencia consumo real de pagamentos de dÃ­vida/fatura e transferÃªncias
+      // CASO D: EXTRATO BANCÁRIO
+      // Entradas e Saídas geram transação + movimentação de conta
+      // Diferencia consumo real de pagamentos de dívida/fatura e transferências
       // -------------------------------------------------------------
       case "extrato_bancario": {
         const extrato = dados as DadosExtratoBancario;
         const contaId = contexto?.conta_id;
         if (!contaId) {
-          throw new Error("Ã obrigatÃ³rio selecionar a conta bancÃ¡ria do extrato.");
+          throw new Error("É obrigatório selecionar a conta bancária do extrato.");
         }
 
-        // Valida que a conta pertence ao usuÃ¡rio
+        // Valida que a conta pertence ao usuário
         const { data: contaCheck } = await supabase
           .from("contas_bancarias")
           .select("id")
           .eq("id", contaId)
           .eq("usuario_id", usuario_id)
           .single();
-        if (!contaCheck) throw new Error("Conta bancÃ¡ria nÃ£o pertence a este usuÃ¡rio.");
+        if (!contaCheck) throw new Error("Conta bancária não pertence a este usuário.");
+
+        // Meta de reserva usada como destino padrão de aplicações/resgates (RDB, caixinha)
+        const { data: metasUsuario } = await supabase
+          .from("metas")
+          .select("id, titulo")
+          .eq("usuario_id", usuario_id);
+        const metaReservaId =
+          (metasUsuario || []).find(m => /reserva(\s+de)?\s+emerg[eê]ncia|caixinha/i.test(m.titulo || ""))?.id ?? null;
 
         let total = 0;
         for (const t of (extrato.transacoes || [])) {
@@ -1570,13 +1524,13 @@ DIRETRIZES FUNDAMENTAIS:
           const isPagamentoFatura = t.tipo === "PAGAMENTO_FATURA" || t.natureza === "PAGAMENTO_FATURA" || descLower.includes("pagamento de fatura") || descLower.includes("pgto fatura");
           const isAplicacao = t.tipo === "APORTE" || t.tipo === "INVESTIMENTO" || (descLower.includes("rdb") && !descLower.includes("resgate")) || descLower.includes("caixinha") || descLower.includes("guardar dinheiro");
           const isResgate = t.tipo === "RESGATE" || (descLower.includes("rdb") && descLower.includes("resgate")) || descLower.includes("resgate caixinha");
-          const isTransf = t.tipo === "TRANSFERENCIA" || t.natureza === "TRANSFERENCIA" || /mesma\s+titularidade|contas?\s+pr[oÃ³]prias?/i.test(descLower);
+          const isTransf = t.tipo === "TRANSFERENCIA" || t.natureza === "TRANSFERENCIA" || /mesma\s+titularidade|contas?\s+pr[oó]prias?/i.test(descLower);
 
           if (t.tipo === "RECEITA" || isLimite) {
             const txTipo = isLimite ? "AJUSTE" : "RECEITA";
             const txCat = isLimite ? "Financiamento / Ajuste de Limite" : (t.categoria_sugerida || "Outros");
 
-            // Mapeia categoria_id existente ou cria uma se necessÃ¡rio
+            // Mapeia categoria_id existente ou cria uma se necessário
             let catId = null;
             if (txCat) {
               const { data: cat } = await supabase
@@ -1620,7 +1574,7 @@ DIRETRIZES FUNDAMENTAIS:
               .select().single();
 
             if (error) {
-              console.error("Erro ao inserir transaÃ§Ã£o de receita (import-service):", error);
+              console.error("Erro ao inserir transação de receita (import-service):", error);
             }
 
             if (!error && tx) {
@@ -1650,7 +1604,7 @@ DIRETRIZES FUNDAMENTAIS:
               conta_id: contaId,
               valor: t.valor,
               data: t.data,
-              descricao: t.descricao || "AplicaÃ§Ã£o Financeira",
+              descricao: t.descricao || "Aplicação Financeira",
               meta_id: metaReservaId,
               documento_importado_id: documento_importado_id || null
             });
@@ -1671,13 +1625,13 @@ DIRETRIZES FUNDAMENTAIS:
               .insert([{
                 usuario_id,
                 tipo: "TRANSFERENCIA",
-                descricao: t.descricao || "TransferÃªncia entre contas prÃ³prias",
+                descricao: t.descricao || "Transferência entre contas próprias",
                 valor: t.valor,
                 data: t.data,
                 conta_id: contaId,
                 status: "confirmada",
                 documento_importado_id: documento_importado_id || null,
-                observacao: "TransferÃªncia Interna"
+                observacao: "Transferência Interna"
               }])
               .select().single();
             if (!error && tx) {
@@ -1697,7 +1651,7 @@ DIRETRIZES FUNDAMENTAIS:
               valor: t.valor,
               data: t.data,
               categoria: t.categoria_sugerida || "Outros",
-              metodo_pagamento: "DÃ©bito",
+              metodo_pagamento: "Débito",
               conta_id: contaId,
               documento_importado_id: documento_importado_id || null
             });
@@ -1710,13 +1664,13 @@ DIRETRIZES FUNDAMENTAIS:
         return {
           success: true,
           totalItens: total,
-          mensagem: `${total} transaÃ§Ãµes do extrato bancÃ¡rio importadas com sucesso!`
+          mensagem: `${total} transações do extrato bancário importadas com sucesso!`
         };
       }
 
       // -------------------------------------------------------------
       // CASO E: COMPROVANTE DE PAGAMENTO
-      // Realiza a quitaÃ§Ã£o da dÃ­vida/parcela se indicada
+      // Realiza a quitação da dívida/parcela se indicada
       // -------------------------------------------------------------
       case "comprovante_pagamento": {
         const comp = dados as DadosComprovantePagamento;
@@ -1735,60 +1689,60 @@ DIRETRIZES FUNDAMENTAIS:
             mensagem: `Pagamento de R$ ${comp.valor.toFixed(2)} registrado e parcela quitada com sucesso!`
           };
         } else {
-          // LanÃ§a como transaÃ§Ã£o de despesa comum
+          // Lança como transação de despesa comum
           await financeService.addGasto(usuario_id, {
             descricao: comp.descricao || "Pagamento de Comprovante",
             valor: comp.valor,
             data: comp.data,
             categoria: "Outros",
-            metodo_pagamento: "DÃ©bito",
+            metodo_pagamento: "Débito",
             conta_id: contexto?.conta_id || null,
             documento_importado_id: documento_importado_id || null
           });
           return {
             success: true,
             totalItens: 1,
-            mensagem: `Pagamento de R$ ${comp.valor.toFixed(2)} lanÃ§ado com sucesso.`
+            mensagem: `Pagamento de R$ ${comp.valor.toFixed(2)} lançado com sucesso.`
           };
         }
       }
 
       // -------------------------------------------------------------
-      // CASO F: COMPROVANTE DE TRANSFERÃNCIA
-      // 1 TransaÃ§Ã£o + 2 MovimentaÃ§Ãµes (ambas do mesmo usuÃ¡rio)
+      // CASO F: COMPROVANTE DE TRANSFERÊNCIA
+      // 1 Transação + 2 Movimentações (ambas do mesmo usuário)
       // -------------------------------------------------------------
       case "comprovante_transferencia": {
         const trans = dados as DadosComprovanteTransferencia;
         const contaOrigem = contexto?.conta_id;
-        if (!contaOrigem) throw new Error("Conta bancÃ¡ria de origem Ã© obrigatÃ³ria para a transferÃªncia.");
+        if (!contaOrigem) throw new Error("Conta bancária de origem é obrigatória para a transferência.");
 
-        // Valida que a conta de origem pertence ao usuÃ¡rio
+        // Valida que a conta de origem pertence ao usuário
         const { data: cOrigem } = await supabase
           .from("contas_bancarias")
           .select("id")
           .eq("id", contaOrigem)
           .eq("usuario_id", usuario_id)
           .single();
-        if (!cOrigem) throw new Error("Conta de origem nÃ£o pertence ao usuÃ¡rio.");
+        if (!cOrigem) throw new Error("Conta de origem não pertence ao usuário.");
 
         await financeService.addTransacao(usuario_id, {
           tipo: "TRANSFERENCIA",
-          descricao: trans.descricao || `TransferÃªncia para ${trans.favorecido}`,
+          descricao: trans.descricao || `Transferência para ${trans.favorecido}`,
           valor: trans.valor,
           data: trans.data,
           conta_id: contaOrigem,
-          conta_destino_id: contaOrigem // se nÃ£o houver outra conta selecionada
+          conta_destino_id: contaOrigem // se não houver outra conta selecionada
         });
 
         return {
           success: true,
           totalItens: 1,
-          mensagem: `TransferÃªncia de R$ ${trans.valor.toFixed(2)} registrada com sucesso.`
+          mensagem: `Transferência de R$ ${trans.valor.toFixed(2)} registrada com sucesso.`
         };
       }
 
       default:
-        throw new Error(`Tipo de documento '${tipo_documento}' nÃ£o suportado para persistÃªncia automÃ¡tica.`);
+        throw new Error(`Tipo de documento '${tipo_documento}' não suportado para persistência automática.`);
     }
   }
 }

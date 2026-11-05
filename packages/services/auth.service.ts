@@ -1,5 +1,16 @@
 import { supabase } from "./supabase";
 
+/** Perfil do usuário (tabela public.usuarios + avatar do Auth). */
+export interface PerfilUsuario {
+  id: string;
+  nome: string;
+  email: string | null;
+  telefone: string | null;
+  cpf: string | null;
+  acompanha_mei: boolean | null;
+  avatar_url: string | null;
+}
+
 export const authService = {
   /**
    * CADASTRO DE USUÁRIO
@@ -11,7 +22,8 @@ async register(email: string, password: string, nome: string, acompanha_mei: boo
     email,
     password,
     options: {
-      data: { display_name: nome, full_name: nome },
+      // lidos pelo trigger criar_perfil_usuario (migration 005)
+      data: { display_name: nome, full_name: nome, acompanha_mei },
     },
   });
 
@@ -19,13 +31,13 @@ async register(email: string, password: string, nome: string, acompanha_mei: boo
 
   // 2. Registro na tabela pública
   if (data.user) {
+    // O perfil normalmente já é criado pelo trigger no banco; isto é só um reforço.
     const { error: dbError } = await supabase
       .from("usuarios")
-      .insert([{ id: data.user.id, nome: nome, email: email, acompanha_mei }]);
+      .upsert([{ id: data.user.id, nome, email, acompanha_mei }], { onConflict: "id", ignoreDuplicates: true });
 
     if (dbError) {
-      // Se for erro de RLS, apenas logamos no console e deixamos o fluxo seguir
-      // O perfil será criado/corrigido quando o usuário validar o Token
+      // Sem sessão ainda (confirmação de e-mail pendente) o RLS bloqueia — o trigger cuida do perfil.
       console.warn("Aviso: Perfil será sincronizado após a validação do e-mail.");
     }
   }
@@ -129,10 +141,28 @@ async register(email: string, password: string, nome: string, acompanha_mei: boo
   },
 
   /**
+   * Quais destes e-mails já têm conta no app? Não expõe nenhum outro dado pessoal.
+   * Usa a função emails_com_conta (migration 005); se ela ainda não existir,
+   * recorre à consulta antiga para não quebrar o recurso durante a transição.
+   */
+  async emailsComConta(emails: string[]): Promise<Set<string>> {
+    const normalizados = Array.from(new Set(emails.map(e => (e || "").trim().toLowerCase()).filter(Boolean)));
+    if (normalizados.length === 0) return new Set();
+
+    const { data, error } = await supabase.rpc("emails_com_conta", { emails: normalizados });
+    if (!error) {
+      return new Set(((data as string[] | null) || []).map(e => e.toLowerCase()));
+    }
+
+    const { data: legado } = await supabase.from("usuarios").select("email").in("email", normalizados);
+    return new Set((legado || []).map((u: any) => (u.email || "").toLowerCase()).filter(Boolean));
+  },
+
+  /**
    * BUSCAR DADOS DO USUÁRIO ATUAL
    * Tenta buscar na tabela 'usuarios', com fallback para o Auth Metadata.
    */
-  async getCurrentUser() {
+  async getCurrentUser(): Promise<PerfilUsuario | null> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
@@ -142,20 +172,22 @@ async register(email: string, password: string, nome: string, acompanha_mei: boo
       .eq("id", user.id)
       .single();
 
-    if (error) {
+    const avatar_url: string | null = user.user_metadata?.avatar_url || null;
+
+    if (error || !data) {
       // Fallback: Retorna dados do Auth se a tabela pública falhar
-      return { 
+      return {
         id: user.id,
-        nome: user.user_metadata?.display_name || "Usuário", 
-        avatar_url: user.user_metadata?.avatar_url || null,
-        email: user.email 
+        nome: user.user_metadata?.display_name || "Usuário",
+        email: user.email ?? null,
+        telefone: null,
+        cpf: null,
+        acompanha_mei: null,
+        avatar_url,
       };
     }
-    
-    return {
-      ...data,
-      avatar_url: user.user_metadata?.avatar_url || null
-    };
+
+    return { ...data, avatar_url };
   },
 
   /**

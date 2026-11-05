@@ -4,13 +4,10 @@ import { financeService } from "../../../../packages/services/finance.service";
 import {
 	Plus,
 	TrendingUp,
-	ArrowUpRight,
-	ArrowDownRight,
 	Briefcase,
 	PieChart as ChartIcon,
 	Building2,
 	Coins,
-	Globe,
 	Trash2
 } from "lucide-react";
 import {
@@ -21,8 +18,9 @@ import {
 	Tooltip,
 	Legend
 } from "recharts";
-import { Toaster, toast } from "react-hot-toast";
+import { toast } from "react-hot-toast";
 import AddInvestimentoWeb from "../components/AddInvestimentoWeb";
+import PageLoader from "../components/PageLoader";
 
 export default function InvestimentosWeb() {
 	const [investimentos, setInvestimentos] = useState<any[]>([]);
@@ -30,8 +28,8 @@ export default function InvestimentosWeb() {
 	const [loading, setLoading] = useState(true);
 	const [isAddInvestimentoOpen, setIsAddInvestimentoOpen] = useState(false);
 
+	// O loader só aparece no primeiro carregamento (recargas em tempo real não piscam a tela)
 	const loadInvestimentos = useCallback(async () => {
-		setLoading(true);
 		const { data: { user } } = await supabase.auth.getUser();
 		if (user) {
 			try {
@@ -90,6 +88,8 @@ export default function InvestimentosWeb() {
 	}, [investimentos]);
 
 	const COLORS = ["#6366F1", "#8B5CF6", "#EC4899", "#10B981", "#F59E0B"];
+
+	if (loading) return <PageLoader />;
 
 	return (
 		<div className="space-y-6 sm:space-y-8 pb-20">

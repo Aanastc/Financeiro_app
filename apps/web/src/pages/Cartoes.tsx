@@ -9,6 +9,7 @@ import toast from "react-hot-toast";
 import AddCartaoModal from "../components/AddCartaoModal";
 import EditCartaoModal from "../components/EditCartaoModal";
 import { AddGastoWeb } from "../components/AddGastoWeb";
+import { mesmaInstituicao } from "../../../../packages/utils/instituicoes";
 
 const getCardBranding = (name: string) => {
 	const lower = name.toLowerCase();
@@ -125,7 +126,8 @@ export default function Cartoes() {
 			const user = await authService.getCurrentUser();
 			if (!user) return;
 			
-			const [cardsData, faturasData, gastosCredito, pagamentosFaturas, dividasData] = await Promise.all([
+			// getPagamentosFaturas também sincroniza pagamentos de cartão (efeito colateral necessário)
+			const [cardsData, faturasData, gastosCredito, , dividasData] = await Promise.all([
 				financeService.getCartoes(user.id),
 				financeService.getAllFaturas(user.id).catch(() => []),
 				financeService.getAllGastosCredito(user.id),
@@ -134,12 +136,8 @@ export default function Cartoes() {
 			]);
 
 			const enrichedCards = (cardsData || []).map((c: any) => {
-				const cardNomeLower = (c.nome || "").toLowerCase();
-				const isSantander = cardNomeLower.includes("santander");
-				const isNubank = cardNomeLower.includes("nubank");
 
 				const cardGastos = gastosCredito?.filter((g: any) => g.cartao_id === c.id) || [];
-				const cardPagamentos = pagamentosFaturas?.filter((p: any) => p.cartao_id === c.id) || [];
 				const cardFaturas = (faturasData || []).filter((f: any) => f.cartao_id === c.id);
 
 				// 1. Procura EXCLUSIVAMENTE renegociação de cartão (NUNCA empréstimo consignado ou pessoal!)
@@ -165,9 +163,8 @@ export default function Cartoes() {
 					if (d.cartao_id && d.cartao_id === c.id) return true;
 					if (d.fatura_origem_id && cardFaturas.some((f: any) => f.id === d.fatura_origem_id)) return true;
 					
-					if (isSantander && (dInst.includes("santander") || dDesc.includes("santander"))) return true;
-					if (isNubank && (dInst.includes("nubank") || dDesc.includes("nubank"))) return true;
-					return false;
+					// Mesma instituição do cartão (ex.: dívida "Itaú" ↔ cartão "Itaú Platinum")
+					return mesmaInstituicao(`${dInst} ${dDesc}`, c.nome);
 				});
 
 				const todayStr = new Date().toISOString().split("T")[0];
@@ -363,7 +360,6 @@ export default function Cartoes() {
 						const branding = getCardBranding(cartao.nome);
 						const cardBg = branding ? branding.color : (cartao.cor_hex || "#ec4899");
 						const cardLogo = branding ? branding.logo : <CreditCardIcon opacity={0.5} size={28} />;
-						const cardAccent = branding ? branding.accentColor : "#f472b6";
 						const melhorDia = cartao.fechamento_dia;
 
 						const limiteVal = Number(cartao.limiteTotal || cartao.limite || 0);

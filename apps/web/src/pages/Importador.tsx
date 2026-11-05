@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { 
-	Upload, 
 	CheckCircle2, 
 	X, 
 	FileCode, 
@@ -11,22 +10,18 @@ import {
 	ArrowUpRight, 
 	ArrowDownRight, 
 	ArrowRightLeft,
-	AlertCircle, 
 	Users, 
 	UserPlus, 
 	CreditCard, 
 	Building, 
 	ShieldCheck, 
 	AlertTriangle, 
-	Calendar, 
 	DollarSign, 
-	Clock,
 	ChevronDown,
 	Plus,
 	Check
 } from "lucide-react";
 import AddContatoWeb from "../components/AddContatoWeb";
-import { motion } from "framer-motion";
 import { useImportar, CATEGORIAS_PADRAO } from "../contexts/ImportarContext";
 
 function CurrencyTableInput({ 
@@ -296,10 +291,8 @@ export default function ImportadorWeb() {
 		contatos,
 		metas,
 		contas,
-		dividasAtivas,
 		globalConta,
 		globalCartao,
-		globalMetodoPagamento,
 		dragActive,
 		isAddContatoOpen,
 		tipoDocumento,
@@ -311,9 +304,6 @@ export default function ImportadorWeb() {
 		duplicateExistingDoc,
 		categorias,
 		adicionarCategoria,
-		setGlobalConta,
-		setGlobalCartao,
-		setGlobalMetodoPagamento,
 		applyGlobalConta,
 		applyGlobalCartao,
 		setDragActive,

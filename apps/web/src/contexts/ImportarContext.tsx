@@ -5,9 +5,15 @@ import { supabase } from "../../../../packages/services/supabase";
 import { DocumentImportService } from "../../../../packages/services/document-import.service";
 import type { 
   TipoDocumento, 
-  DocumentoImportado 
+  DocumentoImportado,
+  ExtracaoIAOutput
 } from "../../../../packages/services/document-import.types";
 import { toast } from "react-hot-toast";
+import {
+	detectarInstituicao,
+	encontrarPorInstituicao,
+	nomeArquivoIndicaExtrato,
+} from "../../../../packages/utils/instituicoes";
 
 export interface TransacaoPreview {
 	id: string;
@@ -23,7 +29,7 @@ export interface TransacaoPreview {
 	terceiro: boolean;
 	contato_id: string;
 	meta_id?: string;
-	cartao_id?: string;
+	cartao_id?: string | null;
 	ignorar: boolean;
 	ignoredReason: string;
 	terceiro_pago?: boolean;
@@ -32,6 +38,7 @@ export interface TransacaoPreview {
 	observacao?: string;
 	metodo_pagamento?: string;
 	conta_id?: string;
+	conta_destino_id?: string;
 	documento_importado_id?: string;
 	manualOverride?: boolean;
 	principal?: number;
@@ -127,7 +134,7 @@ export function normalizeText(str: string): string {
  * Dedução contábil determinística de categorias e tipos essenciais
  * (IOF, Juros de Limite/Cheque Especial, Tarifas Bancárias, Pagamento de Fatura)
  */
-export function inferDeterministicContabil(descricao: string, tipo?: string): { categoria?: string; tipo_transacao?: TransacaoPreview['tipo_transacao'] } | null {
+export function inferDeterministicContabil(descricao: string, _tipo?: string): { categoria?: string; tipo_transacao?: TransacaoPreview['tipo_transacao'] } | null {
 	const descUpper = (descricao || "").toUpperCase();
 	if (
 		descUpper.includes("LIQUIDO DE VENCIMENTO") || 
@@ -138,8 +145,6 @@ export function inferDeterministicContabil(descricao: string, tipo?: string): { 
 		descUpper.includes("LIQUIDAÇÃO DE VENCIMENTO") || 
 		descUpper.includes("IQUIDACAO DE VENCIMENTO") || 
 		descUpper.includes("IQUIDAÇÃO DE VENCIMENTO") || 
-		descUpper.includes("00.737.343") || 
-		descUpper.includes("00737343") || 
 		descUpper.includes("CREDITO SALARIO") || 
 		descUpper.includes("CRÉDITO SALÁRIO") || 
 		descUpper.includes("CRED SALARIO") || 
@@ -238,6 +243,28 @@ export function inferFromUserHistory(
 }
 
 /**
+ * Procura, entre os contatos cadastrados do usuário, um cujo nome apareça no texto
+ * (descrição + favorecido). Exige o primeiro nome + ao menos mais um nome coincidente,
+ * para não confundir parentes que só compartilham o sobrenome.
+ */
+export function encontrarContatoPorNome<T extends { nome?: string | null }>(
+	texto: string,
+	contatos: T[]
+): T | undefined {
+	const alvo = normalizeText(texto || "");
+	if (!alvo) return undefined;
+	const stopWords = new Set(["de", "da", "do", "dos", "das", "e"]);
+	return contatos.find(c => {
+		const nome = normalizeText(c.nome || "");
+		if (nome.length < 3) return false;
+		if (alvo.includes(nome)) return true;
+		const partes = nome.split(/\s+/).filter(p => p.length >= 3 && !stopWords.has(p));
+		if (partes.length < 2 || !alvo.includes(partes[0])) return false;
+		return partes.filter(p => alvo.includes(p)).length >= 2;
+	});
+}
+
+/**
  * Validação Genérica para TODOS os usuários do sistema:
  * Detecta se uma movimentação em extrato bancário ou fatura é uma transferência interna
  * entre contas do próprio usuário logado (mudança de conta - não altera patrimônio líquido).
@@ -253,24 +280,8 @@ export function isTransferenciaPropria(
 	const normFav = normalizeText(favorecido || "");
 	const combined = `${normDesc} ${normFav}`.trim();
 
-	// 0. Claudiney é contato/familiar (mesmo sobrenome Claudiano, mas prenome diferente). NUNCA é a própria titular Ana Letícia!
-	if (combined.includes("claudiney") || normFav.includes("claudiney") || normDesc.includes("claudiney")) {
-		return false;
-	}
-
 	// 1. Termos explícitos bancários de mesma titularidade
 	if (/mesma\s+titularidade|contas?\s+pr[oó]prias?|entre\s+minhas\s+contas|entre\s+contas/i.test(combined)) {
-		return true;
-	}
-
-	// 2. Validação direta por nomes da própria usuária (Ana Letícia)
-	const nomesPropriosConhecidos = [
-		"ana leticia alves claudiano",
-		"ana leticia alves claudia",
-		"ana leticia claudiano",
-		"ana leticia"
-	];
-	if (nomesPropriosConhecidos.some(np => combined.includes(np) || (normFav && np.includes(normFav) && normFav.length >= 6 && normFav.includes("ana")))) {
 		return true;
 	}
 
@@ -376,7 +387,6 @@ export function encontrarTransacaoRepetida(
 		// Identificação de palavras-chave características
 		const isLimiteConvertido = normDescItem.includes("limite convertido") && normDescEx.includes("limite convertido");
 		const isRDB = normDescItem.includes("rdb") && normDescEx.includes("rdb");
-		const isPix = normDescItem.includes("pix") && normDescEx.includes("pix");
 
 		// Data exata (mesmo dia) e termos em comum
 		const mesmaData = diffDias < 1.0;
@@ -418,7 +428,7 @@ const isAutoConciliado = (obs?: string) => {
 };
 
 function executarConciliacao(itens: TransacaoPreview[], contatosList: any[]): TransacaoPreview[] {
-	const limpos = itens.map(item => ({
+	const limpos: TransacaoPreview[] = itens.map(item => ({
 		...item,
 		terceiro_pago: isAutoConciliado(item.observacao) ? false : item.terceiro_pago,
 		vinculo_id: undefined,
@@ -650,17 +660,16 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 
 				// 2. Detecção dinâmica de Transferência entre contas próprias para TODOS os usuários
 				if (!item.manualOverride) {
-					const isClaudiney = desc.toLowerCase().includes("claudiney") || (item.nome_terceiro && item.nome_terceiro.toLowerCase().includes("claudiney"));
-					if (isClaudiney) {
+					const contatoTerceiro = encontrarContatoPorNome(`${desc} ${item.nome_terceiro || ""}`, contatos);
+					if (contatoTerceiro) {
 						if (tipo === "Transferencia" || cat === "Transferência Interna" || ignorar) {
 							tipo = desc.toLowerCase().includes("pix recebido") ? "Entrada" : "Gasto";
 							cat = tipo === "Entrada" ? "Pix Recebido" : "Outros";
 							ignorar = false;
 							ignoredReason = "";
 							item.terceiro = true;
-							item.nome_terceiro = "Claudiney Jules Claudiano";
-							const cClaudiney = contatos.find(c => (c.nome || "").toLowerCase().includes("claudiney"));
-							if (cClaudiney) item.contato_id = cClaudiney.id;
+							item.nome_terceiro = contatoTerceiro.nome;
+							item.contato_id = contatoTerceiro.id;
 							mudouItem = true;
 						}
 					} else {
@@ -731,8 +740,8 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 						tipo = "Fatura";
 						mudouItem = true;
 					}
-					if (!item.cartao_id && nuCard) {
-						item.cartao_id = nuCard.id;
+					if (!item.cartao_id && cartoes.length === 1) {
+						item.cartao_id = cartoes[0].id;
 						item.metodo_pagamento = "Crédito";
 						item.conta_id = undefined;
 						mudouItem = true;
@@ -887,31 +896,34 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			// -------------------------------------------------------------
 			
 			// Detecta contas/cartões padrão com base nas informações do arquivo
-			const fileNameLower = droppedFile.name.toLowerCase();
-			const isSantanderExtrato = (fileNameLower.includes("santander") || fileNameLower.includes("extrato")) && !fileNameLower.includes("fatura");
-			if (isSantanderExtrato && ext.tipo_documento === "fatura_cartao") {
+			const pareceExtrato = nomeArquivoIndicaExtrato(droppedFile.name);
+			if (pareceExtrato && ext.tipo_documento === "fatura_cartao") {
 				ext.tipo_documento = "extrato_bancario";
 				setTipoDocumento("extrato_bancario");
 			}
 
-			let detectedContaId = "";
-			const santanderConta = contas.find(c => c.nome.toLowerCase().includes("santander") || (c.instituicao && c.instituicao.toLowerCase().includes("santander")));
-			const nubankConta = contas.find(c => c.nome.toLowerCase().includes("nubank") || (c.instituicao && c.instituicao.toLowerCase().includes("nubank")));
-			
-			if (fileNameLower.includes("santander") && santanderConta) detectedContaId = santanderConta.id;
-			else if (fileNameLower.includes("nu") && nubankConta) detectedContaId = nubankConta.id;
-			else if (contas.length > 0) detectedContaId = contas[0].id;
-			
+			// Instituição citada no arquivo ou nos dados extraídos (nome do arquivo tem prioridade)
+			const pistaInstituicao = [
+				droppedFile.name,
+				ext.dados?.instituicao,
+				ext.dados?.conta_nome_ou_banco,
+				ext.dados?.cartao_nome_ou_final,
+			].filter(Boolean).join(" ");
+
+			const contaDetectada = encontrarPorInstituicao(contas, droppedFile.name) || encontrarPorInstituicao(contas, pistaInstituicao);
+			const detectedContaId = contaDetectada?.id || contas[0]?.id || "";
 			if (detectedContaId) setGlobalConta(detectedContaId);
 
-			const santanderCard = cartoes.find(c => c.nome.toLowerCase().includes("santander"));
-			const nuCard = cartoes.find(c => c.nome.toLowerCase().includes("nubank"));
+			// Cartão padrão para pagamentos de fatura: o vinculado à conta do extrato, senão o da mesma instituição
+			const cartaoPadraoPagamento =
+				cartoes.find(c => detectedContaId && c.conta_id === detectedContaId) ||
+				encontrarPorInstituicao(cartoes, pistaInstituicao) ||
+				cartoes[0];
 
 			let detectedCartaoId = "";
-			if (ext.tipo_documento === "fatura_cartao" && !isSantanderExtrato) {
-				if (fileNameLower.includes("santander") && santanderCard) detectedCartaoId = santanderCard.id;
-				else if (fileNameLower.includes("nu") && nuCard) detectedCartaoId = nuCard.id;
-				else if (cartoes.length > 0) detectedCartaoId = cartoes[0].id;
+			if (ext.tipo_documento === "fatura_cartao" && !pareceExtrato) {
+				const cartaoDetectado = encontrarPorInstituicao(cartoes, droppedFile.name) || encontrarPorInstituicao(cartoes, pistaInstituicao);
+				detectedCartaoId = cartaoDetectado?.id || (cartoes.length > 0 ? cartoes[0].id : "");
 				setGlobalCartao(detectedCartaoId);
 			} else {
 				setGlobalCartao("");
@@ -939,7 +951,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			// SE FOR EXTRATO BANCÁRIO OU FATURA DE CARTÃO:
 			// Popula a lista preview para o usuário auditar item por item
 			let rawItems: any[] = [];
-			const isFatura = ext.tipo_documento === "fatura_cartao" && !isSantanderExtrato;
+			const isFatura = ext.tipo_documento === "fatura_cartao" && !pareceExtrato;
 
 			if (ext.tipo_documento === "extrato_bancario" && ext.dados?.transacoes) {
 				rawItems = ext.dados.transacoes.map((t: any) => {
@@ -973,7 +985,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					const isResgateEmprestimo = descLower.includes("resgate de empréstimo") || descLower.includes("resgate de emprestimo") || descLower.includes("pagamento de empréstimo") || descLower.includes("pagamento de emprestimo");
 
 					let tipoTransacao: TransacaoPreview['tipo_transacao'] = "Gasto";
-					const isTransfBanco = (t.tipo === "TRANSFERENCIA" || t.subtipo === "TRANSFERENCIA_PROPRIA") && !descLower.includes("claudiney") && !(t.favorecido && t.favorecido.toLowerCase().includes("claudiney"));
+					const isTransfBanco = (t.tipo === "TRANSFERENCIA" || t.subtipo === "TRANSFERENCIA_PROPRIA") && !encontrarContatoPorNome(`${descLower} ${t.favorecido || ""}`, contatos);
 					if (isTransfBanco) tipoTransacao = "Transferencia";
 					else if (isAplicacaoRDB) tipoTransacao = "Meta";
 					else if (isResgateRDB) tipoTransacao = "Resgate";
@@ -987,7 +999,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					else if (isLimiteConvertido) finalCat = "Financiamento / Ajuste de Limite";
 					else if (isResgateEmprestimo) finalCat = "Emprestimo";
 
-					const autoCardId = isPagamentoFatura ? (santanderCard?.id || (cartoes.length > 0 ? cartoes[0].id : null)) : null;
+					const autoCardId = isPagamentoFatura ? (cartaoPadraoPagamento?.id || null) : null;
 					return {
 						...t,
 						tipo_transacao: tipoTransacao,
@@ -1085,7 +1097,6 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			}
 
 			const processados: TransacaoPreview[] = rawItems.map((t: any, index: number) => {
-				const isGasto = t.tipo_transacao === "Gasto";
 				let cleanDesc = (t.descricao || "").trim();
 				let favorecido = (t.favorecido || "").trim();
 
@@ -1111,13 +1122,14 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					}
 				}
 
-				const isClaudiney = (cleanDesc || "").toLowerCase().includes("claudiney") || (favorecido || "").toLowerCase().includes("claudiney");
-				const contatoClaudiney = isClaudiney ? contatos.find(c => (c.nome || "").toLowerCase().includes("claudiney")) : null;
+				// Favorecido que é um contato cadastrado = terceiro (nunca transferência própria)
+				const contatoTerceiro = encontrarContatoPorNome(`${cleanDesc} ${favorecido}`, contatos);
+				const isContatoTerceiro = Boolean(contatoTerceiro);
 
-				// Verifica transferência própria para TODOS os usuários do sistema (Ana Letícia titular)
-				const isTransfPropria = !isClaudiney && (
+				// Verifica transferência própria (mesmo titular) para qualquer usuário
+				const isTransfPropria = !isContatoTerceiro && (
 					isTransferenciaPropria(cleanDesc, favorecido, nomeUserAtual, cpfUserAtual, ext.dados?.titular) ||
-					((t.subtipo === "TRANSFERENCIA_PROPRIA" || t.tipo === "TRANSFERENCIA") && (cleanDesc.toLowerCase().includes("ana") || favorecido.toLowerCase().includes("ana"))) ||
+					(t.subtipo === "TRANSFERENCIA_PROPRIA" && !favorecido) ||
 					/mesma\s+titularidade|contas?\s+pr[oó]prias?/i.test(cleanDesc)
 				);
 
@@ -1136,8 +1148,8 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					isLimiteConvertido
 				);
 
-				let tipoFinal: 'Gasto' | 'Entrada' | 'Meta' | 'PagamentoFatura' | 'Transferencia' | 'Fatura';
-				if (isClaudiney) {
+				let tipoFinal: TransacaoPreview['tipo_transacao'];
+				if (isContatoTerceiro) {
 					tipoFinal = descLower.includes("pix recebido") || t.tipo === "RECEITA" ? "Entrada" : "Gasto";
 				} else if (isTransfPropria) {
 					tipoFinal = "Transferencia";
@@ -1155,16 +1167,16 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 
 				// Dedução contábil (IOF, Juros de Cheque Especial / Limite, Tarifas)
 				const contabil = inferDeterministicContabil(cleanDesc, t.tipo_transacao);
-				if (contabil?.tipo_transacao && !isTransfPropria && !isClaudiney && !isAplicacao) {
+				if (contabil?.tipo_transacao && !isTransfPropria && !isContatoTerceiro && !isAplicacao) {
 					tipoFinal = contabil.tipo_transacao;
 				}
 
 				// Aprendizado por histórico do usuário (ex: transações para 'Rafael' aprendidas como 'Assinaturas')
-				const learnedCat = (!contabil && !isClaudiney && !isTransfPropria && !isAplicacao && !isLimiteConvertido)
+				const learnedCat = (!contabil && !isContatoTerceiro && !isTransfPropria && !isAplicacao && !isLimiteConvertido)
 					? inferFromUserHistory(cleanDesc, favorecido, gastosExistentes, categoriaMap)
 					: null;
 
-				let categoriaFinal = isClaudiney
+				let categoriaFinal = isContatoTerceiro
 					? (tipoFinal === "Entrada" ? "Pix Recebido" : (t.categoria_sugerida && t.categoria_sugerida !== "Transferência Interna" ? t.categoria_sugerida : "Outros"))
 					: (isTransfPropria
 						? "Transferência Interna"
@@ -1186,8 +1198,8 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					contas
 				);
 
-				const deveIgnorar = isClaudiney ? false : (isTransfPropria || dup.repetida);
-				const motivoIgnorar = isClaudiney 
+				const deveIgnorar = isContatoTerceiro ? false : (isTransfPropria || dup.repetida);
+				const motivoIgnorar = isContatoTerceiro 
 					? "" 
 					: (isTransfPropria 
 						? "Transferência entre contas próprias (Mesmo titular - não altera patrimônio)" 
@@ -1195,7 +1207,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 
 				const cartaoIdFinal = (isFatura || tipoFinal === "Fatura") 
 					? (t.cartao_id || detectedCartaoId || cartoes[0]?.id || null) 
-					: (tipoFinal === "PagamentoFatura" ? (t.cartao_id || santanderCard?.id || (cartoes.length > 0 ? cartoes[0].id : null)) : null);
+					: (tipoFinal === "PagamentoFatura" ? (t.cartao_id || cartaoPadraoPagamento?.id || null) : null);
 				const contaIdFinal = (isFatura || tipoFinal === "Fatura") ? null : (t.conta_id || detectedContaId || null);
 
 				const matchParc = (cleanDesc || "").match(/(?:[-–—]?\s*(?:parcela|parc\.?)?\s*\(?(\d{1,2})\s*[/]\s*(\d{1,2})\)?)|(?:(\d{1,2})\s+de\s+(\d{1,2}))/i);
@@ -1208,10 +1220,10 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 				}
 
 				const isGastoFinal = tipoFinal === "Gasto";
-				const terceiroFinal = isClaudiney ? true : (isGastoFinal ? (t.terceiro || false) : false);
-				const contatoIdFinal = isClaudiney && contatoClaudiney ? contatoClaudiney.id : (t.contato_id || "");
-				const nomeTerceiroFinal = isClaudiney 
-					? (contatoClaudiney ? contatoClaudiney.nome : (favorecido || "Claudiney Jules Claudiano"))
+				const terceiroFinal = isContatoTerceiro ? true : (isGastoFinal ? (t.terceiro || false) : false);
+				const contatoIdFinal = contatoTerceiro ? contatoTerceiro.id : (t.contato_id || "");
+				const nomeTerceiroFinal = contatoTerceiro
+					? contatoTerceiro.nome
 					: (t.nome_terceiro || favorecido || "");
 
 				return {
@@ -1337,6 +1349,13 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 	/**
 	 * SALVAR TODOS OS ITENS AUDITADOS DA TABELA (EXTRATO OU FATURA)
 	 */
+	/** Nome da instituição da conta (para investimentos/RDB), sem assumir banco nenhum. */
+	const instituicaoDaConta = (contaId?: string | null): string | null => {
+		const conta = contas.find(c => c.id === contaId);
+		if (!conta) return null;
+		return detectarInstituicao(`${conta.instituicao || ""} ${conta.nome || ""}`)?.nome || conta.instituicao || conta.nome || null;
+	};
+
 	const handleSaveAll = async () => {
 		const itemsToSave = preview.filter(p => !p.ignorar);
 		if (itemsToSave.length === 0) {
@@ -1486,7 +1505,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					data: item.data,
 					descricao: item.descricao || "Aplicação RDB / Caixinha",
 					meta_id: targetMetaId || null,
-					instituicao: "Nubank",
+					instituicao: instituicaoDaConta(item.conta_id || globalConta),
 					documento_importado_id: documentoImportadoId || null
 				});
 				importados++;
@@ -1508,7 +1527,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					descricao: item.descricao || "Resgate RDB / Caixinha",
 					principal: (item as any).principal || null,
 					rendimento: (item as any).rendimento || null,
-					instituicao: "Nubank",
+					instituicao: instituicaoDaConta(item.conta_id || globalConta),
 					meta_id: targetMetaId || null,
 					documento_importado_id: documentoImportadoId || null
 				});

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../../../../packages/services/supabase";
 import { financeService } from "../../../../packages/services/finance.service";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { aiService } from "../../../../packages/services/ai.service";
 import toast from "react-hot-toast";
 import { 
 	Brain, 
@@ -13,19 +13,16 @@ import {
 	ChevronLeft, 
 	ChevronRight, 
 	Send, 
-	ShieldCheck, 
 	TrendingUp, 
 	TrendingDown, 
 	Wallet, 
 	AlertTriangle, 
 	MessageSquare, 
-	PieChart, 
-	Target, 
 	ArrowUpRight,
 	Bot,
 	User as UserIcon
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 interface Recommendation {
 	icon: string;
@@ -430,15 +427,14 @@ export default function ConsultorInteligente() {
 	const generateAIInsights = async () => {
 		setLoadingAI(true);
 		try {
-			const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 			const { totalReceitas, totalGastos, saldoContas, totalInvestimentos, totalDividas, topCategories, devedoresTotal, dividasAtivasDetalhes } = metrics;
 
 			const dividasContexto = dividasAtivasDetalhes && dividasAtivasDetalhes.length > 0
 				? dividasAtivasDetalhes.map(d => `${d.descricao} (${d.instituicao}): falta pagar R$ ${d.valorRestante.toFixed(2)} de R$ ${d.valorOriginal.toFixed(2)} (${d.parcelasPagas}/${d.totalParcelas} parcelas pagas)`).join("; ")
 				: "Nenhuma dívida ativa registrada";
 
-			if (!apiKey) {
-				// Fallback inteligente algorítmico caso a API Key não esteja configurada
+			const gerarRelatorioLocal = () => {
+				// Fallback algorítmico caso a IA esteja indisponível
 				const saldoAno = totalReceitas - totalGastos;
 				const taxaPoupanca = totalReceitas > 0 ? Math.round((saldoAno / totalReceitas) * 100) : 0;
 				const maiorCat = topCategories[0]?.nome || "Despesas Gerais";
@@ -450,14 +446,8 @@ No ano de ${filterYear}, você acumulou **${new Intl.NumberFormat('pt-BR', { sty
 • 🎯 **Amortização e Gestão de Dívidas:** ${totalDividas > 0 ? `Com R$ ${totalDividas.toLocaleString('pt-BR')} restantes em pendências ativas (${dividasContexto}), priorize a quitação das parcelas mais onerosas para estancar juros.` : "Você não possui dívidas ativas pendentes, mantenha o foco em poupar e investir!"}
 • 📈 **Construção de Reserva:** Direcione pelo menos 15% das entradas mensais para investimentos líquidos antes de realizar compras discricionárias.`;
 
-				setAiReport(fallbackReport);
-				localStorage.setItem(`finance_ai_report_${filterYear}`, fallbackReport);
-				toast.success("Diagnóstico gerado com sucesso!");
-				setLoadingAI(false);
-				return;
-			}
-
-			const genAI = new GoogleGenerativeAI(apiKey);
+				return fallbackReport;
+			};
 
 			const prompt = `Você é um Consultor Financeiro Pessoal experiente e empático.
 Analise os seguintes dados financeiros reais do usuário para o ano ${filterYear}:
@@ -484,22 +474,12 @@ Forneça pelo menos 3 a 4 recomendações práticas priorizadas (com emojis como
 
 Escreva o texto com títulos em negrito (**Título**) e bullets com emojis claros. Sem blocos de código.`;
 
-			const modelsToTry = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-pro", "gemini-2.5-flash-lite"];
 			let resultText = "";
-
-			for (const modelName of modelsToTry) {
-				try {
-					const model = genAI.getGenerativeModel({ model: modelName });
-					const res = await model.generateContent(prompt);
-					resultText = res.response.text().trim();
-					if (resultText) break;
-				} catch (err: any) {
-					console.warn(`Tentativa com ${modelName} falhou:`, err.message);
-				}
-			}
-
-			if (!resultText) {
-				throw new Error("Não foi possível gerar a análise com os modelos de IA disponíveis.");
+			try {
+				resultText = await aiService.gerar("consultor", [prompt]);
+			} catch (err) {
+				console.warn("IA indisponível, usando diagnóstico local:", err);
+				resultText = gerarRelatorioLocal();
 			}
 
 			setAiReport(resultText);
@@ -531,7 +511,6 @@ Escreva o texto com títulos em negrito (**Título**) e bullets com emojis claro
 		setIsChatSending(true);
 
 		try {
-			const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 			const { totalReceitas, totalGastos, saldoContas, totalInvestimentos, totalDividas, topCategories, dividasAtivasDetalhes } = metrics;
 
 			const dividasContexto = dividasAtivasDetalhes && dividasAtivasDetalhes.length > 0
@@ -540,8 +519,6 @@ Escreva o texto com títulos em negrito (**Título**) e bullets com emojis claro
 
 			let aiResponse = "";
 
-			if (apiKey) {
-				const genAI = new GoogleGenerativeAI(apiKey);
 				const chatPrompt = `Você é um Consultor Financeiro Pessoal Inteligente e Assistente operacional do sistema.
 O usuário está no ano ${filterYear} e possui o seguinte contexto financeiro:
 - Saldo em contas: R$ ${saldoContas.toFixed(2)}
@@ -593,18 +570,11 @@ Cores recomendadas por banco:
 
 Se não for um comando de criação ou quitação, responda normalmente como consultor financeiro com base nos dados reais acima.`;
 
-				const modelsToTry = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-pro", "gemini-2.5-flash-lite"];
-				for (const modelName of modelsToTry) {
-					try {
-						const model = genAI.getGenerativeModel({ model: modelName });
-						const res = await model.generateContent(chatPrompt);
-						aiResponse = res.response.text().trim();
-						if (aiResponse) break;
-					} catch (e) {
-						// continue to next model
-					}
+				try {
+					aiResponse = await aiService.gerar("consultor", [chatPrompt]);
+				} catch (e) {
+					console.warn("IA indisponível no chat:", e);
 				}
-			}
 
 			if (!aiResponse) {
 				// Resposta simulada inteligente caso offline
@@ -631,16 +601,30 @@ Se não for um comando de criação ou quitação, responda normalmente como con
 									(d.descricao && d.descricao.toLowerCase().includes(termo))
 								)
 							);
-							if (alvo) {
+							if (alvo && window.confirm(`Marcar a dívida "${alvo.descricao}" como quitada?`)) {
 								await financeService.quitarDividaManual(alvo.id, true);
 								toast.success(`Dívida "${alvo.descricao}" marcada como quitada com sucesso! 🎉`);
 								await loadUserData();
 							}
 						}
 
+						// Confirma criação/atualização de contas e cartões sugerida pela IA
+						const contasSugeridas = Array.isArray(actionData.contas) ? actionData.contas.filter((c: any) => c?.nome) : [];
+						const cartoesSugeridos = Array.isArray(actionData.cartoes) ? actionData.cartoes.filter((c: any) => c?.nome) : [];
+						const confirmouCadastro = (contasSugeridas.length + cartoesSugeridos.length) > 0 && window.confirm(
+							`Cadastrar/atualizar no sistema?\n\n` +
+							contasSugeridas.map((c: any) => `• Conta: ${c.nome}`).concat(
+								cartoesSugeridos.map((c: any) => `• Cartão: ${c.nome} (limite R$ ${Number(c.limite || 0).toFixed(2)})`)
+							).join("\n")
+						);
+						const diaValido = (v: any, padrao: number) => {
+							const n = Number(v);
+							return Number.isInteger(n) && n >= 1 && n <= 31 ? n : padrao;
+						};
+
 						// Cria Contas
-						if (actionData.contas && Array.isArray(actionData.contas)) {
-							for (const c of actionData.contas) {
+						if (confirmouCadastro) {
+							for (const c of contasSugeridas) {
 								const { data: existing } = await supabase
 									.from("contas_bancarias")
 									.select("id")
@@ -671,8 +655,8 @@ Se não for um comando de criação ou quitação, responda normalmente como con
 						}
 
 						// Cria Cartões
-						if (actionData.cartoes && Array.isArray(actionData.cartoes)) {
-							for (const card of actionData.cartoes) {
+						if (confirmouCadastro) {
+							for (const card of cartoesSugeridos) {
 								const contaId = card.conta_nome 
 									? (createdContasMap[card.conta_nome.toLowerCase()] || null)
 									: null;
@@ -689,10 +673,11 @@ Se não for um comando de criação ou quitação, responda normalmente como con
 										.from("cartoes")
 										.update({
 											limite: Number(card.limite || 0),
-											fechamento_dia: Number(card.fechamento_dia || 1),
-											vencimento_dia: Number(card.vencimento_dia || 10),
+											fechamento_dia: diaValido(card.fechamento_dia, 1),
+											vencimento_dia: diaValido(card.vencimento_dia, 10),
 											cor_hex: card.cor_hex || "#ec4899",
-											conta_id: contaId
+											// só altera o vínculo se a IA indicou uma conta conhecida
+											...(contaId ? { conta_id: contaId } : {})
 										})
 										.eq("id", existingCard.id);
 								} else {
@@ -702,8 +687,8 @@ Se não for um comando de criação ou quitação, responda normalmente como con
 											usuario_id: user.id,
 											nome: card.nome,
 											limite: Number(card.limite || 0),
-											fechamento_dia: Number(card.fechamento_dia || 1),
-											vencimento_dia: Number(card.vencimento_dia || 10),
+											fechamento_dia: diaValido(card.fechamento_dia, 1),
+											vencimento_dia: diaValido(card.vencimento_dia, 10),
 											cor_hex: card.cor_hex || "#ec4899",
 											conta_id: contaId
 										}]);
