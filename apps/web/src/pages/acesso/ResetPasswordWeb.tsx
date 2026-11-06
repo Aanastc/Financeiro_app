@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { authService } from "../../../../packages/services/auth.service";
-import { supabase } from "../../../../packages/services/supabase";
+import { authService } from "../../../../../packages/services/auth.service";
+import { supabase } from "../../../../../packages/services/supabase";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { Eye, EyeOff, Lock, RefreshCw } from "lucide-react";
-import Copyright from "../components/Copyright";
+import Copyright from "../../components/Copyright";
 
 export default function ResetPasswordWeb() {
 	const [password, setPassword] = useState("");

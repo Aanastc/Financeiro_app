@@ -1,15 +1,15 @@
 import { useState, useEffect } from "react";
-import { authService } from "../../../../packages/services/auth.service";
-import { financeService } from "../../../../packages/services/finance.service";
-import { getFaturaMesReferencia } from "../../../../packages/utils/cartao.utils";
+import { authService } from "../../../../../packages/services/auth.service";
+import { financeService } from "../../../../../packages/services/finance.service";
+import { getFaturaMesReferencia } from "../../../../../packages/utils/cartao.utils";
 import { motion } from "framer-motion";
 import { CreditCard as CreditCardIcon, Plus, Eye, ChevronRight, ShoppingBag, Edit3, AlertTriangle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import AddCartaoModal from "../components/AddCartaoModal";
-import EditCartaoModal from "../components/EditCartaoModal";
-import { AddGastoWeb } from "../components/AddGastoWeb";
-import { mesmaInstituicao } from "../../../../packages/utils/instituicoes";
+import AddCartaoModal from "../../components/AddCartaoModal";
+import EditCartaoModal from "../../components/EditCartaoModal";
+import { AddGastoWeb } from "../../components/AddGastoWeb";
+import { mesmaInstituicao } from "../../../../../packages/utils/instituicoes";
 
 const getCardBranding = (name: string) => {
 	const lower = name.toLowerCase();
@@ -186,7 +186,7 @@ export default function Cartoes() {
 				const todayStr = new Date().toISOString().split("T")[0];
 				const fechamentoDia = Number(c.fechamento_dia || 1);
 				const vencimentoDia = Number(c.vencimento_dia || 1);
-				const currentMesRef = getFaturaMesReferencia(todayStr, fechamentoDia, vencimentoDia);
+				const currentMesRef = getFaturaMesReferencia(todayStr, fechamentoDia, vencimentoDia, c);
 
 				// Fatura atual aberta
 				const faturaAbertaAtual = cardFaturas.find((f: any) => {
@@ -197,7 +197,7 @@ export default function Cartoes() {
 				// Compras da fatura do mês atual
 				const comprasMesAtual = cardGastos.filter((g: any) => {
 					if (!g.data) return false;
-					const gMesRef = getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia);
+					const gMesRef = getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia, c);
 					return gMesRef === currentMesRef;
 				});
 				const valorComprasMesAtual = comprasMesAtual.reduce((sum: number, g: any) => sum + Number(g.valor || 0), 0);
@@ -205,7 +205,7 @@ export default function Cartoes() {
 				// Compras totais comprometendo o limite (ciclo atual + futuras)
 				const comprasComprometidas = cardGastos.filter((g: any) => {
 					if (!g.data) return false;
-					const gMesRef = getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia);
+					const gMesRef = getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia, c);
 					return gMesRef >= currentMesRef;
 				});
 				const totalComprasComprometidas = comprasComprometidas.reduce((sum: number, g: any) => sum + Number(g.valor || 0), 0);
@@ -228,7 +228,7 @@ export default function Cartoes() {
 
 				const parcelasFuturas = cardGastos.filter((g: any) => {
 					if (!g.data) return false;
-					const gMesRef = getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia);
+					const gMesRef = getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia, c);
 					return gMesRef > currentMesRef;
 				}).length;
 

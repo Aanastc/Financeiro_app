@@ -7,28 +7,28 @@ import { conviteService } from "../../../packages/services/convite.service";
 conviteService.capturarDaUrl();
 import { Toaster } from "react-hot-toast";
 import PageLoader from "./components/PageLoader";
-import LandingPage from "./pages/LandingPage";
+import LandingPage from "./pages/acesso/LandingPage";
 
 // Páginas carregadas sob demanda: a landing não baixa ExcelJS, Recharts, Gemini etc.
 const DashboardLayout = lazy(() => import("./layouts/DashboardLayout"));
 const HomeWeb = lazy(() => import("./HomeWeb"));
-const LoginWeb = lazy(() => import("./pages/LoginWeb"));
-const VerifyWeb = lazy(() => import("./pages/VerifyWeb"));
-const ForgotPasswordWeb = lazy(() => import("./pages/ForgotPasswordWeb"));
-const ResetPasswordWeb = lazy(() => import("./pages/ResetPasswordWeb"));
-const EntradasWeb = lazy(() => import("./pages/Entradas"));
-const GastosWeb = lazy(() => import("./pages/Gastos"));
-const RegisterWeb = lazy(() => import("./pages/RegisterWeb"));
-const Cartoes = lazy(() => import("./pages/Cartoes"));
-const DividasWeb = lazy(() => import("./pages/Dividas"));
-const MetasWeb = lazy(() => import("./pages/Metas"));
-const InvestimentosWeb = lazy(() => import("./pages/Investimentos"));
-const EmpresaPage = lazy(() => import("./pages/Empresa"));
-const Contas = lazy(() => import("./pages/Contas"));
-const ImportadorWeb = lazy(() => import("./pages/Importador"));
-const Devedores = lazy(() => import("./pages/Devedores"));
-const Faturas = lazy(() => import("./pages/Faturas"));
-const ConsultorInteligente = lazy(() => import("./pages/ConsultorInteligente"));
+const LoginWeb = lazy(() => import("./pages/acesso/LoginWeb"));
+const VerifyWeb = lazy(() => import("./pages/acesso/VerifyWeb"));
+const ForgotPasswordWeb = lazy(() => import("./pages/acesso/ForgotPasswordWeb"));
+const ResetPasswordWeb = lazy(() => import("./pages/acesso/ResetPasswordWeb"));
+const EntradasWeb = lazy(() => import("./pages/pf/Entradas"));
+const GastosWeb = lazy(() => import("./pages/pf/Gastos"));
+const RegisterWeb = lazy(() => import("./pages/acesso/RegisterWeb"));
+const Cartoes = lazy(() => import("./pages/pf/Cartoes"));
+const DividasWeb = lazy(() => import("./pages/pf/Dividas"));
+const MetasWeb = lazy(() => import("./pages/pf/Metas"));
+const InvestimentosWeb = lazy(() => import("./pages/pf/Investimentos"));
+const EmpresaPage = lazy(() => import("./pages/pj/Empresa"));
+const Contas = lazy(() => import("./pages/comum/Contas"));
+const ImportadorWeb = lazy(() => import("./pages/comum/Importador"));
+const Devedores = lazy(() => import("./pages/pf/Devedores"));
+const Faturas = lazy(() => import("./pages/pf/Faturas"));
+const ConsultorInteligente = lazy(() => import("./pages/pf/ConsultorInteligente"));
 
 /**
  * Se o link de recuperação de senha cair em qualquer rota (ex.: Redirect URL não

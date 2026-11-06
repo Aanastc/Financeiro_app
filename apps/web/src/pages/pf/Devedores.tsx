@@ -1,12 +1,12 @@
-import InputMoeda from "../components/InputMoeda";
+import InputMoeda from "../../components/InputMoeda";
 import { useState, useEffect, useMemo, useRef } from "react";
-import { recebimentosDivisaoService } from "../../../../packages/services/recebimentos-divisao.service";
-import { authService } from "../../../../packages/services/auth.service";
-import { financeService } from "../../../../packages/services/finance.service";
-import { despesasCompartilhadasService } from "../../../../packages/services/despesas-compartilhadas.service";
-import type { Grupo } from "../../../../packages/services/despesas-compartilhadas.service";
-import { supabase } from "../../../../packages/services/supabase";
-import { buscarTodasPaginas } from "../../../../packages/services/paginacao";
+import { recebimentosDivisaoService } from "../../../../../packages/services/recebimentos-divisao.service";
+import { authService } from "../../../../../packages/services/auth.service";
+import { financeService } from "../../../../../packages/services/finance.service";
+import { despesasCompartilhadasService } from "../../../../../packages/services/despesas-compartilhadas.service";
+import type { Grupo } from "../../../../../packages/services/despesas-compartilhadas.service";
+import { supabase } from "../../../../../packages/services/supabase";
+import { buscarTodasPaginas } from "../../../../../packages/services/paginacao";
 import { motion } from "framer-motion";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -27,23 +27,23 @@ import {
 	Pencil,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import AddContatoWeb from "../components/AddContatoWeb";
-import AddSplitDespesaModal from "../components/AddSplitDespesaModal";
-import ConviteAmigoModal from "../components/ConviteAmigoModal";
-import CompartilhadoComigo from "../components/CompartilhadoComigo";
-import ChatAcordosIaModal from "../components/ChatAcordosIaModal";
-import ReceberPagamentoModal from "../components/ReceberPagamentoModal";
-import ListaPorData from "../components/ListaPorData";
-import ResumoDivisao from "../components/divisao/ResumoDivisao";
-import PessoasDivisao from "../components/divisao/PessoasDivisao";
-import DetalhePessoa from "../components/divisao/DetalhePessoa";
-import HistoricoDivisao from "../components/divisao/HistoricoDivisao";
-import { montarPessoas } from "../lib/divisaoPessoas";
-import EditarLancamentoModal from "../components/EditarLancamentoModal";
-import PedirTelefoneModal from "../components/PedirTelefoneModal";
-import CriarGrupoModal from "../components/CriarGrupoModal";
-import { conviteService, telefoneWhatsApp } from "../../../../packages/services/convite.service";
-import { exportarExcelGrupo, exportarExcelPessoa } from "../lib/relatorioDivisao";
+import AddContatoWeb from "../../components/AddContatoWeb";
+import AddSplitDespesaModal from "../../components/AddSplitDespesaModal";
+import ConviteAmigoModal from "../../components/ConviteAmigoModal";
+import CompartilhadoComigo from "../../components/CompartilhadoComigo";
+import ChatAcordosIaModal from "../../components/ChatAcordosIaModal";
+import ReceberPagamentoModal from "../../components/ReceberPagamentoModal";
+import ListaPorData from "../../components/ListaPorData";
+import ResumoDivisao from "../../components/divisao/ResumoDivisao";
+import PessoasDivisao from "../../components/divisao/PessoasDivisao";
+import DetalhePessoa from "../../components/divisao/DetalhePessoa";
+import HistoricoDivisao from "../../components/divisao/HistoricoDivisao";
+import { montarPessoas } from "../../lib/divisaoPessoas";
+import EditarLancamentoModal from "../../components/EditarLancamentoModal";
+import PedirTelefoneModal from "../../components/PedirTelefoneModal";
+import CriarGrupoModal from "../../components/CriarGrupoModal";
+import { conviteService, telefoneWhatsApp } from "../../../../../packages/services/convite.service";
+import { exportarExcelGrupo, exportarExcelPessoa } from "../../lib/relatorioDivisao";
 
 export default function Devedores() {
 	const [userId, setUserId] = useState<string>("");

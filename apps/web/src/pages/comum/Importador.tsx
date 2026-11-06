@@ -1,7 +1,8 @@
-import InputMoeda from "../components/InputMoeda";
-import { MOEDAS } from "../../../../packages/services/moeda.service";
+import InputMoeda from "../../components/InputMoeda";
+import { MOEDAS } from "../../../../../packages/services/moeda.service";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useOutletContext } from "react-router-dom";
 import { 
 	CheckCircle2, 
 	X, 
@@ -23,8 +24,8 @@ import {
 	Plus,
 	Check
 } from "lucide-react";
-import AddContatoWeb from "../components/AddContatoWeb";
-import { useImportar, CATEGORIAS_PADRAO } from "../contexts/ImportarContext";
+import AddContatoWeb from "../../components/AddContatoWeb";
+import { useImportar, CATEGORIAS_PADRAO } from "../../contexts/ImportarContext";
 
 function CurrencyTableInput({ 
 	value, 
@@ -284,6 +285,10 @@ function CategoryCreatableSelect({
 }
 
 export default function ImportadorWeb() {
+	// Visão do topo: na Empresa o extrato é do CNPJ (regras de lib/pj/regrasImportacao.ts);
+	// na Pessoa Física, das contas pessoais. O motor de leitura é o mesmo.
+	const { visao = "PF", temEmpresa = false } = useOutletContext<any>() || {};
+	const ehEmpresa = temEmpresa && visao === "PJ";
 	const {
 		file,
 		preview,
@@ -379,10 +384,12 @@ export default function ImportadorWeb() {
 						<div className="bg-indigo-100 dark:bg-indigo-950 p-2 rounded-xl text-indigo-600 dark:text-indigo-400">
 							<Sparkles size={24} />
 						</div>
-						<h1 className="text-3xl font-black text-[#2D2424] dark:text-slate-100">Importador Inteligente com IA</h1>
+						<h1 className="text-3xl font-black text-[#2D2424] dark:text-slate-100">{ehEmpresa ? "Importar extrato da empresa" : "Importador Inteligente com IA"}</h1>
 					</div>
 					<p className="text-gray-400 dark:text-slate-400 font-medium text-sm ml-12">
-						Envie extratos, faturas, contratos de empréstimo ou renegociações para leitura e validação contábil automática.
+						{ehEmpresa
+							? "Extrato da conta do CNPJ: entrada de cliente vira faturamento, Receita Federal vira DAS, prefeitura vira ISS, contador vira contabilidade e Pix para você vira pró-labore (Salário na sua visão pessoal)."
+							: "Envie extratos, faturas, contratos de empréstimo ou renegociações para leitura e validação contábil automática."}
 					</p>
 				</div>
 			</div>
@@ -766,8 +773,11 @@ export default function ImportadorWeb() {
 										}`}
 									>
 										<option value="">Selecione a Conta Bancária</option>
-										{contas.map(c => (
-											<option key={c.id} value={c.id}>🏦 {c.nome} ({c.tipo_conta || 'Corrente'})</option>
+										{/* Só as contas da visão escolhida no topo (a já escolhida sempre aparece) */}
+										{contas
+											.filter((c) => !temEmpresa || c.id === globalConta || Boolean(c.empresa_id) === ehEmpresa)
+											.map(c => (
+											<option key={c.id} value={c.id}>{c.empresa_id ? "🏢" : "🏦"} {c.nome} ({c.tipo_conta || 'Corrente'})</option>
 										))}
 									</select>
 

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
-import { authService } from "../../../../packages/services/auth.service";
+import { authService } from "../../../../../packages/services/auth.service";
 import { useNavigate, Link } from "react-router-dom";
-import Copyright from "../components/Copyright";
+import Copyright from "../../components/Copyright";
 import { toast } from "react-hot-toast";
 
 export default function LoginWeb() {

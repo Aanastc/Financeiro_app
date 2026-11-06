@@ -17,7 +17,7 @@ import { ExportExcelButton } from "./components/ExportExcelButton";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import OnboardingContasModal from "./components/OnboardingContasModal";
-import MeiOnboardingModal from "./components/MeiOnboardingModal";
+import MeiOnboardingModal from "./components/pj/MeiOnboardingModal";
 import AddSplitDespesaModal from "./components/AddSplitDespesaModal";
 import ConviteAmigoModal from "./components/ConviteAmigoModal";
 import AddContatoWeb from "./components/AddContatoWeb";
@@ -27,12 +27,15 @@ import { despesasCompartilhadasService } from "../../../packages/services/despes
 import type { Grupo } from "../../../packages/services/despesas-compartilhadas.service";
 import { getFaturaMesReferencia } from "../../../packages/utils/cartao.utils";
 import CategoryBreakdown from "./components/CategoryBreakdown";
+import EmpresaPage from "./pages/pj/Empresa";
+import { minhasEmpresas, idsDaEmpresa, ehDaEmpresa, type Empresa } from "../../../packages/services/empresa.service";
 
 const NOME_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
 export default function HomeWeb() {
 	const navigate = useNavigate();
-	const { userProfile } = useOutletContext<any>() || {};
+	// visao: escolhida na barra do topo (PF = finanças pessoais; PJ = painel da empresa)
+	const { userProfile, visao = "PF" } = useOutletContext<any>() || {};
 	const [stats, setStats] = useState({ entradasMes: 0, gastosMes: 0, saldoTotal: 0 });
 	const [nome, setNome] = useState("");
 	const [userId, setUserId] = useState("");
@@ -59,6 +62,10 @@ export default function HomeWeb() {
 		setCaminhoAtivo(novo);
 		setSearchParams({ tab: novo.toLowerCase() });
 	};
+
+	// Empresa cadastrada (o que for dela fica fora da visão pessoal)
+	const [empresa, setEmpresa] = useState<Empresa | null>(null);
+
 
 	// Modais e dados de despesas compartilhadas na Home
 	const [isAddSplitOpen, setIsAddSplitOpen] = useState(false);
@@ -164,6 +171,17 @@ export default function HomeWeb() {
 				despesasCompartilhadasService.getGrupos(user.id).catch(() => [])
 			]);
 
+			// O que é da empresa (contas, cartões, lançamentos, caixinhas) fica fora da visão pessoal
+			const [empresas, idsPJ] = await Promise.all([
+				minhasEmpresas(user.id).catch(() => [] as Empresa[]),
+				idsDaEmpresa(user.id).catch(() => ({ contas: new Set<string>(), cartoes: new Set<string>() })),
+			]);
+			setEmpresa(empresas[0] || null);
+			const contasPessoais = (resContas || []).filter((c: any) => !idsPJ.contas.has(c.id));
+			const saldoPessoal = idsPJ.contas.size
+				? contasPessoais.reduce((acc: number, c: any) => acc + Number(c?.saldo_reais ?? c?.saldo_atual ?? 0), 0)
+				: saldoAtual;
+
 			const contatosRaw = resContatos?.data || [];
 			const contatosList = contatosRaw.map((c: any) => {
 				const isFake = c.email && (c.email.toLowerCase().includes("@example.com") || c.email.toLowerCase().includes("@exemplo.com"));
@@ -238,7 +256,7 @@ export default function HomeWeb() {
 			});
 			setCredores(credoresList);
 
-			const txList = (resTransacoes?.data || []).map((t: any) => ({
+			const txList = (resTransacoes?.data || []).filter((t: any) => !ehDaEmpresa(t, idsPJ)).map((t: any) => ({
 				...t,
 				categoria: t.categorias?.nome || t.categoria || "Outros",
 				considerar_soma: t.considerar_soma !== false
@@ -265,12 +283,12 @@ export default function HomeWeb() {
 			const faturas = txList.filter(isFatura);
 			const estornos = txList.filter(isEstorno);
 
-			setStats(prev => ({ ...prev, saldoTotal: saldoAtual }));
+			setStats(prev => ({ ...prev, saldoTotal: saldoPessoal }));
 			setRawEntradas(entradas);
 			setRawGastos(gastos);
 			setRawEstornos(estornos);
 			setRawFaturas(faturas);
-			setRawInvestimentos(resInv?.data || []);
+			setRawInvestimentos((resInv?.data || []).filter((i: any) => !(i.conta_id && idsPJ.contas.has(i.conta_id))));
 
 			const mappedDividas = (resDiv || []).map((d: any) => {
 				const proximaParcela = (d.parcelas_divida || []).find((p: any) => p.status !== 'paga');
@@ -285,9 +303,10 @@ export default function HomeWeb() {
 			});
 			setRawDividas(mappedDividas);
 			setDevedores(resDevedores || []);
-			setCartoes(resCartoes || []);
-			
-			const loadedContas = resContas || [];
+			const cartoesPessoais = (resCartoes || []).filter((c: any) => !idsPJ.cartoes.has(c.id));
+			setCartoes(cartoesPessoais);
+
+			const loadedContas = contasPessoais;
 			setContasBancarias(loadedContas);
 			
 			// Verificações para Modal
@@ -315,7 +334,7 @@ export default function HomeWeb() {
 			setLastLaunchDate(lastLaunch);
 			setHasLaunchesThisMonth((resCountTransacoes?.count || 0) > 0);
 
-			if (resCartoes && resCartoes.length > 0) {
+			if (cartoesPessoais.length > 0) {
 				const lastMonths: string[] = [];
 				const dDate = new Date();
 				for (let i = 0; i < 3; i++) {
@@ -324,7 +343,7 @@ export default function HomeWeb() {
 				}
 
 				const faturasPromises: Promise<any>[] = [];
-				resCartoes.forEach((c: any) => {
+				cartoesPessoais.forEach((c: any) => {
 					lastMonths.forEach((m) => {
 						faturasPromises.push(financeService.getFaturaMensal(user.id, c.id, m).then(res => ({ ...res, mesReferencia: m })).catch(() => null));
 					});
@@ -405,10 +424,10 @@ export default function HomeWeb() {
 
 				// Gastos de compras com o cartão
 				const comprasCartao = rawGastos
-					.filter(g => g.cartao_id === c.id && (!g.data ? false : getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia) === mesAnoStr))
+					.filter(g => g.cartao_id === c.id && (!g.data ? false : getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia, c) === mesAnoStr))
 					.reduce((acc, cur) => acc + Number(cur.valor || 0), 0);
 				const estornosCartao = rawEstornos
-					.filter(e => e.cartao_id === c.id && (!e.data ? false : getFaturaMesReferencia(e.data, fechamentoDia, vencimentoDia) === mesAnoStr))
+					.filter(e => e.cartao_id === c.id && (!e.data ? false : getFaturaMesReferencia(e.data, fechamentoDia, vencimentoDia, c) === mesAnoStr))
 					.reduce((acc, cur) => acc + Number(cur.valor || 0), 0);
 				const comprasLiquidas = Math.max(0, comprasCartao - estornosCartao);
 
@@ -544,8 +563,8 @@ export default function HomeWeb() {
 			const fechamentoDia = c.fechamento_dia || 1;
 			const vencimentoDia = c.vencimento_dia || 1;
 			const cNome = (c.nome || "").toLowerCase();
-			const gastosCartao = rawGastos.filter(g => g.cartao_id === c.id && (!g.data ? false : getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia) === activeMonthStr));
-			const estornosCartao = rawEstornos.filter(e => e.cartao_id === c.id && (!e.data ? false : getFaturaMesReferencia(e.data, fechamentoDia, vencimentoDia) === activeMonthStr));
+			const gastosCartao = rawGastos.filter(g => g.cartao_id === c.id && (!g.data ? false : getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia, c) === activeMonthStr));
+			const estornosCartao = rawEstornos.filter(e => e.cartao_id === c.id && (!e.data ? false : getFaturaMesReferencia(e.data, fechamentoDia, vencimentoDia, c) === activeMonthStr));
 			const totalDespesasCartao = gastosCartao.reduce((sum, item) => sum + Number(item.valor || 0), 0);
 			const totalEstornosCartao = estornosCartao.reduce((sum, item) => sum + Number(item.valor || 0), 0);
 			let totalFatura = Math.max(0, totalDespesasCartao - totalEstornosCartao);
@@ -629,12 +648,12 @@ export default function HomeWeb() {
 
 			// Compras no crédito deste ciclo
 			const comprasCartao = rawGastos
-				.filter(g => g.cartao_id === c.id && (!g.data ? false : getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia) === mesAnoStr));
+				.filter(g => g.cartao_id === c.id && (!g.data ? false : getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia, c) === mesAnoStr));
 			const totalCompras = comprasCartao.reduce((acc, cur) => acc + Number(cur.valor || 0), 0);
 
 			// Estornos deste ciclo
 			const estornosCartao = rawEstornos
-				.filter(e => e.cartao_id === c.id && (!e.data ? false : getFaturaMesReferencia(e.data, fechamentoDia, vencimentoDia) === mesAnoStr));
+				.filter(e => e.cartao_id === c.id && (!e.data ? false : getFaturaMesReferencia(e.data, fechamentoDia, vencimentoDia, c) === mesAnoStr));
 			const totalEstornos = estornosCartao.reduce((acc, cur) => acc + Number(cur.valor || 0), 0);
 			const comprasLiquidas = Math.max(0, totalCompras - totalEstornos);
 
@@ -883,8 +902,12 @@ export default function HomeWeb() {
 				</h2>
 			</div>
 
-			{/* 3 CAMINHOS DA HOME: MINHAS FINANÇAS | FINANÇAS ENTRE PESSOAS (COMPARTILHADAS) | FINANÇAS PJ */}
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4">
+			{visao === "PJ" ? (
+				<EmpresaPage />
+			) : (
+			<>
+			{/* CAMINHOS DA HOME: MINHAS FINANÇAS | FINANÇAS ENTRE PESSOAS | (sem empresa) CONVITE PARA O PJ */}
+			<div className={`grid grid-cols-1 ${empresa ? "md:grid-cols-2" : "md:grid-cols-3"} gap-3.5 sm:gap-4`}>
 				{/* CAMINHO 1: MINHAS FINANÇAS (PESSOAL) */}
 				<button
 					type="button"
@@ -976,7 +999,8 @@ export default function HomeWeb() {
 					</div>
 				</button>
 
-				{/* CAMINHO 3: FINANÇAS DO PJ (MEI & NEGÓCIO) */}
+				{/* CAMINHO 3: SEM EMPRESA CADASTRADA → CONVITE PARA O PAINEL DO CNPJ */}
+				{!empresa && (
 				<button
 					type="button"
 					onClick={() => handleMudarCaminho("PJ")}
@@ -1006,20 +1030,21 @@ export default function HomeWeb() {
 						</div>
 					</div>
 					<h3 className={`text-base sm:text-lg font-black tracking-tight ${caminhoAtivo === "PJ" ? "text-white" : "text-slate-800 dark:text-slate-100"}`}>
-						Finanças do PJ & MEI
+						Tenho CNPJ
 					</h3>
 					<p className={`text-xs mt-0.5 ${caminhoAtivo === "PJ" ? "text-emerald-100" : "text-slate-400 dark:text-slate-500"}`}>
-						Faturamento, teto fiscal e DAS-MEI
+						MEI, Simples ou Presumido: impostos, pró-labore e lucro
 					</p>
 					<div className={`mt-3.5 pt-3 border-t flex items-center justify-between ${caminhoAtivo === "PJ" ? "border-white/15" : "border-slate-100 dark:border-slate-800"}`}>
 						<span className={`text-[11px] font-bold ${caminhoAtivo === "PJ" ? "text-emerald-100" : "text-slate-400"}`}>
-							Limite Anual MEI
+							Separe a empresa das suas contas
 						</span>
 						<span className={`text-xs font-black ${caminhoAtivo === "PJ" ? "text-white" : "text-emerald-600 dark:text-emerald-400"}`}>
-							{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dadosPJ.LIMITE_MEI_ANUAL)}
+							Configurar →
 						</span>
 					</div>
 				</button>
+				)}
 			</div>
 			
 			{caminhoAtivo === "PESSOAL" ? (
@@ -1652,9 +1677,11 @@ export default function HomeWeb() {
 						Faturamento, impostos (MEI, Simples ou Presumido), pró-labore, lucro e relatório para o contador — com as contas da empresa separadas das pessoais.
 					</p>
 					<button onClick={() => navigate("/empresa")} className="px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm cursor-pointer">
-						Abrir painel da empresa
+						Cadastrar minha empresa
 					</button>
 				</div>
+			)}
+			</>
 			)}
 
 			{/* MODAL DE DIVIDIR DESPESA */}

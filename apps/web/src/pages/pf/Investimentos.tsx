@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { supabase } from "../../../../packages/services/supabase";
-import { financeService } from "../../../../packages/services/finance.service";
-import { taxaAnualAtual } from "../../../../packages/services/rendimento.service";
+import { supabase } from "../../../../../packages/services/supabase";
+import { financeService } from "../../../../../packages/services/finance.service";
+import { taxaAnualAtual } from "../../../../../packages/services/rendimento.service";
 import { Plus, TrendingUp, Briefcase, PiggyBank, Coins, Trash2, Pencil, AlertTriangle, Target, Info } from "lucide-react";
 import { toast } from "react-hot-toast";
-import AddInvestimentoWeb from "../components/AddInvestimentoWeb";
-import PageLoader from "../components/PageLoader";
-import { descreverRentabilidade, instituicaoDoInvestimento, metaIdDoInvestimento } from "../../../../packages/utils/investimentos";
+import AddInvestimentoWeb from "../../components/AddInvestimentoWeb";
+import PageLoader from "../../components/PageLoader";
+import { descreverRentabilidade, instituicaoDoInvestimento, metaIdDoInvestimento } from "../../../../../packages/utils/investimentos";
 
 const moeda = (v: number) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const pct = (v: number, casas = 2) => `${v >= 0 ? "+" : ""}${v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas })}%`;

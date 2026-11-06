@@ -1,17 +1,19 @@
-import { formatarMoeda, ehReal } from "../../../../packages/services/moeda.service";
+import { formatarMoeda, ehReal } from "../../../../../packages/services/moeda.service";
 import { useState, useEffect } from "react";
-import { financeService } from "../../../../packages/services/finance.service";
-import { supabase } from "../../../../packages/services/supabase";
+import { financeService } from "../../../../../packages/services/finance.service";
+import { supabase } from "../../../../../packages/services/supabase";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Wallet, Pencil, Trash2, Building2, AlertCircle, TrendingUp, TrendingDown, Landmark, Search, ChevronRight, Activity } from "lucide-react";
 import toast from "react-hot-toast";
-import OnboardingContasModal from "../components/OnboardingContasModal";
-import EditContaModal from "../components/EditContaModal";
-import ContaExtratoModal from "../components/ContaExtratoModal";
-import { useNavigate } from "react-router-dom";
+import OnboardingContasModal from "../../components/OnboardingContasModal";
+import EditContaModal from "../../components/EditContaModal";
+import ContaExtratoModal from "../../components/ContaExtratoModal";
+import { useNavigate, useOutletContext } from "react-router-dom";
 
 export default function Contas() {
 	const navigate = useNavigate();
+	// Visão escolhida no topo: Pessoa Física mostra as contas pessoais; Empresa, só as da empresa
+	const { visao = "PF", temEmpresa = false } = useOutletContext<any>() || {};
 	const [userId, setUserId] = useState<string>("");
 	const [contas, setContas] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -23,6 +25,11 @@ export default function Contas() {
     const [searchQuery, setSearchQuery] = useState("");
     const [contaParaExtrato, setContaParaExtrato] = useState<any>(null);
 
+	useEffect(() => {
+		if (userId) loadData();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [visao, temEmpresa]);
+
 	const loadData = async () => {
 		try {
 			setLoading(true);
@@ -33,7 +40,8 @@ export default function Contas() {
 			}
 			setUserId(user.id);
 			const resContas = await financeService.getContasBancarias(user.id);
-			setContas(resContas || []);
+			const todas = resContas || [];
+			setContas(temEmpresa ? todas.filter((c: any) => (visao === "PJ") === Boolean(c.empresa_id)) : todas);
 		} catch (error) {
 			console.error("Erro ao carregar contas", error);
 		} finally {

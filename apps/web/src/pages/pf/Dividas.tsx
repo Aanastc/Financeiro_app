@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { supabase } from "../../../../packages/services/supabase";
-import { financeService } from "../../../../packages/services/finance.service";
+import { supabase } from "../../../../../packages/services/supabase";
+import { financeService } from "../../../../../packages/services/finance.service";
 import {
 	Plus,
 	HandCoins,
@@ -13,8 +13,8 @@ import {
 	Calendar,
 	Banknote } from "lucide-react";
 import { Toaster, toast } from "react-hot-toast";
-import AddDividaModal from "../components/AddDividaModal";
-import DividaDetalheModal from "../components/DividaDetalheModal";
+import AddDividaModal from "../../components/AddDividaModal";
+import DividaDetalheModal from "../../components/DividaDetalheModal";
 
 export default function DividasWeb() {
 	const [dividas, setDividas] = useState<any[]>([]);

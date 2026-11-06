@@ -1,6 +1,6 @@
 import { inserirMovimentacoes, moedasDasContas } from "../../../../packages/services/finance.service";
 import { moedaService, ehReal, MOEDAS, formatarMoeda } from "../../../../packages/services/moeda.service";
-import { minhasEmpresas, registrarRetirada } from "../../../../packages/services/empresa.service";
+import { minhasEmpresas, registrarRetirada, classificarComoRetirada } from "../../../../packages/services/empresa.service";
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { authService } from "../../../../packages/services/auth.service";
@@ -19,6 +19,7 @@ import {
 } from "../../../../packages/utils/instituicoes";
 import { ehAplicacaoInvestimento, ehResgateInvestimento } from "../../../../packages/utils/investimentos";
 import { lerParcelaDaDescricao } from "../../../../packages/utils/parcelas";
+import { regraDaEmpresa } from "../lib/pj/regrasImportacao";
 import {
 	lerTextoSePlano,
 	lerCabecalhoConta,
@@ -1079,11 +1080,27 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			setSaldoExtrato(textoPlano && ext.tipo_documento === "extrato_bancario" ? saldoFinalDoExtrato(textoPlano) : null);
 			setAjustarSaldoAoSalvar(true);
 			const idLembrado = contaLembrada(cab);
-			const contaDetectada =
+			let contaDetectada =
 				contaPeloCabecalho(cab, contas) ||
 				contas.find((c) => c.id === idLembrado) ||
 				encontrarPorInstituicao(contas, droppedFile.name) ||
 				encontrarPorInstituicao(contas, `${pistaInstituicao} ${(textoPlano || "").slice(0, 1500)}`);
+			// Mesmo banco com conta pessoal e da empresa (Inter PF x Inter PJ): o arquivo diz qual é
+			const arquivoDeEmpresa = /\b(cnpj|pj|empresa|mei)\b/i.test(normalizeText(droppedFile.name)) ||
+				/\b\d{2}\.?\d{3}\.?\d{3}\/?0001-?\d{2}\b/.test((textoPlano || "").slice(0, 600));
+			if (contaDetectada && !contaPeloCabecalho(cab, contas) && contas.find((c) => c.id === idLembrado) !== contaDetectada) {
+				const instDetectada = detectarInstituicao(`${contaDetectada.instituicao || ""} ${contaDetectada.nome || ""}`);
+				const doMesmoBanco = contas.filter((c) => {
+					const i = detectarInstituicao(`${c.instituicao || ""} ${c.nome || ""}`);
+					return instDetectada && i?.id === instDetectada.id;
+				});
+				const certa = doMesmoBanco.find((c) => Boolean(c.empresa_id) === arquivoDeEmpresa);
+				if (certa) contaDetectada = certa;
+			}
+			if (!contaDetectada && arquivoDeEmpresa) {
+				const pj = contas.filter((c) => c.empresa_id);
+				if (pj.length === 1) contaDetectada = pj[0];
+			}
 			// Sem reconhecer a conta, NÃO chuta a primeira da lista: a pessoa escolhe no topo
 			const detectedContaId = contaDetectada?.id || (contas.length === 1 ? contas[0].id : "");
 			setGlobalConta(detectedContaId);
@@ -1334,6 +1351,17 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 
 				// Pagamento de fatura não é consumo: nunca herda categoria como "Alimentação"
 				if (tipoFinal === "PagamentoFatura") categoriaFinal = "Cartão de Crédito";
+				// Extrato da conta da EMPRESA: cliente pagando = faturamento; Receita Federal = DAS;
+				// prefeitura = ISS; contador = contabilidade (Pix para você vira retirada ao salvar)
+				// (contaIdFinal só é calculado mais abaixo: aqui usa a mesma origem — conta da linha ou do extrato)
+				const contaDaLinha = isFatura ? undefined : contas.find((c) => c.id === (t.conta_id || detectedContaId));
+				if (contaDaLinha?.empresa_id && !isTransfPropria && !isAplicacao && tipoFinal !== "PagamentoFatura") {
+					const pj = regraDaEmpresa(cleanDesc, Number(t.valor) || 0, tipoFinal);
+					if (pj) {
+						tipoFinal = pj.tipo_transacao;
+						categoriaFinal = pj.categoria;
+					}
+				}
 				// Empréstimo: devolução de parcela = estorno (abate o que saiu); débito = parcela da dívida
 				const ehCoisaDeEmprestimo = contabil?.categoria === "Empréstimo" && !isTransfPropria && !isContatoTerceiro;
 				const ehDevolucaoEmprestimo = ehCoisaDeEmprestimo && tipoFinal === "Entrada";
@@ -1766,13 +1794,17 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			const pernasDeTransferencia = async (contaId: string, tipo: "ENTRADA" | "SAIDA", data: string) => {
 				const { data: movs } = await supabase
 					.from("movimentacoes")
-					.select("id, valor, transacao_id, transacoes!movimentacoes_transacao_fkey(tipo)")
+					.select("id, valor, transacao_id, transacoes!movimentacoes_transacao_fkey(tipo, observacao)")
 					.eq("usuario_id", user.id)
 					.eq("conta_id", contaId)
 					.eq("tipo", tipo)
 					.gte("data", somarDias(data, -3))
 					.lte("data", somarDias(data, 3));
-				return (movs || []).filter((m: any) => (Array.isArray(m.transacoes) ? m.transacoes[0]?.tipo : m.transacoes?.tipo) === "TRANSFERENCIA");
+				// transferência entre contas suas ou retirada da empresa (pró-labore/lucros) já lançada
+				return (movs || []).filter((m: any) => {
+					const t = Array.isArray(m.transacoes) ? m.transacoes[0] : m.transacoes;
+					return t?.tipo === "TRANSFERENCIA" || /retirada_pj/.test(t?.observacao || "");
+				});
 			};
 			let jaExistiam = 0;
 			let completadas = 0;
@@ -1883,6 +1915,36 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					if (completadas && doOutroLado.length) continue;
 				}
 
+				// Saiu da conta da EMPRESA para você e a conta pessoal já tem essa entrada (extrato pessoal
+				// importado antes, como "Pix recebido Ana Leticia Tech"): liga as duas pontas e vira retirada.
+				const contaDocObj = contas.find((c) => c.id === contaDoc);
+				if (contaDoc && !entrou && contaDocObj?.empresa_id) {
+					const pessoais = contas.filter((c) => !c.empresa_id && (!outra || c.id === outra)).map((c) => c.id);
+					let ligada = false;
+					if (pessoais.length) {
+						const { data: entradas } = await supabase
+							.from("movimentacoes")
+							.select("transacao_id, conta_id, valor, data")
+							.eq("usuario_id", user.id)
+							.in("conta_id", pessoais)
+							.eq("tipo", "ENTRADA")
+							.gte("data", somarDias(item.data, -3))
+							.lte("data", somarDias(item.data, 3));
+						for (const m of (entradas || []).filter((x: any) => Math.abs(Number(x.valor) - Number(item.valor)) < 0.01)) {
+							const { data: pernas } = await supabase.from("movimentacoes").select("id").eq("transacao_id", m.transacao_id);
+							if ((pernas || []).length !== 1) continue;
+							await inserirMovimentacoes([{ usuario_id: user.id, transacao_id: m.transacao_id, conta_id: contaDoc, tipo: "SAIDA", valor: item.valor, data: item.data }]);
+							// Pix da empresa para a dona = pró-labore (vira "Salário" na visão pessoal); lucros se marca no painel
+							await classificarComoRetirada(user.id, m.transacao_id, "PRO_LABORE", m.conta_id, contaDoc);
+							completadas++;
+							importados++;
+							ligada = true;
+							break;
+						}
+					}
+					if (ligada) continue;
+				}
+
 				// Da conta da empresa para uma conta pessoal sua = retirada (pró-labore ou lucros)
 				const origemConta = contas.find((c) => c.id === (entrou ? outra : contaDoc));
 				const destinoConta = contas.find((c) => c.id === (entrou ? contaDoc : outra));
@@ -1893,7 +1955,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 						contaPessoal: destinoConta.id,
 						valor: item.valor,
 						data: item.data,
-						tipo: emp?.retirada_padrao || "PRO_LABORE",
+						tipo: "PRO_LABORE",
 						descricao: item.descricao,
 						documento_importado_id: documentoImportadoId || null,
 					});

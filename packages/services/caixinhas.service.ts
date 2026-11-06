@@ -191,6 +191,9 @@ async function executar(usuario_id: string) {
       if (/^caixinha\s/i.test(inv.titulo || "") && !/\(empresa\)/i.test(inv.titulo || "")) dados.titulo = titulo;
       if (reserva && metaIdDoInvestimento(inv.corretora) === reserva.id) dados.corretora = corretoraComMeta(inv.corretora, null);
       if (Object.keys(dados).length) await atualizar(inv, dados);
+    } else if (/\(empresa\)/i.test(inv.titulo || "")) {
+      // Conta voltou a ser pessoal (foi marcada como da empresa por engano): tira o "(empresa)" do nome
+      await atualizar(inv, { titulo });
     }
     usados.add(inv.id);
     await recalcular(inv, fluxos, temColunas === true, atualizar);

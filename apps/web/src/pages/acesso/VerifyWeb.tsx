@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { authService } from "../../../../packages/services/auth.service";
+import { authService } from "../../../../../packages/services/auth.service";
 import { useNavigate, useLocation } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { Mail, ArrowLeft, RefreshCw, HelpCircle, Clock } from "lucide-react";
-import Copyright from "../components/Copyright";
+import Copyright from "../../components/Copyright";
 
 export default function VerifyWeb() {
 	const [token, setToken] = useState("");

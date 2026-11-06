@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Building2, Calculator, FileSpreadsheet, Info, Landmark, Pencil, Receipt, TrendingUp, Wallet } from "lucide-react";
+import { useOutletContext } from "react-router-dom";
+import { AlertCircle, Building2, Calculator, Calendar, FileSpreadsheet, Info, Landmark, Pencil, PiggyBank, Receipt, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import CategoryBreakdown from "../../components/CategoryBreakdown";
 import { toast } from "react-hot-toast";
 import ExcelJS from "exceljs";
-import { supabase } from "../../../../packages/services/supabase";
-import { financeService } from "../../../../packages/services/finance.service";
+import { supabase } from "../../../../../packages/services/supabase";
+import { financeService } from "../../../../../packages/services/finance.service";
+import { acrescimosPorAtraso, salarioMinimoVigente, type Acrescimos } from "../../../../../packages/services/dados-publicos.service";
 import {
 	dasMeiSugerido,
 	definirContasDaEmpresa,
@@ -15,10 +19,10 @@ import {
 	type Empresa,
 	type PainelEmpresa,
 	type TipoRetirada,
-} from "../../../../packages/services/empresa.service";
-import { CORES, FMT_MOEDA, FONTE, cabecalho, linha, titulo } from "../lib/relatorioExcel";
-import PageLoader from "../components/PageLoader";
-import InputMoeda, { lerMoeda } from "../components/InputMoeda";
+} from "../../../../../packages/services/empresa.service";
+import { CORES, FMT_MOEDA, FONTE, cabecalho, linha, titulo } from "../../lib/relatorioExcel";
+import PageLoader from "../../components/PageLoader";
+import InputMoeda, { lerMoeda } from "../../components/InputMoeda";
 
 const moeda = (v: number) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const pct = (v: number) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
@@ -46,6 +50,7 @@ type Form = {
 };
 
 export default function EmpresaPage() {
+	const outlet = useOutletContext<any>();
 	const [loading, setLoading] = useState(true);
 	const [userId, setUserId] = useState<string | null>(null);
 	const [empresa, setEmpresa] = useState<Empresa | null>(null);
@@ -55,6 +60,38 @@ export default function EmpresaPage() {
 	const [editando, setEditando] = useState(false);
 	const [salvando, setSalvando] = useState(false);
 	const [form, setForm] = useState<Form | null>(null);
+	// Conta PJ nova (quem tem PF e PJ no mesmo banco precisa de duas contas no app)
+	const [novaConta, setNovaConta] = useState<{ nome: string; instituicao: string; numero: string } | null>(null);
+	const [criandoConta, setCriandoConta] = useState(false);
+	// Dados públicos: salário mínimo vigente (DAS do MEI) e multa/juros de imposto atrasado
+	const [salarioMinimo, setSalarioMinimo] = useState<number | undefined>(undefined);
+	const [atraso, setAtraso] = useState<Acrescimos | null>(null);
+	useEffect(() => {
+		salarioMinimoVigente().then(setSalarioMinimo).catch(() => {});
+	}, []);
+
+	const criarContaDaEmpresa = async () => {
+		if (!userId || !novaConta || !form) return;
+		if (!novaConta.nome.trim()) return toast.error("Dê um nome para a conta (ex.: Inter PJ).");
+		setCriandoConta(true);
+		try {
+			const [criada] = await financeService.addContaBancaria(userId, {
+				nome: novaConta.nome.trim(),
+				instituicao: novaConta.instituicao.trim() || null,
+				numero_conta: novaConta.numero.replace(/[^\d-]/g, "") || null,
+				tipo: "Conta Corrente",
+				saldo_inicial: 0,
+			});
+			setContas((cs) => [...cs, criada]);
+			setForm({ ...form, contas: [...form.contas, criada.id] });
+			setNovaConta(null);
+			toast.success("Conta da empresa criada. Importe o extrato dela para trazer os lançamentos.");
+		} catch (e: any) {
+			toast.error(e?.message || "Não foi possível criar a conta.");
+		} finally {
+			setCriandoConta(false);
+		}
+	};
 
 	const carregar = useCallback(async () => {
 		const { data: { user } } = await supabase.auth.getUser();
@@ -115,6 +152,8 @@ export default function EmpresaPage() {
 			setEditando(false);
 			setLoading(true);
 			await carregar();
+			// a barra do topo passa a mostrar a chave Pessoa Física / Empresa
+			await outlet?.recarregarEmpresa?.();
 		} catch (e: any) {
 			toast.error(e?.message || "Não foi possível salvar.");
 		} finally {
@@ -129,10 +168,20 @@ export default function EmpresaPage() {
 		if (!painel || !empresa) return null;
 		const atual = painel.meses[painel.meses.length - 1];
 		const anterior = painel.meses[painel.meses.length - 2];
-		const despesaMedia = painel.meses.length ? painel.meses.slice(-3).reduce((s, m) => s + m.despesas, 0) / Math.min(3, painel.meses.length) : 0;
+		// Só meses em que algo aconteceu (sem os vazios e sem o mês atual se ainda não teve lançamento)
+		const comMovimento = painel.meses.filter(
+			(m) => m.faturamento || m.despesas || m.impostosPagos || m.proLabore || m.lucrosDistribuidos,
+		);
+		const ultimos = comMovimento.slice(-3);
+		const media = (f: (m: (typeof painel.meses)[number]) => number) => (ultimos.length ? ultimos.reduce((s, m) => s + f(m), 0) / ultimos.length : 0);
+		const despesaMedia = media((m) => m.despesas);
 		// Imposto que ainda vai sair: o do mês atual e o do mês anterior (vence dia 20)
 		const hoje = new Date();
-		const impostoAnteriorAberto = anterior && hoje.getDate() <= 20 ? anterior.imposto.valor : 0;
+		const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+		// Imposto do mês anterior ainda não pago (nenhum imposto saiu da conta neste mês)?
+		const anteriorEmAberto = Boolean(anterior && anterior.imposto.valor > 0 && (atual?.impostosPagos || 0) < 0.01);
+		const anteriorAtrasado = anteriorEmAberto && hojeIso > (anterior?.imposto.vencimento || "9999");
+		const impostoAnteriorAberto = anteriorEmAberto ? anterior.imposto.valor : 0;
 		const reservar = (atual?.imposto.valor || 0) + impostoAnteriorAberto + despesaMedia;
 		const proLaboreAno = painel.meses.reduce((s, m) => s + m.proLabore, 0);
 		const lucrosAno = painel.meses.reduce((s, m) => s + m.lucrosDistribuidos, 0);
@@ -142,8 +191,59 @@ export default function EmpresaPage() {
 			empresa.regime === "SIMPLES" && (empresa.anexo || "FATOR_R") === "FATOR_R" && painel.fatorR !== null && painel.fatorR < 0.28 && painel.rbt12 > 0
 				? Math.max(0, (0.28 * painel.rbt12 - painel.fatorR * painel.rbt12) / 12)
 				: 0;
-		return { atual, anterior, reservar, disponivel: Math.max(0, saldoEmpresa - reservar), proLaboreAno, lucrosAno, lucroAno, faltaFatorR, despesaMedia };
-	}, [painel, empresa, saldoEmpresa]);
+		// Quanto a empresa deveria ter guardado, pelo que ela movimenta (médias dos últimos meses com dados)
+		const faturamentoMedio = media((m) => m.faturamento);
+		const impostoMedio = media((m) => m.imposto.valor);
+		const retiradaMedia = media((m) => m.proLabore + m.lucrosDistribuidos);
+		const guardado = painel.investimentos.reduce((s, i) => s + i.valor, 0);
+		const reservaIdeal = 3 * (despesaMedia + impostoMedio); // 3 meses de despesas + impostos
+		const faltaReserva = Math.max(0, reservaIdeal - guardado);
+		const sobraMedia = faturamentoMedio - despesaMedia - impostoMedio - retiradaMedia;
+		const aliquota = [...comMovimento].reverse().find((m) => m.faturamento > 0)?.imposto.aliquota || 0;
+		const guardarPorMes =
+			faltaReserva > 0 ? Math.ceil((sobraMedia > 0 ? Math.min(sobraMedia, faltaReserva / 6) : faltaReserva / 6) / 10) * 10 : 0;
+		const dica = { reservaIdeal, guardado, faltaReserva, sobraMedia, faturamentoMedio, impostoMedio, retiradaMedia, aliquota, guardarPorMes, meses: ultimos.length };
+		// Gráficos (só o ano escolhido)
+		const doAno = (l: { data: string }) => l.data.startsWith(String(ano));
+		const agrupar = (lista: { valor: number }[], chave: (l: any) => string) => {
+			const mapa = new Map<string, number>();
+			for (const l of lista) mapa.set(chave(l), (mapa.get(chave(l)) || 0) + Number(l.valor || 0));
+			return [...mapa.entries()].map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }));
+		};
+		const despesasPorCategoria = agrupar(painel.despesas.filter(doAno), (d) => d.categoria || "Sem categoria");
+		const retiradasDoAno = painel.retiradas.filter(doAno);
+		const destinoDoDinheiro = [
+			...despesasPorCategoria,
+			...agrupar(retiradasDoAno, (r) => (r.tipo === "LUCROS" ? "Lucros para você" : "Pró-labore (seu salário)")),
+		];
+		const nomeCliente = (d: string) =>
+			(d || "Sem descrição").replace(/^(pix recebido|ted recebida|transfer[eê]ncia recebida( pelo pix)?)[:\s-]*/i, "").split(" - ")[0].trim() || "Sem descrição";
+		const faturamentoPorCliente = agrupar(painel.receitas.filter(doAno), (r) => nomeCliente(r.descricao));
+		const graficoMeses = comMovimento.map((m) => ({
+			mes: nomeMes(m.mes),
+			faturamento: m.faturamento,
+			custos: Math.round((m.despesas + m.impostosPagos) * 100) / 100,
+			retiradas: Math.round((m.proLabore + m.lucrosDistribuidos) * 100) / 100,
+		}));
+		const datas = [...painel.receitas, ...painel.despesas, ...painel.retiradas, ...painel.aClassificar].map((l) => l.data).filter(Boolean).sort();
+		const ultimoLancamento = datas.length ? datas[datas.length - 1] : null;
+		const diasSemLancar = ultimoLancamento
+			? Math.floor((new Date(`${hojeIso}T12:00:00`).getTime() - new Date(`${ultimoLancamento}T12:00:00`).getTime()) / 86400000)
+			: null;
+		return { atual, anterior, anteriorAtrasado, anteriorEmAberto, comMovimento, dica, hojeIso, reservar,
+			despesasPorCategoria, destinoDoDinheiro, faturamentoPorCliente, graficoMeses, ultimoLancamento, diasSemLancar, disponivel: Math.max(0, saldoEmpresa - reservar), proLaboreAno, lucrosAno, lucroAno, faltaFatorR, despesaMedia };
+	}, [painel, empresa, saldoEmpresa, ano]);
+
+	// Imposto atrasado: multa (0,33%/dia, até 20%) + juros Selic do Banco Central até hoje
+	useEffect(() => {
+		if (!resumo?.anteriorAtrasado || !resumo.anterior) {
+			setAtraso(null);
+			return;
+		}
+		acrescimosPorAtraso(resumo.anterior.imposto.valor, resumo.anterior.imposto.vencimento, resumo.hojeIso)
+			.then(setAtraso)
+			.catch(() => setAtraso(null));
+	}, [resumo?.anteriorAtrasado, resumo?.anterior?.imposto.valor, resumo?.anterior?.imposto.vencimento, resumo?.hojeIso]);
 
 	const classificar = async (item: PainelEmpresa["aClassificar"][number], tipo: TipoRetirada) => {
 		if (!userId) return;
@@ -246,7 +346,7 @@ export default function EmpresaPage() {
 							</label>
 							<label className="space-y-1">
 								<span className={rotulo}>Valor do DAS (boleto do mês)</span>
-								<InputMoeda className={campo} value={form.das_mei_valor} onChange={(v) => setForm({ ...form, das_mei_valor: v })} placeholder={paraMoedaTexto(dasMeiSugerido(form.atividade))} />
+								<InputMoeda className={campo} value={form.das_mei_valor} onChange={(v) => setForm({ ...form, das_mei_valor: v })} placeholder={paraMoedaTexto(dasMeiSugerido(form.atividade, salarioMinimo))} />
 							</label>
 						</>
 					)}
@@ -294,7 +394,7 @@ export default function EmpresaPage() {
 						<span className={rotulo}>Contas da empresa</span>
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
 							{contas.map((c) => (
-								<label key={c.id} className="flex items-center gap-2 p-3 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer">
+								<label key={c.id} className={`flex items-center gap-2 p-3 rounded-xl border cursor-pointer ${form.contas.includes(c.id) ? "border-indigo-400 bg-indigo-50/60 dark:bg-indigo-950/30" : "border-slate-200 dark:border-slate-700"}`}>
 									<input
 										type="checkbox"
 										className="w-4 h-4 accent-indigo-600"
@@ -306,7 +406,28 @@ export default function EmpresaPage() {
 								</label>
 							))}
 						</div>
-						<p className="text-[11px] text-slate-400">Não achou a conta do CNPJ? Cadastre em Contas (ex.: "Inter PJ") e volte aqui.</p>
+						<p className="text-[11px] text-amber-700 dark:text-amber-400">
+							Marque só contas que são do CNPJ. Se você tem conta pessoal e da empresa no mesmo banco (ex.: Inter PF e Inter PJ), são duas contas diferentes: deixe a pessoal desmarcada e crie a da empresa abaixo.
+						</p>
+						{novaConta ? (
+							<div className="grid grid-cols-1 sm:grid-cols-4 gap-2 p-3 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-800">
+								<input className={campo} value={novaConta.nome} onChange={(e) => setNovaConta({ ...novaConta, nome: e.target.value })} placeholder="Nome (ex.: Inter PJ)" aria-label="Nome da conta" />
+								<input className={campo} value={novaConta.instituicao} onChange={(e) => setNovaConta({ ...novaConta, instituicao: e.target.value })} placeholder="Banco (ex.: Inter)" aria-label="Banco" />
+								<input className={campo} value={novaConta.numero} onChange={(e) => setNovaConta({ ...novaConta, numero: e.target.value })} placeholder="Nº da conta (opcional)" aria-label="Número da conta" />
+								<div className="flex gap-2">
+									<button type="button" onClick={criarContaDaEmpresa} disabled={criandoConta} className="flex-1 px-3 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-black cursor-pointer">
+										{criandoConta ? "Criando..." : "Criar"}
+									</button>
+									<button type="button" onClick={() => setNovaConta(null)} className="px-3 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm font-bold cursor-pointer">
+										Cancelar
+									</button>
+								</div>
+							</div>
+						) : (
+							<button type="button" onClick={() => setNovaConta({ nome: "", instituicao: "", numero: "" })} className="text-xs font-black text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">
+								+ Criar conta da empresa
+							</button>
+						)}
 					</div>
 				</div>
 				<div className="flex gap-2">
@@ -375,6 +496,31 @@ export default function EmpresaPage() {
 
 			{painel && resumo && (
 				<>
+					{/* Última atividade (como no PF): extrato da empresa em dia? */}
+					{resumo.diasSemLancar !== null && resumo.diasSemLancar > 30 ? (
+						<div className="flex items-center gap-3.5 p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40">
+							<div className="p-2.5 bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-xl"><AlertCircle size={18} /></div>
+							<div>
+								<p className="text-sm font-extrabold text-amber-900 dark:text-amber-300">Faz {resumo.diasSemLancar} dias sem lançamento na conta da empresa</p>
+								<p className="text-xs font-semibold text-amber-700/80 dark:text-amber-400/80">
+									O último foi em <b>{dataBR(resumo.ultimoLancamento)}</b>. Importe o extrato do CNPJ para o imposto e o lucro ficarem certos.
+								</p>
+							</div>
+						</div>
+					) : (
+						<div className="flex items-center gap-3.5 p-4 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/10 border border-indigo-100/60 dark:border-indigo-900/20">
+							<div className="p-2.5 bg-indigo-100/60 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-xl"><Calendar size={18} /></div>
+							<div>
+								<p className="text-xs font-bold text-slate-400 dark:text-slate-500">{resumo.ultimoLancamento ? "Última atividade registrada" : "Status dos lançamentos"}</p>
+								<p className="text-sm font-black text-slate-700 dark:text-slate-200">
+									{resumo.ultimoLancamento
+										? `O último lançamento na conta da empresa foi em ${dataBR(resumo.ultimoLancamento)}.`
+										: "Nenhum lançamento nas contas da empresa ainda. Importe o extrato do CNPJ."}
+								</p>
+							</div>
+						</div>
+					)}
+
 					<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
 						<div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 p-5">
 							<p className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><TrendingUp size={13} /> Faturamento {ano}</p>
@@ -387,12 +533,36 @@ export default function EmpresaPage() {
 							</p>
 						</div>
 						<div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 p-5">
-							<p className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Receipt size={13} /> Imposto deste mês</p>
-							<p className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">{moeda(resumo.atual?.imposto.valor || 0)}</p>
-							<p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-1">
-								{empresa.regime === "MEI" ? "DAS" : `${pct(resumo.atual?.imposto.aliquota || 0)} efetivo`} · vence {dataBR(resumo.atual?.imposto.vencimento)}
-							</p>
-							<p className="text-[11px] text-slate-400">{resumo.atual?.imposto.detalhe}</p>
+							{resumo.anteriorEmAberto && resumo.anterior ? (
+								<>
+									{/* O boleto que vem primeiro: o do mês passado (dia 20 ou o próximo dia útil) */}
+									<p className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Receipt size={13} /> Próximo {empresa.regime === "PRESUMIDO" ? "imposto" : "DAS"}</p>
+									<p className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">{moeda(resumo.anterior.imposto.valor)}</p>
+									<p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-1">
+										competência {nomeMes(resumo.anterior.mes)} · vence <b>{dataBR(resumo.anterior.imposto.vencimento)}</b>
+									</p>
+									<p className="text-[11px] text-slate-400">
+										{resumo.atual ? `${nomeMes(resumo.atual.mes)} até agora: ${moeda(resumo.atual.imposto.valor)} (vence ${dataBR(resumo.atual.imposto.vencimento)})` : ""}
+									</p>
+								</>
+							) : (
+								<>
+									<p className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Receipt size={13} /> Imposto deste mês</p>
+									<p className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">{moeda(resumo.atual?.imposto.valor || 0)}</p>
+									<p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-1">
+										{empresa.regime === "MEI" ? "DAS" : `${pct(resumo.atual?.imposto.aliquota || 0)} efetivo`} · vence {dataBR(resumo.atual?.imposto.vencimento)}
+									</p>
+									<p className="text-[11px] text-slate-400">{resumo.atual?.imposto.detalhe}</p>
+								</>
+							)}
+							{resumo.anteriorAtrasado && resumo.anterior && (
+								<p className="mt-2 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+									O de {nomeMes(resumo.anterior.mes)} venceu em {dataBR(resumo.anterior.imposto.vencimento)} e não achei o pagamento.
+									{atraso && atraso.diasAtraso > 0 && (
+										<> Pagando hoje: ≈ {moeda(atraso.total)} (multa {moeda(atraso.multa)} + juros {moeda(atraso.juros)}).</>
+									)}
+								</p>
+							)}
 						</div>
 						<div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 p-5">
 							<p className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Calculator size={13} /> Lucro no ano</p>
@@ -411,6 +581,105 @@ export default function EmpresaPage() {
 								</p>
 							)}
 						</div>
+					</div>
+
+					{/* Gráficos: mês a mês e para onde vai / de onde vem o dinheiro */}
+					{resumo.graficoMeses.length > 0 && (
+						<div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 p-5 sm:p-6">
+							<p className="text-sm font-black text-slate-800 dark:text-slate-100 mb-4">Entrou e saiu, mês a mês</p>
+							<div className="h-64 w-full">
+								<ResponsiveContainer width="100%" height="100%">
+									<BarChart data={resumo.graficoMeses} margin={{ top: 0, right: 0, left: -10, bottom: 0 }}>
+										<CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.5} />
+										<XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} dy={5} />
+										<YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+										<Tooltip cursor={{ fill: "rgba(148,163,184,0.1)" }} contentStyle={{ borderRadius: "12px", border: "none" }} formatter={(v: number) => moeda(v)} />
+										<Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+										<Bar dataKey="faturamento" name="Faturamento" fill="#10B981" radius={[4, 4, 0, 0]} barSize={14} />
+										<Bar dataKey="custos" name="Despesas + impostos pagos" fill="#F43F5E" radius={[4, 4, 0, 0]} barSize={14} />
+										<Bar dataKey="retiradas" name="Retiradas (pró-labore/lucros)" fill="#6366F1" radius={[4, 4, 0, 0]} barSize={14} />
+									</BarChart>
+								</ResponsiveContainer>
+							</div>
+						</div>
+					)}
+
+					<div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+						<CategoryBreakdown
+							title={`Para onde foi o dinheiro em ${ano}`}
+							icon={<TrendingDown className="text-rose-500" size={18} />}
+							data={resumo.destinoDoDinheiro}
+							barClassName="bg-rose-500"
+							emptyText="Nenhuma despesa ou retirada da empresa no ano."
+						/>
+						<CategoryBreakdown
+							title={`Faturamento por cliente em ${ano}`}
+							icon={<TrendingUp className="text-emerald-500" size={18} />}
+							data={resumo.faturamentoPorCliente}
+							barClassName="bg-emerald-500"
+							emptyText="Nenhum recebimento de cliente no ano."
+						/>
+					</div>
+
+					{/* Dinheiro guardado pela empresa + quanto seria bom guardar */}
+					<div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+						<div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 p-5 sm:p-6 space-y-3">
+							<p className="text-sm font-black text-slate-800 dark:text-slate-100 flex items-center gap-2"><PiggyBank size={16} className="text-emerald-500" /> Guardado pela empresa</p>
+							{painel.investimentos.length === 0 ? (
+								<p className="text-sm text-slate-500 dark:text-slate-400">Nenhuma caixinha ou aplicação nas contas da empresa ainda.</p>
+							) : (
+								painel.investimentos.map((i) => (
+									<div key={i.id} className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-4 space-y-1">
+										<div className="flex items-baseline justify-between gap-2">
+											<span className="text-sm font-bold text-slate-700 dark:text-slate-200">{i.titulo}</span>
+											<span className="text-lg font-black text-slate-800 dark:text-slate-100">{moeda(i.valor)}</span>
+										</div>
+										<p className="text-xs text-slate-500 dark:text-slate-400">
+											Aplicado {moeda(i.aplicado)} · <b className="text-emerald-600 dark:text-emerald-400">rendeu {moeda(i.rendimento)}</b>
+										</p>
+										{i.taxaAnual != null ? (
+											<p className="text-xs text-slate-500 dark:text-slate-400">
+												{i.indexador === "CDI" ? `${i.taxa ?? 100}% do CDI` : i.indexador} ≈ <b>{pct(i.taxaAnual)} ao ano</b> hoje · rende ≈ <b>{moeda(i.rendeMes || 0)}/mês</b> com esse saldo
+											</p>
+										) : (
+											<p className="text-xs text-amber-700 dark:text-amber-400">
+												Informe o tipo (ex.: CDB 100% do CDI) em Investimentos para calcular quanto rende.
+											</p>
+										)}
+									</div>
+								))
+							)}
+						</div>
+
+						{resumo.dica.meses > 0 && (
+							<div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-3xl border border-emerald-200 dark:border-emerald-900/40 p-5 sm:p-6 space-y-2">
+								<p className="text-sm font-black text-emerald-800 dark:text-emerald-300 flex items-center gap-2"><TrendingUp size={16} /> Quanto seria bom guardar</p>
+								<p className="text-xs text-slate-600 dark:text-slate-300">
+									Pelos últimos {resumo.dica.meses} {resumo.dica.meses === 1 ? "mês" : "meses"} com movimento: entra ≈ {moeda(resumo.dica.faturamentoMedio)}/mês; saem ≈ {moeda(resumo.despesaMedia)} de despesas, {moeda(resumo.dica.impostoMedio)} de imposto e {moeda(resumo.dica.retiradaMedia)} para você.
+								</p>
+								<ul className="space-y-1.5 text-sm text-slate-700 dark:text-slate-200 list-disc pl-5">
+									{resumo.dica.aliquota > 0 && (
+										<li>
+											A cada pagamento de cliente, separe <b>{pct(resumo.dica.aliquota)}</b> para o imposto (de {moeda(resumo.dica.faturamentoMedio)}, ≈ {moeda((resumo.dica.faturamentoMedio * resumo.dica.aliquota) / 100)}).
+										</li>
+									)}
+									<li>
+										Reserva da empresa: o ideal é ter ≈ <b>{moeda(resumo.dica.reservaIdeal)}</b> (3 meses de despesas + impostos). Hoje tem {moeda(resumo.dica.guardado)}
+										{resumo.dica.faltaReserva > 0 ? <>; faltam <b>{moeda(resumo.dica.faltaReserva)}</b>.</> : ": reserva completa."}
+									</li>
+									{resumo.dica.faltaReserva > 0 &&
+										(resumo.dica.sobraMedia > 0 ? (
+											<li>
+												Guardando <b>≈ {moeda(resumo.dica.guardarPorMes)}/mês</b> na caixinha, a reserva fica pronta em ≈ {Math.ceil(resumo.dica.faltaReserva / Math.max(1, resumo.dica.guardarPorMes))} meses.
+											</li>
+										) : (
+											<li className="text-amber-800 dark:text-amber-300">
+												Hoje sai mais do que entra (≈ {moeda(Math.abs(resumo.dica.sobraMedia))}/mês a mais). Para formar a reserva, retire ≈ <b>{moeda(resumo.dica.guardarPorMes)}</b> a menos por mês e deixe na caixinha.
+											</li>
+										))}
+								</ul>
+							</div>
+						)}
 					</div>
 
 					{/* Educação: o que fazer */}
@@ -468,7 +737,7 @@ export default function EmpresaPage() {
 									</tr>
 								</thead>
 								<tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-									{[...painel.meses].reverse().map((m) => (
+									{[...resumo.comMovimento].reverse().map((m) => (
 										<tr key={m.mes} className="text-right text-slate-700 dark:text-slate-200">
 											<td className="px-4 py-2.5 text-left font-bold">{nomeMes(m.mes)}</td>
 											<td className="px-4 py-2.5 font-semibold">{moeda(m.faturamento)}</td>
@@ -479,7 +748,7 @@ export default function EmpresaPage() {
 											<td className={`px-4 py-2.5 font-black ${m.lucro >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>{moeda(m.lucro)}</td>
 										</tr>
 									))}
-									{painel.meses.length === 0 && (
+									{resumo.comMovimento.length === 0 && (
 										<tr>
 											<td colSpan={7} className="px-4 py-8 text-center text-slate-400">
 												Nada lançado nas contas da empresa em {ano}. Importe o extrato da conta PJ para começar.
@@ -492,7 +761,7 @@ export default function EmpresaPage() {
 					</div>
 
 					<p className="text-[11px] text-slate-400 dark:text-slate-500">
-						Impostos estimados para planejamento ({regimeNome}{empresa.regime === "SIMPLES" ? `: alíquota efetiva sobre a receita dos 12 meses anteriores${painel.rbt12 ? ` (${moeda(painel.rbt12)})` : ""}` : ""}). O valor oficial é o
+						Meses sem nenhum movimento não aparecem. Impostos estimados para planejamento ({regimeNome}{empresa.regime === "SIMPLES" ? `: alíquota efetiva sobre a receita dos 12 meses anteriores${painel.rbt12 ? ` (${moeda(painel.rbt12)})` : ""}` : ""}). O valor oficial é o
 						apurado no PGDAS/pelo contador.
 					</p>
 				</>

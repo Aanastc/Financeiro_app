@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { authService } from "../../../../packages/services/auth.service";
+import { authService } from "../../../../../packages/services/auth.service";
 import { useNavigate, Link } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { Mail, ArrowLeft, RefreshCw } from "lucide-react";
-import Copyright from "../components/Copyright";
+import Copyright from "../../components/Copyright";
 
 export default function ForgotPasswordWeb() {
 	const [email, setEmail] = useState("");

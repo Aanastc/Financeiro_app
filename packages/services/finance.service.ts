@@ -1,7 +1,7 @@
 import { moedaService, ehReal } from "./moeda.service";
 import { supabase } from "./supabase";
 import { lerParcelaDaDescricao, descricaoSemParcela } from "../utils/parcelas";
-import { getFaturaCycle, getFaturaMesReferencia } from "../utils/cartao.utils";
+import { getFaturaCycle, getFaturaMesReferencia, getVencimentoDiaDoMes } from "../utils/cartao.utils";
 import { encontrarPorInstituicao } from "../utils/instituicoes";
 import { buscarTodasPaginas } from "./paginacao";
 import { sincronizarCaixinhas, ocultarCaixinha, contaDaCaixinha } from "./caixinhas.service";
@@ -2679,7 +2679,7 @@ export const financeService = {
           continue;
         }
 
-        const mesRef = getFaturaMesReferencia(tx.data, card.fechamento_dia, card.vencimento_dia);
+        const mesRef = getFaturaMesReferencia(tx.data, card.fechamento_dia, card.vencimento_dia, card);
         const groupKey = `${card.id}_${mesRef}`;
 
         if (!groups.has(groupKey)) {
@@ -2713,7 +2713,7 @@ export const financeService = {
             Boolean(q.conta_id) !== Boolean(p.conta_id));
           if (repetido) continue;
           considerados.push(p);
-          const aberta = getFaturaMesReferencia(String(p.data).slice(0, 10), card.fechamento_dia, card.vencimento_dia);
+          const aberta = getFaturaMesReferencia(String(p.data).slice(0, 10), card.fechamento_dia, card.vencimento_dia, card);
           let resto = Math.abs(Number(p.valor) || 0);
           for (const ref of [mesAntes(aberta), aberta]) {
             const key = `${cardId}_${ref}`;
@@ -2731,8 +2731,8 @@ export const financeService = {
       }
 
       for (const { card, mesRef, items } of groups.values()) {
-        const { dataInicio, dataFim } = getFaturaCycle(mesRef, card.fechamento_dia, card.vencimento_dia);
-        const dataVencimento = `${mesRef}-${String(card.vencimento_dia).padStart(2, '0')}`;
+        const { dataInicio, dataFim } = getFaturaCycle(mesRef, card.fechamento_dia, card.vencimento_dia, card);
+        const dataVencimento = `${mesRef}-${String(getVencimentoDiaDoMes(mesRef, card.fechamento_dia, card.vencimento_dia, card)).padStart(2, "0")}`;
 
         // Verifica se já existe fatura para esse vencimento
         const { data: existingFatura } = await supabase

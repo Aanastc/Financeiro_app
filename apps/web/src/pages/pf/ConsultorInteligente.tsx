@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { supabase } from "../../../../packages/services/supabase";
-import { financeService } from "../../../../packages/services/finance.service";
-import { aiService } from "../../../../packages/services/ai.service";
+import { supabase } from "../../../../../packages/services/supabase";
+import { financeService } from "../../../../../packages/services/finance.service";
+import { aiService } from "../../../../../packages/services/ai.service";
 import toast from "react-hot-toast";
 import { 
 	Brain, 

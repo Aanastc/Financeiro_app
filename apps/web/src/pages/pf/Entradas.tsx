@@ -1,10 +1,10 @@
-import { buscarTodasPaginas } from "../../../../packages/services/paginacao";
-import { idsDaEmpresa, ehDaEmpresa } from "../../../../packages/services/empresa.service";
-import { contaNoTotal, ehParteDeOutraPessoa, textoObservacao } from "../lib/lancamentos";
-import CategoryBreakdown from "../components/CategoryBreakdown";
+import { buscarTodasPaginas } from "../../../../../packages/services/paginacao";
+import { idsDaEmpresa, ehDaEmpresa } from "../../../../../packages/services/empresa.service";
+import { contaNoTotal, ehParteDeOutraPessoa, textoObservacao } from "../../lib/lancamentos";
+import CategoryBreakdown from "../../components/CategoryBreakdown";
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { supabase } from "../../../../packages/services/supabase";
-import { financeService } from "../../../../packages/services/finance.service";
+import { supabase } from "../../../../../packages/services/supabase";
+import { financeService } from "../../../../../packages/services/finance.service";
 import {
 	BarChart,
 	Bar,

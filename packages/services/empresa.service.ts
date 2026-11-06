@@ -9,6 +9,9 @@
  *
  * Sem a seção 14 do SQL, tudo aqui devolve "sem empresa" e o app segue como antes.
  */
+import { sincronizarCaixinhas } from "./caixinhas.service";
+import { taxaAnualAtual } from "./rendimento.service";
+import { calendarioDas, salarioMinimoVigente, SALARIO_MINIMO_RESERVA } from "./dados-publicos.service";
 import { supabase } from "./supabase";
 import { buscarTodasPaginas } from "./paginacao";
 import { ehResgateInvestimento } from "../utils/investimentos";
@@ -38,8 +41,8 @@ export interface Empresa {
 export const LIMITE_MEI_ANO = 81000;
 export const LIMITE_SIMPLES_ANO = 4800000;
 export const SUBLIMITE_SIMPLES = 3600000;
-/** Salário mínimo usado para sugerir o DAS do MEI (5% de INSS + ICMS/ISS fixos). */
-export const SALARIO_MINIMO = 1518;
+/** Salário mínimo de reserva para o DAS do MEI; o vigente vem do Banco Central (dados-publicos.service). */
+export const SALARIO_MINIMO = SALARIO_MINIMO_RESERVA;
 
 /** Simples Nacional (LC 123/2006, anexos atualizados pela LC 155/2016): [teto RBT12, alíquota nominal %, parcela a deduzir]. */
 export const ANEXOS_SIMPLES: Record<Exclude<Anexo, "FATOR_R">, [number, number, number][]> = {
@@ -51,8 +54,8 @@ export const ANEXOS_SIMPLES: Record<Exclude<Anexo, "FATOR_R">, [number, number, 
 };
 
 /** DAS do MEI sugerido pela atividade (o boleto do mês é o que vale). */
-export function dasMeiSugerido(atividade?: string | null): number {
-  const inss = Math.round(SALARIO_MINIMO * 0.05 * 100) / 100;
+export function dasMeiSugerido(atividade?: string | null, salarioMinimo: number = SALARIO_MINIMO): number {
+  const inss = Math.round(salarioMinimo * 0.05 * 100) / 100;
   const extra = atividade === "COMERCIO" || atividade === "INDUSTRIA" ? 1 : atividade === "COMERCIO_SERVICOS" ? 6 : 5;
   return Math.round((inss + extra) * 100) / 100;
 }
@@ -132,6 +135,8 @@ const lerMeta = (obs?: string | null): Record<string, any> => {
 };
 
 export const NOME_RETIRADA: Record<TipoRetirada, string> = { PRO_LABORE: "Pró-labore", LUCROS: "Distribuição de lucros" };
+/** Categoria da ENTRADA na sua conta pessoal: pró-labore é o seu salário; lucros ficam à parte (isentos de IR). */
+export const CATEGORIA_RETIRADA: Record<TipoRetirada, string> = { PRO_LABORE: "Salário", LUCROS: "Distribuição de lucros" };
 
 async function categoriaReceita(usuario_id: string, nome: string): Promise<string | null> {
   const { data: cat } = await supabase.from("categorias").select("id").eq("usuario_id", usuario_id).eq("tipo", "RECEITA").ilike("nome", nome).limit(1).maybeSingle();
@@ -148,7 +153,7 @@ export async function registrarRetirada(
   usuario_id: string,
   p: { contaEmpresa: string; contaPessoal: string; valor: number; data: string; tipo: TipoRetirada; descricao?: string; documento_importado_id?: string | null },
 ) {
-  const categoria_id = await categoriaReceita(usuario_id, NOME_RETIRADA[p.tipo]);
+  const categoria_id = await categoriaReceita(usuario_id, CATEGORIA_RETIRADA[p.tipo]);
   const { data: tx, error } = await supabase
     .from("transacoes")
     .insert([{
@@ -180,12 +185,13 @@ export async function registrarRetirada(
  * Só muda tipo/categoria/descrição; as movimentações (o dinheiro) continuam iguais.
  */
 export async function classificarComoRetirada(usuario_id: string, transacao_id: string, tipo: TipoRetirada, contaPessoal: string, contaEmpresa: string) {
-  const categoria_id = await categoriaReceita(usuario_id, NOME_RETIRADA[tipo]);
+  const categoria_id = await categoriaReceita(usuario_id, CATEGORIA_RETIRADA[tipo]);
   const { error } = await supabase
     .from("transacoes")
     .update({
       tipo: "RECEITA",
       categoria_id,
+      descricao: `${NOME_RETIRADA[tipo]} (empresa)`,
       conta_id: contaPessoal,
       considerar_soma: true,
       observacao: JSON.stringify({ retirada_pj: tipo, conta_empresa_id: contaEmpresa }),
@@ -231,7 +237,7 @@ export interface PainelEmpresa {
   fatorR: number | null;
   anexoEfetivo: string | null;
   /** Caixinhas/investimentos das contas da empresa (dinheiro guardado pela empresa) */
-  investimentos: { id: string; titulo: string; valor: number }[];
+  investimentos: InvestimentoEmpresa[];
 }
 
 const ehImposto = (desc: string, cat?: string | null) => /\b(das|simples nacional|darf|inss|iss|irpj|csll|pis|cofins|gps)\b/i.test(`${desc} ${cat || ""}`);
@@ -249,13 +255,14 @@ export function impostoDoMes(
   ym: string,
   faturamentoMes: number,
   historico: { faturamento: (ym: string) => number; folha: (ym: string) => number; mesesComDados: number },
+  publicos?: { salarioMinimo?: number; vencimento?: (competencia: string) => string },
 ): { valor: number; aliquota: number; detalhe: string; vencimento: string; rbt12: number; fatorR: number | null; anexo: string | null } {
   const [a, m] = ym.split("-").map(Number);
-  const venc = new Date(a, m, 20); // dia 20 do mês seguinte
-  const vencimento = `${venc.getFullYear()}-${String(venc.getMonth() + 1).padStart(2, "0")}-20`;
+  const venc = new Date(a, m, 20); // dia 20 do mês seguinte (sem ajuste de dia útil)
+  const vencimento = publicos?.vencimento?.(ym) || `${venc.getFullYear()}-${String(venc.getMonth() + 1).padStart(2, "0")}-20`;
 
   if (empresa.regime === "MEI") {
-    const valor = Number(empresa.das_mei_valor) || dasMeiSugerido(empresa.atividade);
+    const valor = Number(empresa.das_mei_valor) || dasMeiSugerido(empresa.atividade, publicos?.salarioMinimo);
     return { valor, aliquota: faturamentoMes > 0 ? (valor / faturamentoMes) * 100 : 0, detalhe: "DAS fixo do MEI", vencimento, rbt12: 0, fatorR: null, anexo: null };
   }
 
@@ -304,16 +311,57 @@ export function impostoDoMes(
   };
 }
 
+export type InvestimentoEmpresa = {
+  id: string;
+  titulo: string;
+  /** valor hoje, já com o rendimento (calculado pelas taxas do Banco Central) */
+  valor: number;
+  /** quanto foi aplicado (aplicações − resgates) */
+  aplicado: number;
+  /** quanto já rendeu de juros */
+  rendimento: number;
+  indexador: string | null;
+  taxa: number | null;
+  /** % ao ano pelas taxas atuais (ex.: 100% do CDI ≈ 14,9%); null se o tipo não foi informado */
+  taxaAnual: number | null;
+  /** quanto rende por mês no ritmo de hoje */
+  rendeMes: number | null;
+};
+
 /** Caixinhas e investimentos ligados às contas da empresa (coluna conta_id — SQL seção 12). */
-async function investimentosDaEmpresa(usuario_id: string, contasPJ: Set<string>) {
+async function investimentosDaEmpresa(usuario_id: string, contasPJ: Set<string>): Promise<InvestimentoEmpresa[]> {
+  // atualiza o rendimento das caixinhas antes de mostrar (aplicações do extrato + taxa do BC)
+  await sincronizarCaixinhas(usuario_id).catch(() => {});
   const { data, error } = await supabase.from("investimentos").select("*").eq("usuario_id", usuario_id);
   if (error) return [];
-  return (data || [])
-    .filter((i: any) => i.conta_id && contasPJ.has(i.conta_id))
-    .map((i: any) => ({ id: i.id, titulo: i.titulo, valor: Number(i.valor_atual || 0) }));
+  const lista = (data || []).filter((i: any) => i.conta_id && contasPJ.has(i.conta_id));
+  return Promise.all(
+    lista.map(async (i: any) => {
+      const valor = Number(i.valor_atual || 0);
+      const aplicado = Number(i.valor_investido || 0);
+      const taxaAnual = i.indexador ? await taxaAnualAtual(i.indexador, i.taxa).catch(() => null) : null;
+      return {
+        id: i.id,
+        titulo: i.titulo,
+        valor,
+        aplicado,
+        rendimento: aplicado > 0 ? r2(Math.max(0, valor - aplicado)) : 0,
+        indexador: i.indexador || null,
+        taxa: i.taxa != null ? Number(i.taxa) : null,
+        taxaAnual,
+        rendeMes: taxaAnual != null ? r2(valor * (Math.pow(1 + taxaAnual / 100, 1 / 12) - 1)) : null,
+      };
+    }),
+  );
 }
 
 export async function painelEmpresa(usuario_id: string, empresa: Empresa, ano: number): Promise<PainelEmpresa> {
+  // Vencimento real do DAS (dia útil) e salário mínimo vigente: dados públicos atualizados
+  const [vencimentoDas, salarioMinimo] = await Promise.all([
+    calendarioDas([ano - 1, ano]).catch(() => undefined),
+    salarioMinimoVigente().catch(() => SALARIO_MINIMO_RESERVA),
+  ]);
+  const publicos = { vencimento: vencimentoDas, salarioMinimo };
   const { data: contas } = await supabase.from("contas_bancarias").select("id, nome, empresa_id").eq("usuario_id", usuario_id);
   const contasPJ = new Set((contas || []).filter((c: any) => c.empresa_id === empresa.id).map((c: any) => c.id));
   const contasPF = new Set((contas || []).filter((c: any) => !c.empresa_id).map((c: any) => c.id));
@@ -406,7 +454,7 @@ export async function painelEmpresa(usuario_id: string, empresa: Empresa, ano: n
     const despesasMes = despesas.filter((d) => d.data.startsWith(ym));
     const impostosPagos = r2(despesasMes.filter((d) => ehImposto(d.descricao, d.categoria)).reduce((s, d) => s + d.valor, 0));
     const despesasSemImposto = r2(despesasMes.reduce((s, d) => s + d.valor, 0) - impostosPagos);
-    const imp = impostoDoMes(empresa, ym, faturamento, { faturamento: fat, folha, mesesComDados });
+    const imp = impostoDoMes(empresa, ym, faturamento, { faturamento: fat, folha, mesesComDados }, publicos);
     if (empresa.regime === "MEI" && faturamento === 0 && !receitas.some((r) => r.data < `${ym}-32`)) {
       // MEI paga o DAS mesmo sem faturar; só não conta antes de existir algum dado
     }

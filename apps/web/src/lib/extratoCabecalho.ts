@@ -131,7 +131,8 @@ export function saldoFinalDoExtrato(texto: string): SaldoDoExtrato | null {
 		if (saldo !== null) return { saldo, data: `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` };
 	}
 
-	const inicio = texto.search(/(^|\n)\s*"?data"?\s*[;,]/i);
+	// "Data;..." (Santander) ou "Data Lançamento;..." (Inter PJ)
+	const inicio = texto.search(/(^|\n)\s*"?data[^;,\n]{0,20}"?\s*[;,]/i);
 	if (inicio < 0) return null;
 	const corpo = texto.slice(inicio).replace(/^\s*\n/, "");
 	const primeira = corpo.split(/\r?\n/)[0] || "";

@@ -7,8 +7,8 @@ import {
 	CreditCard, 
 	Users } from "lucide-react";
 import { useEffect } from "react";
-import { supabase } from "../../../../packages/services/supabase";
-import Copyright from "../components/Copyright";
+import { supabase } from "../../../../../packages/services/supabase";
+import Copyright from "../../components/Copyright";
 
 export default function LandingPage() {
 	const navigate = useNavigate();

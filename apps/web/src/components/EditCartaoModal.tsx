@@ -4,6 +4,22 @@ import { X,  Calendar, Palette, Edit3, Info } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
 import toast from "react-hot-toast";
 import { supabase } from "../../../../packages/services/supabase";
+import { getFaturaMesReferencia } from "../../../../packages/utils/cartao.utils";
+
+/** Primeiro dia de compra que já cai na fatura seguinte à que está aberta hoje (dias atuais do cartão). */
+function inicioDaProximaFatura(cartao: any): string {
+	const f = Number(cartao?.fechamento_dia || 1);
+	const v = Number(cartao?.vencimento_dia || 1);
+	const hoje = new Date();
+	const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+	const aberta = getFaturaMesReferencia(iso(hoje), f, v, cartao);
+	const d = new Date(hoje);
+	for (let i = 0; i < 62; i++) {
+		d.setDate(d.getDate() + 1);
+		if (getFaturaMesReferencia(iso(d), f, v, cartao) !== aberta) return iso(d);
+	}
+	return iso(d);
+}
 
 interface EditCartaoModalProps {
 	isOpen: boolean;
@@ -14,6 +30,9 @@ interface EditCartaoModalProps {
 
 export default function EditCartaoModal({ isOpen, onClose, onSuccess, cartao }: EditCartaoModalProps) {
 	const [loading, setLoading] = useState(false);
+	// Mudou o fechamento/vencimento: vale para as próximas faturas, a partir de uma data, ou para tudo?
+	const [aplicarDias, setAplicarDias] = useState<"proximas" | "data" | "tudo">("proximas");
+	const [dataMudanca, setDataMudanca] = useState("");
 	const [form, setForm] = useState({
 		nome: "",
 		limite: "",
@@ -31,10 +50,18 @@ export default function EditCartaoModal({ isOpen, onClose, onSuccess, cartao }: 
 				fechamento_dia: String(cartao.fechamento_dia || 3),
 				cor_hex: cartao.cor_hex || "#6366f1",
 			});
+			setAplicarDias("proximas");
+			setDataMudanca(inicioDaProximaFatura(cartao));
 		}
 	}, [cartao, isOpen]);
 
 	if (!isOpen || !cartao) return null;
+
+	const diasMudaram =
+		(parseInt(form.vencimento_dia) || 1) !== Number(cartao.vencimento_dia) ||
+		(parseInt(form.fechamento_dia) || 1) !== Number(cartao.fechamento_dia);
+	const inicioProxima = inicioDaProximaFatura(cartao);
+	const dataBr = (iso: string) => (iso ? iso.split("-").reverse().join("/") : "");
 
 	const formatCurrency = (v: string) => {
 		const n = v.replace(/\D/g, "");
@@ -62,20 +89,38 @@ export default function EditCartaoModal({ isOpen, onClose, onSuccess, cartao }: 
 
 			const limiteNumerico = parseFloat(form.limite.replace(/\./g, "").replace(",", "."));
 
+			// Dias novos só daqui para frente: guarda os antigos e a data da troca, para as faturas
+			// passadas continuarem como o banco fechou. "Em tudo" recalcula o histórico com os dias novos.
+			let ciclo: Record<string, any> = {};
+			if (diasMudaram) {
+				if (aplicarDias === "tudo") {
+					ciclo = { ciclo_anterior_fechamento: null, ciclo_anterior_vencimento: null, ciclo_mudou_em: null };
+				} else {
+					const desde = aplicarDias === "data" ? dataMudanca : inicioProxima;
+					if (!/^\d{4}-\d{2}-\d{2}$/.test(desde || "")) throw new Error("Escolha a data a partir da qual valem os novos dias.");
+					ciclo = {
+						ciclo_anterior_fechamento: Number(cartao.fechamento_dia) || null,
+						ciclo_anterior_vencimento: Number(cartao.vencimento_dia) || null,
+						ciclo_mudou_em: desde,
+					};
+				}
+			}
+
 			await financeService.updateCartao(user.id, cartao.id, {
 				nome: form.nome,
 				limite: limiteNumerico,
 				vencimento_dia: parseInt(form.vencimento_dia) || 1,
 				fechamento_dia: parseInt(form.fechamento_dia) || 1,
-				cor_hex: form.cor_hex
+				cor_hex: form.cor_hex,
+				...ciclo,
 			});
 
 			toast.success("Cartão atualizado com sucesso!");
 			onSuccess();
 			onClose();
-		} catch (error) {
+		} catch (error: any) {
 			console.error(error);
-			toast.error("Erro ao atualizar cartão.");
+			toast.error(error?.message?.startsWith("Escolha") ? error.message : "Erro ao atualizar cartão.");
 		} finally {
 			setLoading(false);
 		}
@@ -157,6 +202,43 @@ export default function EditCartaoModal({ isOpen, onClose, onSuccess, cartao }: 
 							/>
 						</div>
 					</div>
+
+					{diasMudaram && (
+						<fieldset className="bg-amber-50 dark:bg-amber-950/20 p-4 rounded-2xl border border-amber-200 dark:border-amber-900/40 space-y-2">
+							<legend className="sr-only">A partir de quando valem os novos dias</legend>
+							<p className="text-xs font-black text-amber-800 dark:text-amber-300">
+								Você mudou o fechamento/vencimento ({cartao.fechamento_dia}/{cartao.vencimento_dia} → {form.fechamento_dia || "?"}/{form.vencimento_dia || "?"}). A partir de quando vale?
+							</p>
+							<label className="flex items-start gap-2 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
+								<input type="radio" name="aplicarDias" checked={aplicarDias === "proximas"} onChange={() => setAplicarDias("proximas")} className="mt-0.5 accent-indigo-600" />
+								<span>Das próximas faturas <span className="font-medium text-slate-500 dark:text-slate-400">(compras a partir de {dataBr(inicioProxima)}; as faturas já fechadas ficam como estão)</span></span>
+							</label>
+							<label className="flex items-start gap-2 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
+								<input type="radio" name="aplicarDias" checked={aplicarDias === "data"} onChange={() => setAplicarDias("data")} className="mt-0.5 accent-indigo-600" />
+								<span className="flex flex-wrap items-center gap-2">
+									De uma data específica
+									{aplicarDias === "data" && (
+										<input
+											type="date"
+											value={dataMudanca}
+											onChange={(e) => setDataMudanca(e.target.value)}
+											className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 dark:text-slate-100"
+											aria-label="Compras a partir desta data usam os novos dias"
+										/>
+									)}
+								</span>
+							</label>
+							<label className="flex items-start gap-2 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
+								<input type="radio" name="aplicarDias" checked={aplicarDias === "tudo"} onChange={() => setAplicarDias("tudo")} className="mt-0.5 accent-indigo-600" />
+								<span>De tudo <span className="font-medium text-slate-500 dark:text-slate-400">(eu tinha cadastrado errado: recalcula também as faturas passadas)</span></span>
+							</label>
+							{cartao.ciclo_mudou_em && aplicarDias !== "tudo" && (
+								<p className="text-[11px] text-amber-700 dark:text-amber-400">
+									Este cartão já tinha uma troca em {dataBr(String(cartao.ciclo_mudou_em).slice(0, 10))}; ela será substituída por esta.
+								</p>
+							)}
+						</fieldset>
+					)}
 
 					{/* Explicação de Fechamento vs Vencimento */}
 					<div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-300 space-y-3 leading-relaxed font-semibold transition-colors duration-200">

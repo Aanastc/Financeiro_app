@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
-import { authService } from "../../../../packages/services/auth.service";
-import { financeService } from "../../../../packages/services/finance.service";
-import { getFaturaMesReferencia } from "../../../../packages/utils/cartao.utils";
-import { lerParcelaDaDescricao } from "../../../../packages/utils/parcelas";
+import { authService } from "../../../../../packages/services/auth.service";
+import { financeService } from "../../../../../packages/services/finance.service";
+import { getFaturaMesReferencia } from "../../../../../packages/utils/cartao.utils";
+import { lerParcelaDaDescricao } from "../../../../../packages/utils/parcelas";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
 	CreditCard, 
@@ -21,8 +21,8 @@ import {
 	LayoutGrid } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import FaturaLancamentosModal from "../components/FaturaLancamentosModal";
-import { mesmaInstituicao } from "../../../../packages/utils/instituicoes";
+import FaturaLancamentosModal from "../../components/FaturaLancamentosModal";
+import { mesmaInstituicao } from "../../../../../packages/utils/instituicoes";
 
 const NOMES_MESES = [
 	"Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -187,7 +187,7 @@ export default function Faturas() {
 			const vencimentoDia = cartaoAssociado?.vencimento_dia || 19;
 
 			// O mês da fatura é estritamente derivado pelo ciclo do cartão (compras pós-fechamento caem no mês seguinte)
-			const mesRefTransacao = getFaturaMesReferencia(t.data, fechamentoDia, vencimentoDia);
+			const mesRefTransacao = getFaturaMesReferencia(t.data, fechamentoDia, vencimentoDia, cartaoAssociado);
 			
 			// Filtro de Ano e Mês da FATURA
 			if (filtroAno !== "TODOS" && mesRefTransacao.substring(0, 4) !== filtroAno) return false;

@@ -36,6 +36,10 @@ import GlobalTransactionModal from "../components/GlobalTransactionModal";
 import PageLoader from "../components/PageLoader";
 import Copyright from "../components/Copyright";
 import DesbloquearContaModal from "../components/DesbloquearContaModal";
+import { minhasEmpresas } from "../../../../packages/services/empresa.service";
+
+/** O que a pessoa está vendo: finanças pessoais (PF) ou a empresa (PJ). Só existe PJ com empresa cadastrada. */
+export type Visao = "PF" | "PJ";
 
 export default function DashboardLayout() {
   const navigate = useNavigate();
@@ -52,6 +56,33 @@ export default function DashboardLayout() {
 
   // Sidebar Collapsible
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // PF x EMPRESA: escolhido na barra do topo; o menu lateral e a Home seguem a escolha
+  const [empresaNome, setEmpresaNome] = useState<string | null>(null);
+  const [visao, setVisaoState] = useState<Visao>(() => {
+    const daUrl = new URLSearchParams(window.location.search).get("visao")?.toUpperCase();
+    if (daUrl === "PJ" || daUrl === "PF") return daUrl;
+    try {
+      return localStorage.getItem("home_visao") === "PJ" ? "PJ" : "PF";
+    } catch {
+      return "PF";
+    }
+  });
+  const visaoEfetiva: Visao = empresaNome ? visao : "PF";
+  const mudarVisao = (v: Visao) => {
+    setVisaoState(v);
+    try {
+      localStorage.setItem("home_visao", v);
+    } catch {
+      /* sem armazenamento */
+    }
+    navigate("/home");
+  };
+  const recarregarEmpresa = async (usuarioId?: string | null) => {
+    if (!usuarioId) return;
+    const emps = await minhasEmpresas(usuarioId).catch(() => []);
+    setEmpresaNome(emps[0]?.nome || null);
+  };
 
   const [theme, setTheme] = useState(() => {
     if (typeof window !== "undefined") {
@@ -105,6 +136,7 @@ export default function DashboardLayout() {
   const fetchUser = async () => {
     const user = await authService.getCurrentUser();
     setUserProfile(user);
+    if (user && !(user as any).convidado) await recarregarEmpresa((user as any).id);
   };
 
   useEffect(() => {
@@ -217,10 +249,21 @@ export default function DashboardLayout() {
             )}
           </>
         ) : (
+        visaoEfetiva === "PJ" ? (
+        <>
+        <NavGroup title="Empresa">
+          <NavItem to="/home" icon={LayoutDashboard} label="Painel da empresa" colorClass="text-emerald-500" />
+          <NavItem to="/contas" icon={Wallet} label="Contas" />
+        </NavGroup>
+
+        <NavGroup title="Ferramentas">
+          <NavItem to="/importar" icon={Upload} label="Importar extrato" />
+        </NavGroup>
+        </>
+        ) : (
         <>
         <NavGroup title="Visão Geral">
           <NavItem to="/home" icon={LayoutDashboard} label="Dashboard" />
-          <NavItem to="/home?tab=pj" icon={Building2} label="Finanças PJ & MEI" colorClass="text-emerald-500" badge="Em Breve" />
         </NavGroup>
 
         <NavGroup title="Movimentações">
@@ -242,7 +285,8 @@ export default function DashboardLayout() {
 
         <NavGroup title="Patrimônio">
           <NavItem to="/investimentos" icon={Briefcase} label="Investimentos" colorClass="text-purple-500" />
-          <NavItem to="/empresa" icon={Building2} label="Empresa (CNPJ)" colorClass="text-indigo-500" />
+          {/* Sem empresa: atalho para cadastrar. Com empresa: troca pela chave no topo */}
+          {!empresaNome && <NavItem to="/empresa" icon={Building2} label="Tenho CNPJ" colorClass="text-indigo-500" />}
         </NavGroup>
 
         <NavGroup title="Ferramentas">
@@ -250,6 +294,7 @@ export default function DashboardLayout() {
           <NavItem to="/consultor" icon={Brain} label="Consultor IA" colorClass="text-pink-500" />
         </NavGroup>
         </>
+        )
         )}
       </nav>
     </div>
@@ -298,9 +343,40 @@ export default function DashboardLayout() {
               >
                 <Menu size={24} />
               </button>
-              <h1 className="text-lg font-black text-slate-800 dark:text-slate-100 truncate md:hidden">
+              <h1 className={`text-lg font-black text-slate-800 dark:text-slate-100 truncate md:hidden ${empresaNome && !convidado ? "hidden" : ""}`}>
                 Tech Finance.
               </h1>
+
+              {/* PF x EMPRESA */}
+              {empresaNome && !convidado && (
+                <div role="tablist" aria-label="O que você quer ver" className="flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={visaoEfetiva === "PF"}
+                    onClick={() => mudarVisao("PF")}
+                    className={`flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-black transition-all cursor-pointer ${
+                      visaoEfetiva === "PF" ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                    }`}
+                  >
+                    <Wallet size={15} /> <span>Pessoa Física</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={visaoEfetiva === "PJ"}
+                    onClick={() => mudarVisao("PJ")}
+                    title={empresaNome}
+                    className={`flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-black transition-all cursor-pointer ${
+                      visaoEfetiva === "PJ" ? "bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                    }`}
+                  >
+                    <Building2 size={15} />
+                    <span className="sm:hidden">Empresa</span>
+                    <span className="hidden sm:inline truncate max-w-[200px]">{empresaNome}</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-3 ml-auto">
@@ -398,7 +474,7 @@ export default function DashboardLayout() {
                 </div>
               )}
               <Suspense fallback={<PageLoader />}>
-                <Outlet context={{ userProfile, fetchUser }} />
+                <Outlet context={{ userProfile, fetchUser, visao: visaoEfetiva, temEmpresa: Boolean(empresaNome), recarregarEmpresa: () => recarregarEmpresa(userProfile?.id) }} />
               </Suspense>
               <Copyright className="mt-16" />
             </div>

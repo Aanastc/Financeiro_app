@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Briefcase, User } from "lucide-react";
-import { authService } from "../../../../packages/services/auth.service";
+import { authService } from "../../../../../packages/services/auth.service";
 import toast from "react-hot-toast";
 
 interface MeiOnboardingModalProps {

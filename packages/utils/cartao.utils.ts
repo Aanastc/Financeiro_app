@@ -9,7 +9,7 @@
  * @param vencimentoDia Dia em que a fatura vence
  * @returns Objeto com { dataInicio: string, dataFim: string } no formato "YYYY-MM-DD"
  */
-export function getFaturaCycle(mesReferencia: string, fechamentoDia: number, vencimentoDia: number): { dataInicio: string, dataFim: string } {
+function cicloPorDias(mesReferencia: string, fechamentoDia: number, vencimentoDia: number): { dataInicio: string, dataFim: string } {
     const [ano, mes] = mesReferencia.split("-").map(Number);
     
     let closingMonth = mes;
@@ -57,7 +57,7 @@ export function getFaturaCycle(mesReferencia: string, fechamentoDia: number, ven
  * @param vencimentoDia Dia em que a fatura vence
  * @returns Mês de referência no formato "YYYY-MM"
  */
-export function getFaturaMesReferencia(dataCompra: string, fechamentoDia: number, vencimentoDia: number): string {
+function mesReferenciaPorDias(dataCompra: string, fechamentoDia: number, vencimentoDia: number): string {
     const [year, month, day] = dataCompra.split("-").map(Number);
     let refMonth = month;
     let refYear = year;
@@ -86,4 +86,48 @@ export function getFaturaMesReferencia(dataCompra: string, fechamentoDia: number
     }
 
     return `${refYear}-${String(refMonth).padStart(2, '0')}`;
+}
+
+/**
+ * Banco que muda o vencimento do cartão (ex.: Nubank de "vence 19" para "vence 4"):
+ * compras ANTES de `ciclo_mudou_em` seguem os dias antigos; a partir dela, os novos.
+ * Sem esses campos, tudo funciona como antes (um par de dias só).
+ */
+export type MudancaDeCiclo = {
+    ciclo_anterior_fechamento?: number | null;
+    ciclo_anterior_vencimento?: number | null;
+    ciclo_mudou_em?: string | null;
+};
+
+function temMudanca(c?: MudancaDeCiclo | null): c is Required<MudancaDeCiclo> {
+    return Boolean(c && c.ciclo_mudou_em && Number(c.ciclo_anterior_fechamento) > 0 && Number(c.ciclo_anterior_vencimento) > 0);
+}
+
+/** Mês de referência (mês do vencimento) da fatura em que a compra cai. */
+export function getFaturaMesReferencia(dataCompra: string, fechamentoDia: number, vencimentoDia: number, mudanca?: MudancaDeCiclo | null): string {
+    if (temMudanca(mudanca) && String(dataCompra).slice(0, 10) < String(mudanca.ciclo_mudou_em).slice(0, 10)) {
+        return mesReferenciaPorDias(dataCompra, Number(mudanca.ciclo_anterior_fechamento), Number(mudanca.ciclo_anterior_vencimento));
+    }
+    return mesReferenciaPorDias(dataCompra, fechamentoDia, vencimentoDia);
+}
+
+/** Período de compras da fatura que vence no mês informado (a fatura da troca começa no dia da mudança). */
+export function getFaturaCycle(mesReferencia: string, fechamentoDia: number, vencimentoDia: number, mudanca?: MudancaDeCiclo | null): { dataInicio: string, dataFim: string } {
+    const novo = cicloPorDias(mesReferencia, fechamentoDia, vencimentoDia);
+    if (!temMudanca(mudanca)) return novo;
+    const virada = String(mudanca.ciclo_mudou_em).slice(0, 10);
+    if (novo.dataInicio >= virada) return novo;
+    const antigo = cicloPorDias(mesReferencia, Number(mudanca.ciclo_anterior_fechamento), Number(mudanca.ciclo_anterior_vencimento));
+    if (antigo.dataFim < virada) return antigo;
+    return { dataInicio: virada, dataFim: novo.dataFim };
+}
+
+/** Dia do vencimento da fatura daquele mês (o antigo, para faturas antes da troca). */
+export function getVencimentoDiaDoMes(mesReferencia: string, fechamentoDia: number, vencimentoDia: number, mudanca?: MudancaDeCiclo | null): number {
+    if (!temMudanca(mudanca)) return vencimentoDia;
+    const virada = String(mudanca.ciclo_mudou_em).slice(0, 10);
+    const novo = cicloPorDias(mesReferencia, fechamentoDia, vencimentoDia);
+    if (novo.dataInicio >= virada) return vencimentoDia;
+    const antigo = cicloPorDias(mesReferencia, Number(mudanca.ciclo_anterior_fechamento), Number(mudanca.ciclo_anterior_vencimento));
+    return antigo.dataFim < virada ? Number(mudanca.ciclo_anterior_vencimento) : vencimentoDia;
 }

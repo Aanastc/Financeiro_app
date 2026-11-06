@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "../../../../packages/services/supabase";
-import { financeService } from "../../../../packages/services/finance.service";
+import { supabase } from "../../../../../packages/services/supabase";
+import { financeService } from "../../../../../packages/services/finance.service";
 import {
 	Plus,
 	Target,
@@ -11,10 +11,10 @@ import {
 	Trash2
 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import AddMetaWeb from "../components/AddMetaWeb";
-import AddDepositoWeb from "../components/AddDepositoWeb";
-import MetaExtratoModal from "../components/MetaExtratoModal";
-import PageLoader from "../components/PageLoader";
+import AddMetaWeb from "../../components/AddMetaWeb";
+import AddDepositoWeb from "../../components/AddDepositoWeb";
+import MetaExtratoModal from "../../components/MetaExtratoModal";
+import PageLoader from "../../components/PageLoader";
 
 export default function MetasWeb() {
 	const [metas, setMetas] = useState<any[]>([]);
