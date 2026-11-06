@@ -293,7 +293,11 @@ export default function ImportadorWeb() {
 		contatos,
 		metas,
 		contas,
+		dividasAtivas,
 		globalConta,
+		saldoExtrato,
+		ajustarSaldoAoSalvar,
+		setAjustarSaldoAoSalvar,
 		globalCartao,
 		dragActive,
 		isAddContatoOpen,
@@ -757,7 +761,9 @@ export default function ImportadorWeb() {
 									<select 
 										value={globalConta || ""}
 										onChange={(e) => applyGlobalConta(e.target.value)}
-										className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold outline-none cursor-pointer focus:ring-2 focus:ring-indigo-500 shadow-sm"
+										className={`bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 border rounded-xl px-3 py-2 text-xs font-bold outline-none cursor-pointer focus:ring-2 focus:ring-indigo-500 shadow-sm ${
+											!globalConta && tipoDocumento === "extrato_bancario" ? "border-rose-400 ring-2 ring-rose-300 dark:ring-rose-800" : "border-slate-200 dark:border-slate-700"
+										}`}
 									>
 										<option value="">Selecione a Conta Bancária</option>
 										{contas.map(c => (
@@ -765,6 +771,23 @@ export default function ImportadorWeb() {
 										))}
 									</select>
 
+									{!globalConta && tipoDocumento === "extrato_bancario" && (
+										<span className="text-xs font-bold text-rose-600 dark:text-rose-400">Escolha de qual conta é este extrato</span>
+									)}
+									{saldoExtrato && globalConta && (
+										<label className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer" title="O app passa a mostrar o mesmo saldo que o banco mostra no fim do extrato (o que você lançar depois dessa data continua contando)">
+											<input
+												type="checkbox"
+												checked={ajustarSaldoAoSalvar}
+												onChange={(e) => setAjustarSaldoAoSalvar(e.target.checked)}
+												className="accent-indigo-600"
+											/>
+											Deixar o saldo igual ao do extrato:{" "}
+											<span className="text-slate-800 dark:text-slate-100">
+												{saldoExtrato.saldo.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} em {saldoExtrato.data.split("-").reverse().join("/")}
+											</span>
+										</label>
+									)}
 									{cartoes.length > 0 && tipoDocumento !== "extrato_bancario" && (
 										<div className="flex items-center gap-2">
 											<CreditCard size={18} className="text-purple-600 dark:text-purple-400" />
@@ -1104,13 +1127,41 @@ export default function ImportadorWeb() {
 																<option value="" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-slate-100">🐷 Caixinha do banco</option>
 																{metas.map(m => <option key={m.id} value={m.id} className="bg-white text-slate-800 dark:bg-slate-900 dark:text-slate-100">🎯 Meta: {m.titulo}</option>)}
 															</select>
+														) : item.tipo_transacao === "PagamentoFatura" ? (
+															<span className="text-xs font-bold text-slate-500 dark:text-slate-400" title="Pagar a fatura não é um gasto novo: os gastos são as compras dentro dela">
+																Pagamento de fatura
+															</span>
 														) : (
-															<CategoryCreatableSelect 
-																value={item.categoria}
-																onChange={(val) => updateItem(item.id, "categoria", val)}
-																availableCategories={categorias || CATEGORIAS_PADRAO}
-																onAddCategory={(newCat) => adicionarCategoria(newCat)}
-															/>
+															<div className="flex flex-col gap-1">
+																<CategoryCreatableSelect 
+																	value={item.categoria}
+																	onChange={(val) => updateItem(item.id, "categoria", val)}
+																	availableCategories={categorias || CATEGORIAS_PADRAO}
+																	onAddCategory={(newCat) => adicionarCategoria(newCat)}
+																/>
+																{item.tipo_transacao === "Gasto" && item.divida_id !== undefined && (
+																	<select
+																		className="w-full bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 outline-none font-bold text-[11px] text-amber-800 dark:text-amber-300 p-1.5 rounded-lg cursor-pointer"
+																		value={item.divida_id || ""}
+																		onChange={(e) => updateItem(item.id, "divida_id", e.target.value)}
+																		title="Registra este débito como parcela paga desta dívida (com a data e o valor desta linha)"
+																	>
+																		<option value="" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-slate-100">Não é parcela de dívida</option>
+																		{dividasAtivas
+																			.filter((d: any) => d.tipo !== "renegociacao_cartao")
+																			.map((d: any) => (
+																				<option key={d.id} value={d.id} className="bg-white text-slate-800 dark:bg-slate-900 dark:text-slate-100">
+																					Parcela de: {d.descricao}{d.instituicao ? ` (${d.instituicao})` : ""}
+																				</option>
+																			))}
+																	</select>
+																)}
+																{item.tipo_transacao === "Entrada" && item.tipo === "ESTORNO" && (
+																	<span className="text-[10px] font-bold text-amber-700 dark:text-amber-300" title="Dinheiro devolvido: entra na conta e abate os gastos desta categoria; não conta como receita">
+																		↩ Devolução (abate gastos, não é receita)
+																	</span>
+																)}
+															</div>
 														)}
 													</td>
 

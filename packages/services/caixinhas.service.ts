@@ -32,7 +32,9 @@ export function bancoDaConta(conta: { nome?: string | null; instituicao?: string
   return detectarInstituicao(`${conta.instituicao || ""} ${conta.nome || ""}`)?.nome || conta.instituicao || conta.nome || "Banco";
 }
 
-export const tituloCaixinha = (conta: { nome?: string | null; instituicao?: string | null }) => `Caixinha ${bancoDaConta(conta)}`;
+/** "Caixinha Inter" (pessoal) ou "Caixinha Inter (empresa)" para conta do CNPJ. */
+export const tituloCaixinha = (conta: { nome?: string | null; instituicao?: string | null; empresa_id?: string | null }) =>
+  `Caixinha ${bancoDaConta(conta)}${conta.empresa_id ? " (empresa)" : ""}`;
 
 /** Produto de renda fixa antigo (criado pelo importador) que já representa a caixinha deste banco. */
 const pareceCaixinhaAntiga = (inv: any) => /caixinha|porquinho|cofrinho|reserva|rdb|cdb|poupan/i.test(inv.titulo || "");
@@ -159,7 +161,8 @@ async function executar(usuario_id: string) {
         valor_investido: aplicado,
         valor_atual: aplicado,
         data_inicio: [...fluxos].sort((a, b) => a.data.localeCompare(b.data))[0].data,
-        corretora: corretoraComMeta(banco, reserva?.id || null),
+        // Caixinha da empresa não entra na sua reserva pessoal
+        corretora: corretoraComMeta(banco, conta.empresa_id ? null : reserva?.id || null),
         liquidez_diaria: true,
       };
       let res = await supabase.from("investimentos").insert([{ ...novo, conta_id: conta.id }]).select().single();
@@ -181,6 +184,13 @@ async function executar(usuario_id: string) {
       }
     } else if (temColunas && !inv.conta_id) {
       await atualizar(inv, { conta_id: conta.id });
+    }
+    // Conta passou a ser da empresa: a caixinha vira "(empresa)" e sai da reserva pessoal
+    if (conta.empresa_id) {
+      const dados: any = {};
+      if (/^caixinha\s/i.test(inv.titulo || "") && !/\(empresa\)/i.test(inv.titulo || "")) dados.titulo = titulo;
+      if (reserva && metaIdDoInvestimento(inv.corretora) === reserva.id) dados.corretora = corretoraComMeta(inv.corretora, null);
+      if (Object.keys(dados).length) await atualizar(inv, dados);
     }
     usados.add(inv.id);
     await recalcular(inv, fluxos, temColunas === true, atualizar);

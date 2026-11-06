@@ -242,6 +242,7 @@ export default function DashboardLayout() {
 
         <NavGroup title="Patrimônio">
           <NavItem to="/investimentos" icon={Briefcase} label="Investimentos" colorClass="text-purple-500" />
+          <NavItem to="/empresa" icon={Building2} label="Empresa (CNPJ)" colorClass="text-indigo-500" />
         </NavGroup>
 
         <NavGroup title="Ferramentas">

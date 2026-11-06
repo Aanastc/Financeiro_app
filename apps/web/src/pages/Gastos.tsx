@@ -1,4 +1,5 @@
 import { buscarTodasPaginas } from "../../../../packages/services/paginacao";
+import { idsDaEmpresa, ehDaEmpresa } from "../../../../packages/services/empresa.service";
 import { contaNoTotal, ehParteDeOutraPessoa, textoObservacao, situacaoPagamento } from "../lib/lancamentos";
 import CategoryBreakdown from "../components/CategoryBreakdown";
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -68,8 +69,10 @@ export default function GastosWeb() {
 					.order("id")
 					.range(de, ate),
 			).catch(() => [] as any[]);
-			// Parte de outra pessoa já no seu extrato não é lançamento seu (fica na Divisão de contas)
-			setData(list.filter((t: any) => !ehParteDeOutraPessoa(t)));
+			// Parte de outra pessoa já no seu extrato não é lançamento seu (fica na Divisão de contas);
+			// lançamentos das contas/cartões da empresa ficam na página Empresa
+			const daEmpresa = await idsDaEmpresa(user.id);
+			setData(list.filter((t: any) => !ehParteDeOutraPessoa(t) && !ehDaEmpresa(t, daEmpresa)));
 		}
 		setLoading(false);
 	}, [year]);

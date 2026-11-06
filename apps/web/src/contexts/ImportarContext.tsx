@@ -1,5 +1,6 @@
 import { inserirMovimentacoes, moedasDasContas } from "../../../../packages/services/finance.service";
 import { moedaService, ehReal, MOEDAS, formatarMoeda } from "../../../../packages/services/moeda.service";
+import { minhasEmpresas, registrarRetirada } from "../../../../packages/services/empresa.service";
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { authService } from "../../../../packages/services/auth.service";
@@ -17,6 +18,16 @@ import {
 	nomeArquivoIndicaExtrato,
 } from "../../../../packages/utils/instituicoes";
 import { ehAplicacaoInvestimento, ehResgateInvestimento } from "../../../../packages/utils/investimentos";
+import {
+	lerTextoSePlano,
+	lerCabecalhoConta,
+	contaPeloCabecalho,
+	contaLembrada,
+	lembrarContaDoCabecalho,
+	saldoFinalDoExtrato,
+	type CabecalhoConta,
+	type SaldoDoExtrato,
+} from "../lib/extratoCabecalho";
 
 export interface TransacaoPreview {
 	id: string;
@@ -57,6 +68,8 @@ export interface TransacaoPreview {
 	/** Conversão de moeda dentro da mesma conta (Wise "To CAD"): moeda e valor que entraram */
 	moeda_destino?: string;
 	valor_destino?: number;
+	/** Débito de parcela de empréstimo: dívida que ele paga (baixa a próxima parcela em aberto) */
+	divida_id?: string;
 }
 
 const CODIGOS_MOEDA = new Set(MOEDAS.map((m) => m.codigo));
@@ -118,6 +131,10 @@ interface ImportarContextProps {
 	contas: any[];
 	dividasAtivas: any[];
 	globalConta: string;
+	/** Saldo que o próprio extrato mostra no fim (coluna "Saldo" do CSV / OFX) */
+	saldoExtrato: SaldoDoExtrato | null;
+	ajustarSaldoAoSalvar: boolean;
+	setAjustarSaldoAoSalvar: React.Dispatch<React.SetStateAction<boolean>>;
 	globalCartao: string;
 	globalMetodoPagamento: string;
 	dragActive: boolean;
@@ -174,7 +191,16 @@ export function normalizeText(str: string): string {
  * (IOF, Juros de Limite/Cheque Especial, Tarifas Bancárias, Pagamento de Fatura)
  */
 export function inferDeterministicContabil(descricao: string, _tipo?: string): { categoria?: string; tipo_transacao?: TransacaoPreview['tipo_transacao'] } | null {
-	const descUpper = (descricao || "").toUpperCase();
+	// Sem acento: "Pagamento cartão" e "Pagamento cartao" precisam cair na mesma regra
+	const descUpper = normalizeText(descricao || "").toUpperCase().replace(/\s+/g, " ");
+	// Devolução/estorno de parcela de empréstimo: dinheiro que o banco devolveu (não é receita)
+	if (/(DEVOLUCAO|ESTORNO|RESTITUICAO).*(CONSIGNADO|EMPRESTIMO|PARCELA CRED|CRED CONSIG)/.test(descUpper)) {
+		return { categoria: "Empréstimo", tipo_transacao: "Entrada" };
+	}
+	// Parcela de empréstimo / consignado / financiamento debitada na conta
+	if (/\b(EMPRESTIMO|CONSIGNADO|FINANCIAMENTO)\b/.test(descUpper) && !/(LIBERACAO|CREDITO DE EMPRESTIMO|EMPRESTIMO CONTRATADO|DEPOSITO)/.test(descUpper)) {
+		return { categoria: "Empréstimo", tipo_transacao: "Gasto" };
+	}
 	if (
 		descUpper.includes("LIQUIDO DE VENCIMENTO") || 
 		descUpper.includes("LÍQUIDO DE VENCIMENTO") || 
@@ -197,13 +223,13 @@ export function inferDeterministicContabil(descricao: string, _tipo?: string): {
 	if (descUpper.includes("IOF") || descUpper.includes("IRRF") || descUpper.includes("IMPOSTO OPERA")) {
 		return { categoria: "Impostos e Tarifas", tipo_transacao: "Gasto" };
 	}
-	if (descUpper.includes("JUROS SALDO UTILIZADO") || descUpper.includes("LIMITE DA CONTA") || descUpper.includes("CHEQUE ESPECIAL") || descUpper.includes("JUROS UTILIZADO") || descUpper.includes("ENCARGOS CONTA")) {
+	if (descUpper.includes("JUROS SALDO UTILIZ") || descUpper.includes("LIMITE DA CONTA") || descUpper.includes("CHEQUE ESPECIAL") || descUpper.includes("JUROS UTILIZADO") || descUpper.includes("ENCARGOS CONTA")) {
 		return { categoria: "Juros e Encargos", tipo_transacao: "Gasto" };
 	}
 	if (descUpper.includes("TARIFA") || descUpper.includes("MANUTENCAO DE CONTA") || descUpper.includes("PACOTE DE SERVICOS")) {
 		return { categoria: "Tarifas Bancárias", tipo_transacao: "Gasto" };
 	}
-	if (descUpper.includes("PAGAMENTO FATURA") || descUpper.includes("PAGAMENTO DA FATURA") || descUpper.includes("PGTO FATURA") || descUpper.includes("PAG FATURA") || descUpper.includes("PAGAMENTO CARTAO") || descUpper.includes("PGTO CARTAO")) {
+	if (descUpper.includes("PAGAMENTO FATURA") || descUpper.includes("PAGAMENTO DA FATURA") || descUpper.includes("PGTO FATURA") || descUpper.includes("PAG FATURA") || descUpper.includes("PAGAMENTO CARTAO") || descUpper.includes("PGTO CARTAO") || descUpper.includes("PAGAMENTO DE CARTAO")) {
 		return { categoria: "Cartão de Crédito", tipo_transacao: "PagamentoFatura" };
 	}
 	if (
@@ -416,7 +442,11 @@ export function contaDoOutroLado(texto: string, contasList: any[], contaAtualId?
 		return nc.length >= 4 && numeros.some((n) => n.includes(nc) || nc.includes(n));
 	});
 	if (porNumero.length === 1) return porNumero[0].id;
-	if (/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/.test(t)) return undefined; // empresa (CNPJ): só pelo número
+	if (/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/.test(t)) {
+		// Empresa (CNPJ): é a sua empresa só se houver UMA conta de empresa cadastrada
+		const pj = outras.filter((c) => c.empresa_id);
+		return pj.length === 1 ? pj[0].id : undefined;
+	}
 	const banco = detectarInstituicao(t);
 	if (!banco) return undefined;
 	const doBanco = outras.filter((c) => detectarInstituicao(`${c.instituicao || ""} ${c.nome || ""}`)?.nome === banco.nome);
@@ -605,6 +635,9 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 	const [dividasAtivas, setDividasAtivas] = useState<any[]>([]);
 	
 	const [globalConta, setGlobalConta] = useState("");
+	const [saldoExtrato, setSaldoExtrato] = useState<SaldoDoExtrato | null>(null);
+	const [ajustarSaldoAoSalvar, setAjustarSaldoAoSalvar] = useState(true);
+	const [cabecalhoConta, setCabecalhoConta] = useState<CabecalhoConta | null>(null);
 	const [globalCartao, setGlobalCartao] = useState("");
 	const [globalMetodoPagamento, setGlobalMetodoPagamento] = useState("Débito");
 	const [isAddContatoOpen, setIsAddContatoOpen] = useState<string | null>(null);
@@ -621,10 +654,38 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 
 	const applyGlobalConta = (contaId: string) => {
 		setGlobalConta(contaId);
-		setPreview(prev => prev.map(item => ({
-			...item,
-			conta_id: contaId
-		})));
+		const conta = contas.find((c) => c.id === contaId);
+		// Pagamento de fatura no extrato deste banco = cartão deste banco
+		const cartaoDaConta = conta
+			? cartoes.find((c) => c.conta_id === contaId) || encontrarPorInstituicao(cartoes, `${conta.instituicao || ""} ${conta.nome || ""}`)
+			: undefined;
+		setPreview(prev => prev.map(item => {
+			const novo: TransacaoPreview = { ...item, conta_id: contaId };
+			if (item.tipo_transacao === "PagamentoFatura" && cartaoDaConta) novo.cartao_id = cartaoDaConta.id;
+			// A conta do outro lado da transferência não pode ser a própria conta do extrato
+			if (item.conta_destino_id === contaId) novo.conta_destino_id = "";
+			if (item.tipo_transacao === "Gasto" && /empr[eé]stimo|consignado|financiamento/i.test(item.descricao || "")) {
+				novo.divida_id = dividaDoDebito(item.descricao, contaId) || "";
+			}
+			return novo;
+		}));
+	};
+
+	/** Dívida ativa (empréstimo/financiamento) do mesmo banco da conta que um débito do extrato está pagando. */
+	const dividaDoDebito = (descricao: string, contaId?: string | null): string | undefined => {
+		const conta = contas.find((c) => c.id === contaId);
+		if (!conta) return undefined;
+		const instConta = detectarInstituicao(`${conta.instituicao || ""} ${conta.nome || ""}`);
+		const candidatas = dividasAtivas.filter((d: any) => {
+			if (d.tipo === "renegociacao_cartao") return false;
+			if (!(d.parcelas_divida || []).some((p: any) => p.status !== "paga")) return false;
+			const instDivida = detectarInstituicao(`${d.instituicao || ""} ${d.descricao || ""}`);
+			return Boolean(instConta && instDivida && instConta.id === instDivida.id);
+		});
+		if (candidatas.length <= 1) return candidatas[0]?.id;
+		const consignado = /consign/i.test(descricao || "");
+		const preferida = candidatas.find((d: any) => consignado === /consign/i.test(`${d.descricao || ""} ${d.observacao || ""}`));
+		return (preferida || candidatas[0]).id;
 	};
 
 	const applyGlobalCartao = (cartaoId: string) => {
@@ -783,7 +844,6 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 							cat = "Transferência Interna";
 							item.cartao_id = null;
 							item.metodo_pagamento = "Débito";
-							if (!item.conta_id && contas.length > 0) item.conta_id = contas[0].id;
 							mudouItem = true;
 						}
 					}
@@ -819,7 +879,8 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 				}
 
 				const isPagamentoFatura = tipo === "PagamentoFatura" || descLower.includes("pagamento de fatura") || descLower.includes("pagamento da fatura") || descLower.includes("pgto fatura");
-				if (isPagamentoFatura && tipo !== "PagamentoFatura") {
+				// Pagamento de fatura nunca tem categoria de consumo (ex.: "Alimentação" aprendida do histórico)
+				if (isPagamentoFatura && (tipo !== "PagamentoFatura" || (!item.manualOverride && cat !== "Cartão de Crédito"))) {
 					tipo = "PagamentoFatura";
 					cat = "Cartão de Crédito";
 					mudouItem = true;
@@ -1011,15 +1072,30 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 				ext.dados?.cartao_nome_ou_final,
 			].filter(Boolean).join(" ");
 
-			const contaDetectada = encontrarPorInstituicao(contas, droppedFile.name) || encontrarPorInstituicao(contas, pistaInstituicao);
-			const detectedContaId = contaDetectada?.id || contas[0]?.id || "";
-			if (detectedContaId) setGlobalConta(detectedContaId);
+			// O próprio arquivo diz agência/conta e o saldo final (CSV/OFX) — mais confiável que a IA
+			const textoPlano = await lerTextoSePlano(droppedFile);
+			const cab = textoPlano ? lerCabecalhoConta(textoPlano) : null;
+			setCabecalhoConta(cab);
+			setSaldoExtrato(textoPlano && ext.tipo_documento === "extrato_bancario" ? saldoFinalDoExtrato(textoPlano) : null);
+			setAjustarSaldoAoSalvar(true);
+			const idLembrado = contaLembrada(cab);
+			const contaDetectada =
+				contaPeloCabecalho(cab, contas) ||
+				contas.find((c) => c.id === idLembrado) ||
+				encontrarPorInstituicao(contas, droppedFile.name) ||
+				encontrarPorInstituicao(contas, `${pistaInstituicao} ${(textoPlano || "").slice(0, 1500)}`);
+			// Sem reconhecer a conta, NÃO chuta a primeira da lista: a pessoa escolhe no topo
+			const detectedContaId = contaDetectada?.id || (contas.length === 1 ? contas[0].id : "");
+			setGlobalConta(detectedContaId);
+			if (!detectedContaId && ext.tipo_documento === "extrato_bancario") {
+				toast("Não reconheci de qual banco é este extrato. Escolha a conta no topo da tabela.", { icon: "🏦", duration: 6000 });
+			}
 
 			// Cartão padrão para pagamentos de fatura: o vinculado à conta do extrato, senão o da mesma instituição
 			const cartaoPadraoPagamento =
 				cartoes.find(c => detectedContaId && c.conta_id === detectedContaId) ||
-				encontrarPorInstituicao(cartoes, pistaInstituicao) ||
-				cartoes[0];
+				(contaDetectada ? encontrarPorInstituicao(cartoes, `${contaDetectada.instituicao || ""} ${contaDetectada.nome || ""}`) : undefined) ||
+				encontrarPorInstituicao(cartoes, pistaInstituicao);
 
 			let detectedCartaoId = "";
 			if (ext.tipo_documento === "fatura_cartao" && !pareceExtrato) {
@@ -1129,12 +1205,18 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 						};
 					});
 
-				const faturaPagamentos = (ext.dados?.pagamentos || []).map((p: any) => ({
+				// "Pagamento recebido" que veio no meio dos itens também é pagamento (não pode sumir)
+				const pagamentosNosItens = (ext.dados?.itens || [])
+					.filter((t: any) => /pagamento\s*recebido/i.test(t.descricao || ""))
+					.map((t: any) => ({ data: t.data, descricao: t.descricao, valor: Math.abs(Number(t.valor) || 0) }));
+				const faturaPagamentos = [...(ext.dados?.pagamentos || []), ...pagamentosNosItens].map((p: any) => ({
 					...p,
+					valor: Math.abs(Number(p.valor) || 0),
 					tipo_transacao: "PagamentoFatura",
 					metodo_pagamento: "Débito",
 					cartao_id: detectedCartaoId,
-					conta_id: detectedContaId || null,
+					// A saída do dinheiro é registrada pelo extrato da conta; aqui só quita a fatura
+					conta_id: null,
 					categoria: "Pagamento de Fatura",
 					classificacao: "Pagamento",
 					tipo: "PAGAMENTO_FATURA",
@@ -1234,7 +1316,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 				}
 
 				// Aprendizado por histórico do usuário (ex: transações para 'Rafael' aprendidas como 'Assinaturas')
-				const learnedCat = (!contabil && !isContatoTerceiro && !isTransfPropria && !isAplicacao && !isLimiteConvertido)
+				const learnedCat = (!contabil && !isContatoTerceiro && !isTransfPropria && !isAplicacao && !isLimiteConvertido && tipoFinal !== "PagamentoFatura")
 					? inferFromUserHistory(cleanDesc, favorecido, gastosExistentes, categoriaMap)
 					: null;
 
@@ -1249,6 +1331,12 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 								: (contabil?.categoria 
 									|| learnedCat 
 									|| (categorias.some(c => c.toLowerCase() === (t.categoria_sugerida || "").toLowerCase()) ? t.categoria_sugerida : (CATEGORIAS_PADRAO.includes(t.categoria_sugerida) ? t.categoria_sugerida : "Outros"))))));
+
+				// Pagamento de fatura não é consumo: nunca herda categoria como "Alimentação"
+				if (tipoFinal === "PagamentoFatura") categoriaFinal = "Cartão de Crédito";
+				// Empréstimo: devolução de parcela = estorno (abate o que saiu); débito = parcela da dívida
+				const ehCoisaDeEmprestimo = contabil?.categoria === "Empréstimo" && !isTransfPropria && !isContatoTerceiro;
+				const ehDevolucaoEmprestimo = ehCoisaDeEmprestimo && tipoFinal === "Entrada";
 
 				// Sem meta escolhida, a aplicação vai para a caixinha do próprio banco (ex.: "Caixinha Inter")
 				const metaIdFinal = t.meta_id || "";
@@ -1311,7 +1399,14 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					ignorar: deveIgnorar,
 					ignoredReason: motivoIgnorar || "",
 					classificacao: isLimiteConvertido ? "Ajuste" : "Variável",
-					tipo: isLimiteConvertido ? "AJUSTE" : (t.tipo || (tipoFinal === "Entrada" ? "RECEITA" : "DESPESA")),
+					tipo: isLimiteConvertido
+						? "AJUSTE"
+						: tipoFinal === "Entrada"
+							? (ehDevolucaoEmprestimo || t.tipo === "ESTORNO" || /\bestorno\b/i.test(cleanDesc) ? "ESTORNO" : "RECEITA")
+							: tipoFinal === "Gasto"
+								? (t.tipo === "AJUSTE" ? "AJUSTE" : "DESPESA")
+								: (t.tipo || "DESPESA"),
+					divida_id: ehCoisaDeEmprestimo && tipoFinal === "Gasto" ? (dividaDoDebito(cleanDesc, contaIdFinal) || "") : undefined,
 					documento_importado_id: docId || undefined
 				};
 			});
@@ -1431,6 +1526,13 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			return;
 		}
 
+		// Extrato sem conta escolhida iria para a conta errada
+		const precisaConta = itemsToSave.some((i) => i.tipo_transacao !== "Fatura" && !i.cartao_id && !(i.conta_id || globalConta));
+		if (tipoDocumento === "extrato_bancario" && precisaConta) {
+			toast.error("Escolha no topo de qual conta é este extrato antes de salvar.");
+			return;
+		}
+
 		setLoading(true);
 		try {
 			const { data: { user } } = await supabase.auth.getUser();
@@ -1472,18 +1574,24 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			const entradas = itemsToSave.filter(i => i.tipo_transacao === "Entrada");
 			for (const item of entradas) {
 				const isLimite = item.tipo === "AJUSTE" || (item.descricao && /limite\s+convertido/i.test(item.descricao));
-				const txTipo = isLimite ? "AJUSTE" : "RECEITA";
+				// Estorno/devolução (ex.: parcela do consignado devolvida): dinheiro volta para a conta,
+				// mas não é receita — abate os gastos da categoria (aparece em Gastos como crédito)
+				const isEstorno = !isLimite && item.tipo === "ESTORNO";
+				const txTipo = isLimite ? "AJUSTE" : isEstorno ? "ESTORNO" : "RECEITA";
 				const txCat = isLimite ? "Financiamento / Ajuste de Limite" : (item.categoria || "Outros");
 
 				// Mapeia categoria_id existente ou cria uma se necessário
 				let categoriaId: string | null = null;
 				if (txCat) {
-					const { data: cat } = await supabase
+					// Estorno abate gasto: usa a categoria de despesa com esse nome (ex.: "Empréstimo")
+					const { data: cats } = await supabase
 						.from("categorias")
-						.select("id")
+						.select("id, tipo")
 						.eq("usuario_id", user.id)
-						.ilike("nome", txCat.trim())
-						.maybeSingle();
+						.ilike("nome", txCat.trim());
+					const cat = isEstorno
+						? (cats || []).find((c: any) => c.tipo === "DESPESA") || (cats || [])[0]
+						: (cats || []).find((c: any) => c.tipo !== "DESPESA") || (cats || [])[0];
 					if (cat) {
 						categoriaId = cat.id;
 					} else {
@@ -1492,7 +1600,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 							.insert([{
 								usuario_id: user.id,
 								nome: txCat.trim(),
-								tipo: "RECEITA",
+								tipo: isEstorno ? "DESPESA" : "RECEITA",
 								ativa: true,
 								cor_hex: "#10B981"
 							}])
@@ -1502,7 +1610,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					}
 				}
 
-				const contaIdFinal = item.conta_id || globalConta || (contas.length > 0 ? contas[0].id : null);
+				const contaIdFinal = item.conta_id || globalConta || null;
 
 				const { data: tx, error } = await supabase
 					.from("transacoes")
@@ -1552,7 +1660,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 				const finalTipo = isLimite ? "AJUSTE" : (item.tipo || "DESPESA");
 				const finalCat = isLimite ? "Financiamento / Ajuste de Limite" : item.categoria;
 
-				await financeService.addGasto(user.id, {
+				const txGasto = await financeService.addGasto(user.id, {
 					descricao: item.descricao,
 					valor: item.valor,
 					data: item.data,
@@ -1577,6 +1685,12 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					cotacao: item.cotacao,
 					moeda_mov: item.moeda_mov,
 				});
+				// Parcela de empréstimo paga pelo extrato: dá baixa na dívida (data e valor reais)
+				if (item.divida_id && !isFaturaTrans && (txGasto as any)?.id) {
+					await financeService
+						.vincularPagamentoDivida(user.id, { transacao_id: (txGasto as any).id, divida_id: item.divida_id, valor: item.valor, data: item.data })
+						.catch((e: any) => console.warn("Não consegui ligar o débito à dívida:", e));
+				}
 				importados++;
 			}
 
@@ -1637,6 +1751,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			//    - a outra conta já registrou a perna contrária (extrato do outro banco)? só completa;
 			//    - senão cria a transferência (conta do outro lado é opcional).
 			const transferencias = itemsToSave.filter(i => i.tipo_transacao === "Transferencia");
+			const empresasDoUsuario = transferencias.length ? await minhasEmpresas(user.id) : [];
 			const somarDias = (iso: string, d: number) => {
 				const x = new Date(`${iso}T12:00:00`);
 				x.setDate(x.getDate() + d);
@@ -1762,6 +1877,24 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					if (completadas && doOutroLado.length) continue;
 				}
 
+				// Da conta da empresa para uma conta pessoal sua = retirada (pró-labore ou lucros)
+				const origemConta = contas.find((c) => c.id === (entrou ? outra : contaDoc));
+				const destinoConta = contas.find((c) => c.id === (entrou ? contaDoc : outra));
+				if (origemConta?.empresa_id && destinoConta && !destinoConta.empresa_id) {
+					const emp = empresasDoUsuario.find((e) => e.id === origemConta.empresa_id);
+					await registrarRetirada(user.id, {
+						contaEmpresa: origemConta.id,
+						contaPessoal: destinoConta.id,
+						valor: item.valor,
+						data: item.data,
+						tipo: emp?.retirada_padrao || "PRO_LABORE",
+						descricao: item.descricao,
+						documento_importado_id: documentoImportadoId || null,
+					});
+					importados++;
+					continue;
+				}
+
 				await financeService.addTransacao(user.id, {
 					tipo: "TRANSFERENCIA",
 					descricao: item.descricao || "Transferência entre contas próprias",
@@ -1793,6 +1926,29 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 
 			await financeService.syncMetasInvestimentos(user.id).catch(() => {});
 			await financeService.autoSyncDividasComTransacoes(user.id).catch(() => {});
+
+			// Conta do extrato: lembra a agência/conta e confere o saldo com o que o banco mostra
+			if (tipoDocumento === "extrato_bancario" && globalConta) {
+				lembrarContaDoCabecalho(cabecalhoConta, globalConta);
+				const contaObj = contas.find((c) => c.id === globalConta);
+				if (contaObj && cabecalhoConta?.conta && !contaObj.numero_conta) {
+					await supabase
+						.from("contas_bancarias")
+						.update({ numero_conta: cabecalhoConta.conta, ...(contaObj.agencia ? {} : { agencia: cabecalhoConta.agencia || null }) })
+						.eq("id", globalConta)
+						.eq("usuario_id", user.id);
+				}
+				if (saldoExtrato && ajustarSaldoAoSalvar) {
+					try {
+						const ajuste = await igualarSaldoAoExtrato(user.id, globalConta, saldoExtrato);
+						if (ajuste !== null) {
+							toast.success(`Saldo da conta ajustado para bater com o extrato (${formatarMoeda(saldoExtrato.saldo, "BRL")} em ${saldoExtrato.data.split("-").reverse().join("/")}).`, { duration: 6000 });
+						}
+					} catch (e: any) {
+						toast.error("Importei, mas não consegui ajustar o saldo: " + (e?.message || e));
+					}
+				}
+			}
 			toast.success(`${importados} lançamentos importados com sucesso!`);
 			await carregarDadosBase();
 			resetImport();
@@ -1804,7 +1960,41 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 		}
 	};
 
+	/**
+	 * Deixa o saldo da conta igual ao do extrato na data dele. O que foi lançado depois dessa data
+	 * continua contando (saldo de hoje = saldo do extrato + movimentos posteriores).
+	 * Devolve a diferença aplicada, ou null se já batia.
+	 */
+	const igualarSaldoAoExtrato = async (usuarioId: string, contaId: string, ref: SaldoDoExtrato): Promise<number | null> => {
+		const conta = contas.find((c) => c.id === contaId);
+		const moedaConta = conta?.moeda || "BRL";
+		let depois = 0;
+		for (let de = 0; ; de += 1000) {
+			const { data, error } = await supabase
+				.from("movimentacoes")
+				.select("tipo, valor, moeda")
+				.eq("usuario_id", usuarioId)
+				.eq("conta_id", contaId)
+				.gt("data", ref.data)
+				.range(de, de + 999);
+			if (error) throw error;
+			for (const m of data || []) {
+				if (m.moeda && m.moeda !== moedaConta) continue;
+				depois += (m.tipo === "ENTRADA" ? 1 : -1) * Number(m.valor || 0);
+			}
+			if (!data || data.length < 1000) break;
+		}
+		const saldoHoje = Math.round((ref.saldo + depois) * 100) / 100;
+		const antes = (await financeService.getContasBancarias(usuarioId)).find((c: any) => c.id === contaId);
+		const diferenca = Math.round((saldoHoje - Number(antes?.saldo_atual || 0)) * 100) / 100;
+		if (Math.abs(diferenca) < 0.01) return null;
+		await financeService.ajustarSaldoConta(usuarioId, contaId, saldoHoje);
+		return diferenca;
+	};
+
 	const resetImport = () => {
+		setSaldoExtrato(null);
+		setCabecalhoConta(null);
 		setFile(null);
 		setPreview([]);
 		setProgress(0);
@@ -1832,6 +2022,9 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 				contas,
 				dividasAtivas,
 				globalConta,
+				saldoExtrato,
+				ajustarSaldoAoSalvar,
+				setAjustarSaldoAoSalvar,
 				globalCartao,
 				globalMetodoPagamento,
 				dragActive,

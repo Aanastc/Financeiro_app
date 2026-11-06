@@ -426,19 +426,32 @@ export const financeService = {
   async marcarFaturasComoPagas(usuario_id: string, faturaIds: string[]) {
     const { data: faturas, error } = await supabase
       .from("faturas")
-      .select("id, valor_total")
+      .select("id, cartao_id, valor_total, valor_pago, data_vencimento")
       .eq("usuario_id", usuario_id)
       .in("id", faturaIds);
     if (error) throw error;
+    let n = 0;
     for (const f of faturas || []) {
-      const { error: errUp } = await supabase
-        .from("faturas")
-        .update({ status: "paga", valor_pago: Number(f.valor_total || 0) })
-        .eq("id", f.id)
-        .eq("usuario_id", usuario_id);
-      if (errUp) throw errUp;
+      const falta = Math.round((Number(f.valor_total || 0) - Number(f.valor_pago || 0)) * 100) / 100;
+      if (falta <= 0.009) continue;
+      // Pagamento registrado no dia do vencimento, sem conta (o saldo das contas não muda;
+      // se o extrato do banco com esse pagamento for importado depois, conta uma vez só)
+      const { error: errTx } = await supabase.from("transacoes").insert([{
+        usuario_id,
+        tipo: "PAGAMENTO_FATURA",
+        descricao: "Pagamento de fatura (marcado como pago)",
+        valor: falta,
+        data: f.data_vencimento,
+        cartao_id: f.cartao_id,
+        fatura_id: f.id,
+        status: "confirmada",
+        observacao: "Marcado como pago pelo usuário",
+      }]);
+      if (errTx) throw errTx;
+      await supabase.from("faturas").update({ status: "paga", valor_pago: Number(f.valor_total || 0) }).eq("id", f.id).eq("usuario_id", usuario_id);
+      n++;
     }
-    return (faturas || []).length;
+    return n;
   },
 
   /**
@@ -960,7 +973,8 @@ export const financeService = {
         usuario_id,
         transacao_id: transacao.id,
         conta_id: form.conta_id,
-        tipo: 'SAIDA',
+        // estorno/devolução na conta é dinheiro voltando
+        tipo: transacao.tipo === 'ESTORNO' ? 'ENTRADA' : 'SAIDA',
         valor: valorDestaParcela,
         // extrato em outra moeda: sai do saldo daquela moeda, no valor exato do extrato
         moeda: form.moeda_mov || undefined,
@@ -1613,8 +1627,10 @@ export const financeService = {
         .order("data_vencimento", { ascending: false });
 
       if (faturas && faturas.length > 0) {
-        const pendente = faturas.find(f => f.status !== "paga");
-        targetFaturaId = pendente ? pendente.id : faturas[0].id;
+        // A fatura paga é a que já tinha fechado na data do pagamento (a mais recente delas)
+        const fechadas = faturas.filter(f => String(f.data_fechamento || "") < String(params.data));
+        const alvo = fechadas.find(f => f.status !== "paga") || fechadas[0] || faturas[faturas.length - 1];
+        targetFaturaId = alvo?.id;
       }
     }
 
@@ -1832,6 +1848,10 @@ export const financeService = {
 
       if (!txs || txs.length === 0) return;
 
+      // Lançamento que já pagou uma parcela não serve para outra
+      const { data: vinculados } = await supabase.from("pagamentos_divida").select("transacao_id");
+      const jaUsadas = new Set((vinculados || []).map((v: any) => v.transacao_id));
+
       for (const divida of dividasAtivas) {
         const instLower = (divida.instituicao || "").toLowerCase();
         const descDividaLower = (divida.descricao || "").toLowerCase();
@@ -1842,6 +1862,7 @@ export const financeService = {
         // Para cada parcela pendente, verificar se existe um débito correspondente próximo da data de vencimento
         for (const p of pendentes) {
           const matchingTx = txs.find(t => {
+            if (jaUsadas.has(t.id)) return false;
             const tDesc = (t.descricao || "").toLowerCase();
             const tVal = Math.abs(Number(t.valor || 0));
             const pVal = Math.abs(Number(p.valor_esperado || 0));
@@ -1859,11 +1880,13 @@ export const financeService = {
           });
 
           if (matchingTx) {
+            jaUsadas.add(matchingTx.id);
             // Marcar APENAS essa parcela como paga
             await supabase
               .from("parcelas_divida")
               .update({ status: 'paga' })
               .eq("id", p.id);
+            await this.gravarDadosPagamentoParcela(p.id, matchingTx.data, Math.abs(Number(matchingTx.valor)));
 
             // Registrar pagamento
             const { data: jaExiste } = await supabase
@@ -2020,6 +2043,135 @@ export const financeService = {
     return tx;
   },
 
+  /** Grava quando e quanto foi pago na parcela (SQL seção 17). Sem as colunas, segue só com o status. */
+  async gravarDadosPagamentoParcela(parcela_id: string, data_pagamento: string | null, valor_pago: number | null) {
+    const { error } = await supabase
+      .from("parcelas_divida")
+      .update({ data_pagamento, valor_pago })
+      .eq("id", parcela_id);
+    if (error && !/data_pagamento|valor_pago|column|schema cache/i.test(error.message || "")) throw error;
+  },
+
+  /** Falta pagar = soma das parcelas em aberto; sem nenhuma em aberto, a dívida fica quitada. */
+  async recalcularDivida(divida_id: string) {
+    const { data: parcelas } = await supabase.from("parcelas_divida").select("valor_esperado, status").eq("divida_id", divida_id);
+    if (!parcelas || parcelas.length === 0) return;
+    const abertas = parcelas.filter((p: any) => p.status !== "paga");
+    const falta = Math.round(abertas.reduce((acc: number, p: any) => acc + Number(p.valor_esperado || 0), 0) * 100) / 100;
+    await supabase
+      .from("dividas")
+      .update(abertas.length ? { status: "ativa", valor_atual: falta } : { status: "quitada", valor_atual: 0 })
+      .eq("id", divida_id);
+  },
+
+  /**
+   * Registra o pagamento de uma parcela com a data e o valor de verdade
+   * (adiantamento costuma sair antes do vencimento e com desconto).
+   *  - debitar = true  → lança a saída na conta agora;
+   *  - debitar = false → o dinheiro já saiu (está no extrato): só dá baixa, e vincula ao lançamento se informado.
+   */
+  async registrarPagamentoParcela(
+    usuario_id: string,
+    p: { divida_id: string; parcela_id: string; valor_pago: number; data_pagamento: string; debitar: boolean; conta_id?: string | null; transacao_id?: string | null }
+  ) {
+    if (p.debitar) {
+      if (!p.conta_id) throw new Error("Escolha a conta de onde saiu o dinheiro.");
+      await this.pagarParcelaDivida(usuario_id, p.parcela_id, p.divida_id, p.valor_pago, p.conta_id, p.data_pagamento);
+    } else {
+      await supabase.from("parcelas_divida").update({ status: "paga" }).eq("id", p.parcela_id);
+      if (p.transacao_id) {
+        const { data: ja } = await supabase.from("pagamentos_divida").select("id").eq("transacao_id", p.transacao_id).maybeSingle();
+        if (!ja) {
+          await supabase.from("pagamentos_divida").insert([{
+            divida_id: p.divida_id,
+            parcela_id: p.parcela_id,
+            transacao_id: p.transacao_id,
+            valor_pago: p.valor_pago,
+            data_pagamento: p.data_pagamento,
+            tipo_pagamento: "parcela",
+          }]);
+        }
+      }
+    }
+    await this.gravarDadosPagamentoParcela(p.parcela_id, p.data_pagamento, p.valor_pago);
+    await this.recalcularDivida(p.divida_id);
+  },
+
+  /** Corrige a data/valor de uma parcela já paga (e do vínculo com o lançamento, se houver). */
+  async editarPagamentoParcela(parcela_id: string, data_pagamento: string, valor_pago: number) {
+    await this.gravarDadosPagamentoParcela(parcela_id, data_pagamento, valor_pago);
+    await supabase.from("pagamentos_divida").update({ data_pagamento, valor_pago }).eq("parcela_id", parcela_id);
+  },
+
+  /** "Paguei até a parcela N": dá baixa em todas as parcelas em aberto até ela (sem lançar dinheiro). */
+  async marcarParcelasPagasAte(divida_id: string, numero_parcela: number) {
+    const { error } = await supabase
+      .from("parcelas_divida")
+      .update({ status: "paga" })
+      .eq("divida_id", divida_id)
+      .lte("numero_parcela", numero_parcela)
+      .neq("status", "paga");
+    if (error) throw error;
+    await this.recalcularDivida(divida_id);
+  },
+
+  /**
+   * Débito de empréstimo vindo do extrato: liga o lançamento à parcela (a escolhida ou a
+   * próxima em aberto — pagamento adiantado baixa a parcela mais antiga que falta).
+   */
+  async vincularPagamentoDivida(
+    usuario_id: string,
+    p: { transacao_id: string; divida_id: string; parcela_id?: string | null; valor: number; data: string }
+  ) {
+    const { data: ja } = await supabase.from("pagamentos_divida").select("id, parcela_id").eq("transacao_id", p.transacao_id).maybeSingle();
+    if (ja) return ja.parcela_id || null;
+
+    let parcelaId = p.parcela_id || null;
+    // 1º: parcela já marcada como paga mas sem registro de quando/quanto (ex.: "paguei até jan/27"),
+    //     a partir do mês do pagamento — o débito do extrato é o comprovante dela.
+    if (!parcelaId) {
+      const { data: semRegistro, error: errSem } = await supabase
+        .from("parcelas_divida")
+        .select("id, data_vencimento")
+        .eq("divida_id", p.divida_id)
+        .eq("status", "paga")
+        .is("data_pagamento", null)
+        .gte("data_vencimento", `${p.data.slice(0, 7)}-01`)
+        .order("numero_parcela", { ascending: true });
+      if (!errSem && semRegistro?.length) {
+        const { data: ligadas } = await supabase.from("pagamentos_divida").select("parcela_id").eq("divida_id", p.divida_id);
+        const comPagamento = new Set((ligadas || []).map((l: any) => l.parcela_id));
+        parcelaId = semRegistro.find((x: any) => !comPagamento.has(x.id))?.id || null;
+      }
+    }
+    // 2º: a próxima parcela em aberto (adiantamento baixa a mais antiga que falta)
+    if (!parcelaId) {
+      const { data: abertas } = await supabase
+        .from("parcelas_divida")
+        .select("id")
+        .eq("divida_id", p.divida_id)
+        .neq("status", "paga")
+        .order("numero_parcela", { ascending: true })
+        .limit(1);
+      parcelaId = abertas?.[0]?.id || null;
+    }
+
+    await supabase.from("pagamentos_divida").insert([{
+      divida_id: p.divida_id,
+      parcela_id: parcelaId,
+      transacao_id: p.transacao_id,
+      valor_pago: p.valor,
+      data_pagamento: p.data,
+      tipo_pagamento: parcelaId ? "parcela" : "amortizacao",
+    }]);
+    if (parcelaId) {
+      await supabase.from("parcelas_divida").update({ status: "paga" }).eq("id", parcelaId);
+      await this.gravarDadosPagamentoParcela(parcelaId, p.data, p.valor);
+    }
+    await this.recalcularDivida(p.divida_id);
+    return parcelaId;
+  },
+
   async quitarDividaManual(divida_id: string, marcarParcelasComoPagas: boolean = true) {
     if (marcarParcelasComoPagas) {
       await supabase
@@ -2060,11 +2212,9 @@ export const financeService = {
       })
       .eq("id", parcela_id);
     if (error) throw error;
-
-    // Recalcular status da dívida
-    const { data: parcelas } = await supabase.from("parcelas_divida").select("status").eq("divida_id", divida_id);
-    const todasPagas = parcelas && parcelas.length > 0 && parcelas.every(p => p.status === 'paga');
-    await supabase.from("dividas").update({ status: todasPagas ? 'quitada' : 'ativa' }).eq("id", divida_id);
+    // Voltou para "em aberto": some a data/valor pagos
+    if (novoStatus === 'pendente') await this.gravarDadosPagamentoParcela(parcela_id, null, null);
+    await this.recalcularDivida(divida_id);
   },
 
   async marcarParcelasVencidasPagas(divida_id: string) {
@@ -2322,7 +2472,7 @@ export const financeService = {
       .filter(t => {
         const desc = (t.descricao || "").toLowerCase();
         const isPagamento = t.tipo === "PAGAMENTO_FATURA" || desc.includes("pagamento recebido") || desc.includes("pagamento de fatura") || desc.includes("pagamento cartão");
-        const isEstorno = t.tipo === "ESTORNO" || desc.includes("estorno") || desc.includes("crédito de fatura") || desc.includes("desconto (nufinanceira)");
+        const isEstorno = t.tipo === "ESTORNO" || desc.includes("estorno") || desc.includes("crédito de fatura") || desc.includes("desconto (nufinanceira)") || /^cr[eé]dito de\b/.test(desc.trim());
         return !isPagamento && !isEstorno;
       })
       .reduce((sum, t) => sum + Math.abs(Number(t.valor || 0)), 0);
@@ -2332,7 +2482,7 @@ export const financeService = {
     return (itens || [])
       .filter(t => {
         const desc = (t.descricao || "").toLowerCase();
-        const isEstorno = t.tipo === "ESTORNO" || desc.includes("estorno") || desc.includes("crédito de fatura") || desc.includes("desconto (nufinanceira)");
+        const isEstorno = t.tipo === "ESTORNO" || desc.includes("estorno") || desc.includes("crédito de fatura") || desc.includes("desconto (nufinanceira)") || /^cr[eé]dito de\b/.test(desc.trim());
         return isEstorno;
       })
       .reduce((sum, t) => sum + Math.abs(Number(t.valor || 0)), 0);
@@ -2517,13 +2667,20 @@ export const financeService = {
       if (transacoes.length === 0) return;
 
       const cardsMap = new Map(cards.map((c: any) => [c.id, c]));
+      const ehPagamento = (t: any) => t.tipo === "PAGAMENTO_FATURA" || /pagamento\s*recebido|pagamento\s*de\s*fatura|pagamento\s*cart[aã]o/i.test(t.descricao || "");
 
       // Agrupa transações por cartao_id e mesReferencia
       const groups = new Map<string, { card: any, mesRef: string, items: any[] }>();
+      // Pagamentos ficam à parte: pagam a fatura FECHADA anterior, não o ciclo em que caem
+      const pagamentosPorCartao = new Map<string, any[]>();
 
       for (const tx of transacoes) {
         const card = cardsMap.get(tx.cartao_id);
         if (!card) continue;
+        if (ehPagamento(tx)) {
+          pagamentosPorCartao.set(card.id, [...(pagamentosPorCartao.get(card.id) || []), tx]);
+          continue;
+        }
 
         const mesRef = getFaturaMesReferencia(tx.data, card.fechamento_dia, card.vencimento_dia);
         const groupKey = `${card.id}_${mesRef}`;
@@ -2532,6 +2689,48 @@ export const financeService = {
           groups.set(groupKey, { card, mesRef, items: [] });
         }
         groups.get(groupKey)!.items.push(tx);
+      }
+
+      // Distribui cada pagamento: primeiro na fatura já fechada (a que ele está pagando),
+      // o que sobrar vai para a fatura aberta. Pagamento repetido (mesmo valor em até 5 dias,
+      // um vindo do extrato da conta e outro da fatura) conta uma vez só.
+      const mesAntes = (ym: string) => {
+        const [a, m] = ym.split("-").map(Number);
+        const d = new Date(a, m - 2, 1);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      };
+      const pagoPorGrupo = new Map<string, number>();
+      const totalDoGrupo = (key: string) => {
+        const g = groups.get(key);
+        return g ? this.calculateInvoiceTotal(g.items) : 0;
+      };
+      for (const [cardId, lista] of pagamentosPorCartao) {
+        const card = cardsMap.get(cardId);
+        const ordenados = [...lista].sort((a, b) => String(a.data).localeCompare(String(b.data)));
+        const considerados: any[] = [];
+        for (const p of ordenados) {
+          const dia = (x: any) => new Date(String(x.data).slice(0, 10) + "T12:00:00").getTime();
+          const repetido = considerados.find((q) =>
+            Math.abs(Math.abs(Number(q.valor)) - Math.abs(Number(p.valor))) < 0.01 &&
+            Math.abs(dia(q) - dia(p)) <= 5 * 86400000 &&
+            Boolean(q.conta_id) !== Boolean(p.conta_id));
+          if (repetido) continue;
+          considerados.push(p);
+          const aberta = getFaturaMesReferencia(String(p.data).slice(0, 10), card.fechamento_dia, card.vencimento_dia);
+          let resto = Math.abs(Number(p.valor) || 0);
+          for (const ref of [mesAntes(aberta), aberta]) {
+            const key = `${cardId}_${ref}`;
+            if (!groups.has(key) || resto <= 0.009) continue;
+            const falta = ref === aberta ? resto : Math.max(0, totalDoGrupo(key) - (pagoPorGrupo.get(key) || 0));
+            const usa = Math.min(falta, resto);
+            if (usa <= 0) continue;
+            pagoPorGrupo.set(key, Math.round(((pagoPorGrupo.get(key) || 0) + usa) * 100) / 100);
+            resto -= usa;
+          }
+        }
+        // Auto-repara no banco pagamentos com tipo incorreto
+        const tipoErrado = lista.filter((t: any) => t.tipo !== "PAGAMENTO_FATURA").map((t: any) => t.id);
+        if (tipoErrado.length > 0) supabase.from("transacoes").update({ tipo: "PAGAMENTO_FATURA" }).in("id", tipoErrado).then();
       }
 
       for (const { card, mesRef, items } of groups.values()) {
@@ -2548,7 +2747,7 @@ export const financeService = {
           .maybeSingle();
 
         const isTxPagamento = (t: any) => t.tipo === "PAGAMENTO_FATURA" || /pagamento\s*recebido|pagamento\s*de\s*fatura|pagamento\s*cart[aã]o/i.test(t.descricao || "");
-        const isTxEstorno = (t: any) => t.tipo === "ESTORNO" || /estorno|cr[eé]dito\s*de\s*fatura|desconto\s*\(nufinanceira\)/i.test(t.descricao || "");
+        const isTxEstorno = (t: any) => t.tipo === "ESTORNO" || /estorno|cr[eé]dito\s*de\s*fatura|desconto\s*\(nufinanceira\)/i.test(t.descricao || "") || /^\s*cr[eé]dito de\b/i.test(t.descricao || "");
 
         // Auto-repara no banco transações com tipo incorreto
         const pagamentosComTipoErrado = items.filter(t => isTxPagamento(t) && t.tipo !== "PAGAMENTO_FATURA");
@@ -2565,7 +2764,7 @@ export const financeService = {
 
         // Aplica funções canônicas de domínio
         const valorTotal = this.calculateInvoiceTotal(items);
-        const valorPago = this.calculateInvoicePayments(items);
+        const valorPago = pagoPorGrupo.get(`${card.id}_${mesRef}`) || 0;
 
         const hojeStr = new Date().toISOString().split("T")[0];
         let status = "aberta";
@@ -2617,6 +2816,22 @@ export const financeService = {
               .update({ fatura_id: faturaId })
               .in("id", txIdsToUpdate);
           }
+        }
+      }
+
+      // Faturas que não batem mais com nenhum ciclo (ex.: o dia de fechamento/vencimento do
+      // cartão mudou e as compras foram reagrupadas): ficam zeradas para não aparecerem como
+      // "fatura antiga sem pagamento". Faturas criadas a partir de um documento importado ficam como estão.
+      const ciclosAtuais = new Set([...groups.values()].map(g => `${g.card.id}_${g.mesRef}-${String(g.card.vencimento_dia).padStart(2, "0")}`));
+      const { data: todasFaturas } = await supabase
+        .from("faturas")
+        .select("id, cartao_id, data_vencimento, valor_total, documento_importado_id")
+        .eq("usuario_id", usuario_id);
+      for (const fa of todasFaturas || []) {
+        if (!cardsMap.has(fa.cartao_id) || fa.documento_importado_id) continue;
+        if (ciclosAtuais.has(`${fa.cartao_id}_${String(fa.data_vencimento).slice(0, 10)}`)) continue;
+        if (Number(fa.valor_total) > 0) {
+          await supabase.from("faturas").update({ valor_total: 0, valor_pago: 0, status: "paga" }).eq("id", fa.id);
         }
       }
     } catch (err) {

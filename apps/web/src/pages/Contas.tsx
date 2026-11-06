@@ -199,6 +199,9 @@ export default function Contas() {
                                 <div className="flex-1">
                                     <p className="text-xs font-black text-slate-400 uppercase tracking-widest">{conta.instituicao || conta.tipo}</p>
                                     <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 mt-1 line-clamp-1">{conta.nome}</h3>
+                                    {conta.empresa_id && (
+                                        <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 text-[10px] font-black uppercase">Empresa</span>
+                                    )}
                                     
                                     <div className="mt-4">
                                         <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Saldo Atual</p>

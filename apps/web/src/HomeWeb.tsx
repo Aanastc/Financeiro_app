@@ -25,7 +25,6 @@ import ChatAcordosIaModal from "./components/ChatAcordosIaModal";
 import CriarGrupoModal from "./components/CriarGrupoModal";
 import { despesasCompartilhadasService } from "../../../packages/services/despesas-compartilhadas.service";
 import type { Grupo } from "../../../packages/services/despesas-compartilhadas.service";
-import EmBreveView from "./components/EmBreveView";
 import { getFaturaMesReferencia } from "../../../packages/utils/cartao.utils";
 import CategoryBreakdown from "./components/CategoryBreakdown";
 
@@ -1647,7 +1646,15 @@ export default function HomeWeb() {
 					</div>
 				</motion.div>
 			) : (
-				<EmBreveView modulo="PJ" onVoltarPessoal={() => handleMudarCaminho("PESSOAL")} />
+				<div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 p-8 text-center space-y-3">
+					<p className="text-xl font-black text-slate-800 dark:text-slate-100">Sua empresa (CNPJ)</p>
+					<p className="text-sm text-slate-500 dark:text-slate-400 max-w-lg mx-auto">
+						Faturamento, impostos (MEI, Simples ou Presumido), pró-labore, lucro e relatório para o contador — com as contas da empresa separadas das pessoais.
+					</p>
+					<button onClick={() => navigate("/empresa")} className="px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm cursor-pointer">
+						Abrir painel da empresa
+					</button>
+				</div>
 			)}
 
 			{/* MODAL DE DIVIDIR DESPESA */}

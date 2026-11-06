@@ -23,6 +23,7 @@ const Cartoes = lazy(() => import("./pages/Cartoes"));
 const DividasWeb = lazy(() => import("./pages/Dividas"));
 const MetasWeb = lazy(() => import("./pages/Metas"));
 const InvestimentosWeb = lazy(() => import("./pages/Investimentos"));
+const EmpresaPage = lazy(() => import("./pages/Empresa"));
 const Contas = lazy(() => import("./pages/Contas"));
 const ImportadorWeb = lazy(() => import("./pages/Importador"));
 const Devedores = lazy(() => import("./pages/Devedores"));
@@ -91,6 +92,7 @@ export default function App() {
 					<Route path="/dividas" element={<DividasWeb />} />
 					<Route path="/metas" element={<MetasWeb />} />
 					<Route path="/investimentos" element={<InvestimentosWeb />} />
+					<Route path="/empresa" element={<EmpresaPage />} />
 					<Route path="/importar" element={<ImportadorWeb />} />
 					<Route path="/consultor" element={<ConsultorInteligente />} />
 				</Route>

@@ -30,6 +30,47 @@ import { detectarProdutoInvestimento, ehAplicacaoInvestimento, ehResgateInvestim
  * Documento -> Hash (Idempotência) -> IA (Classificação + Extração) 
  * -> Schema Validation -> Business Validation -> Confirmação -> Serviços de Domínio -> Supabase
  */
+/** Lê uma linha CSV respeitando aspas ("216,42" é UMA célula). */
+function dividirLinhaCsv(linha: string, sep: string): string[] {
+  const celulas: string[] = [];
+  let atual = "";
+  let aspas = false;
+  for (let i = 0; i < linha.length; i++) {
+    const ch = linha[i];
+    if (ch === '"') {
+      if (aspas && linha[i + 1] === '"') {
+        atual += '"';
+        i++;
+      } else aspas = !aspas;
+    } else if (ch === sep && !aspas) {
+      celulas.push(atual);
+      atual = "";
+    } else atual += ch;
+  }
+  celulas.push(atual);
+  return celulas.map((c) => c.trim());
+}
+
+/** "1.234,56" / "- 59,36" / "R$ 10,00" → "1234.56" / "-59.36" / "10.00"; outros textos ficam como estão. */
+function numeroBr(celula: string): string {
+  const t = celula.replace(/R\$\s*/i, "").replace(/\s+/g, "");
+  if (/^-?\d{1,3}(\.\d{3})*,\d{1,2}$/.test(t) || /^-?\d+,\d{1,2}$/.test(t)) return t.replace(/\./g, "").replace(",", ".");
+  return celula;
+}
+
+/**
+ * Normaliza um CSV de banco para a IA: separador ";" e números com ponto decimal,
+ * sem aspas. Linhas de cabeçalho/resumo (ex.: "Saldo ;10,00") passam pelo mesmo tratamento.
+ */
+export function normalizarCsv(texto: string): string {
+  const linhas = String(texto || "").replace(/^\uFEFF/, "").split(/\r?\n/);
+  const amostra = linhas.filter((l) => l.trim()).slice(0, 15).join("\n");
+  const sep = (amostra.match(/;/g) || []).length > (amostra.match(/,/g) || []).length / 2 ? ";" : ",";
+  return linhas
+    .map((l) => (l.trim() ? dividirLinhaCsv(l, sep).map((c) => numeroBr(c).replace(/;/g, ",")).join(" ; ") : ""))
+    .join("\n");
+}
+
 export class DocumentImportService {
   /**
    * 1. CALCULAR HASH SHA-256 DO ARQUIVO PARA IDEMPOTÊNCIA
@@ -188,7 +229,9 @@ export class DocumentImportService {
         reader.onerror = reject;
         reader.readAsText(file, "UTF-8");
       });
-      return { isMultimodal: false, mimeType: isOfx ? "application/ofx" : "text/csv", textContent };
+      // CSV: lido aqui (aspas, vírgula decimal) e enviado à IA já sem ambiguidade —
+      // antes, "216,42" dentro de um CSV separado por vírgula virava descrição "…,216" + valor 42.
+      return { isMultimodal: false, mimeType: isOfx ? "application/ofx" : "text/csv", textContent: isCsv ? normalizarCsv(textContent) : textContent };
     }
 
     if (isExcel) {

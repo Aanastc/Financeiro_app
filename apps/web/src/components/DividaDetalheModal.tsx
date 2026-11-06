@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { X, Calendar, CheckCircle2, CircleDashed,    DollarSign, Trash2, Zap } from "lucide-react";
+import { X, Calendar, CheckCircle2, CircleDashed,    DollarSign, Trash2, Zap, Pencil, ListChecks } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
+import { supabase } from "../../../../packages/services/supabase";
 import toast from "react-hot-toast";
 
 export default function DividaDetalheModal({ isOpen, onClose, divida, userId, onPagamentoRealizado }: any) {
@@ -15,6 +16,12 @@ export default function DividaDetalheModal({ isOpen, onClose, divida, userId, on
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
     const [isSyncingGastos, setIsSyncingGastos] = useState(false);
+    // Pagamento de parcela: valor de verdade (adiantamento tem desconto) e se o dinheiro já saiu no extrato
+    const [valorPago, setValorPago] = useState("");
+    const [jaSaiuDaConta, setJaSaiuDaConta] = useState(true);
+    const [lancamentoId, setLancamentoId] = useState("");
+    const [lancamentos, setLancamentos] = useState<any[]>([]);
+    const [editando, setEditando] = useState<{ id: string; data: string; valor: string } | null>(null);
 
     useEffect(() => {
         if (isOpen && userId) {
@@ -22,9 +29,24 @@ export default function DividaDetalheModal({ isOpen, onClose, divida, userId, on
                 setContas(data || []);
                 if (data && data.length > 0) setContaId(data[0].id);
             });
+            // Débitos do extrato que parecem parcela (para ligar à parcela em vez de lançar de novo)
+            (async () => {
+                const { data: txs } = await supabase
+                    .from("transacoes")
+                    .select("id, data, valor, descricao, conta_id")
+                    .eq("usuario_id", userId)
+                    .in("tipo", ["DESPESA", "PAGAMENTO_DIVIDA"])
+                    .or("descricao.ilike.%empr%,descricao.ilike.%consign%,descricao.ilike.%financ%,descricao.ilike.%parcela%")
+                    .order("data", { ascending: false })
+                    .limit(200);
+                const { data: usados } = await supabase.from("pagamentos_divida").select("transacao_id");
+                const jaUsados = new Set((usados || []).map((u: any) => u.transacao_id));
+                setLancamentos((txs || []).filter((t: any) => !jaUsados.has(t.id)));
+            })().catch(() => setLancamentos([]));
         }
         setConfirmandoExclusao(false);
         setIsQuitarModalOpen(false);
+        setEditando(null);
     }, [isOpen, userId]);
 
     if (!isOpen || !divida) return null;
@@ -33,10 +55,58 @@ export default function DividaDetalheModal({ isOpen, onClose, divida, userId, on
     const hojeStr = new Date().toISOString().split("T")[0];
     const parcelasVencidasPendentes = parcelas.filter((p: any) => p.status === 'pendente' && p.data_vencimento < hojeStr);
 
+    const brl = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(v || 0));
+    const dataBr = (iso?: string | null) => (iso ? String(iso).slice(0, 10).split("-").reverse().join("/") : "");
+
     const handleAbrirPagamento = (parcela: any) => {
         setParcelaSelecionada(parcela);
         setDataPagamento(new Date().toISOString().split("T")[0]);
+        setValorPago(String(Number(parcela.valor_esperado || 0).toFixed(2)));
+        setJaSaiuDaConta(true);
+        setLancamentoId("");
         setIsPagarModalOpen(true);
+    };
+
+    const handleEscolherLancamento = (id: string) => {
+        setLancamentoId(id);
+        const t = lancamentos.find((x) => x.id === id);
+        if (t) {
+            setDataPagamento(String(t.data).slice(0, 10));
+            setValorPago(String(Number(t.valor).toFixed(2)));
+        }
+    };
+
+    const handleMarcarPagasAte = async (parcela: any) => {
+        setIsSubmitting(true);
+        try {
+            await financeService.marcarParcelasPagasAte(divida.id, parcela.numero_parcela);
+            toast.success(`Parcelas até a #${parcela.numero_parcela} marcadas como pagas.`);
+            onPagamentoRealizado();
+        } catch (err: any) {
+            toast.error("Erro ao atualizar parcelas: " + err.message);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleSalvarEdicao = async () => {
+        if (!editando) return;
+        const valor = Number(String(editando.valor).replace(",", "."));
+        if (!editando.data || !(valor > 0)) {
+            toast.error("Informe a data e o valor pago.");
+            return;
+        }
+        setIsSubmitting(true);
+        try {
+            await financeService.editarPagamentoParcela(editando.id, editando.data, valor);
+            toast.success("Pagamento da parcela atualizado.");
+            setEditando(null);
+            onPagamentoRealizado();
+        } catch (err: any) {
+            toast.error("Erro ao salvar: " + err.message);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const handleConfirmarQuitacaoTotal = async () => {
@@ -86,21 +156,27 @@ export default function DividaDetalheModal({ isOpen, onClose, divida, userId, on
     };
 
     const handleConfirmarPagamento = async () => {
-        if (!contaId) {
+        const valor = Number(String(valorPago).replace(",", "."));
+        if (!(valor > 0)) {
+            toast.error("Informe quanto você pagou nesta parcela.");
+            return;
+        }
+        if (!jaSaiuDaConta && !contaId) {
             toast.error("Selecione uma conta para debitar o valor.");
             return;
         }
 
         setIsSubmitting(true);
         try {
-            await financeService.pagarParcelaDivida(
-                userId,
-                parcelaSelecionada.id,
-                divida.id,
-                parcelaSelecionada.valor_esperado,
-                contaId,
-                dataPagamento
-            );
+            await financeService.registrarPagamentoParcela(userId, {
+                divida_id: divida.id,
+                parcela_id: parcelaSelecionada.id,
+                valor_pago: valor,
+                data_pagamento: dataPagamento,
+                debitar: !jaSaiuDaConta,
+                conta_id: contaId,
+                transacao_id: jaSaiuDaConta ? lancamentoId || null : null,
+            });
             toast.success("Pagamento registrado com sucesso!");
             setIsPagarModalOpen(false);
             onPagamentoRealizado();
@@ -324,7 +400,7 @@ export default function DividaDetalheModal({ isOpen, onClose, divida, userId, on
                     <div className="space-y-3">
                         <div className="flex items-center justify-between">
                             <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider">Cronograma de Parcelas</h4>
-                            <span className="text-[11px] text-slate-400">Clique no ícone de status para alternar</span>
+                            <span className="text-[11px] text-slate-400">Bolinha: paga/aberta · ícone de lista: "paguei até esta" · lápis: data e valor pagos</span>
                         </div>
                         
                         {parcelas.map((parcela: any) => (
@@ -357,21 +433,72 @@ export default function DividaDetalheModal({ isOpen, onClose, divida, userId, on
                                             </span>
                                         </div>
                                         <p className="text-xs font-medium text-slate-400 flex items-center gap-1 mt-0.5">
-                                            <Calendar size={12} /> Vencimento em {new Date(parcela.data_vencimento).toLocaleDateString('pt-BR')}
+                                            <Calendar size={12} /> Vencimento em {dataBr(parcela.data_vencimento)}
                                         </p>
+                                        {parcela.status === 'paga' && parcela.data_pagamento && editando?.id !== parcela.id && (
+                                            <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">
+                                                Paga em {dataBr(parcela.data_pagamento)}
+                                                {parcela.valor_pago != null ? ` · ${brl(parcela.valor_pago)}` : ""}
+                                                {parcela.valor_pago != null && Number(parcela.valor_pago) < Number(parcela.valor_esperado) - 0.009
+                                                    ? ` (economizou ${brl(Number(parcela.valor_esperado) - Number(parcela.valor_pago))})`
+                                                    : ""}
+                                                {String(parcela.data_pagamento).slice(0, 7) < String(parcela.data_vencimento).slice(0, 7) ? " · adiantada" : ""}
+                                            </p>
+                                        )}
+                                        {editando?.id === parcela.id && (
+                                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                                                <input
+                                                    type="date"
+                                                    value={editando.data}
+                                                    onChange={(e) => setEditando({ ...editando, data: e.target.value })}
+                                                    className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 dark:text-slate-100"
+                                                    aria-label="Data em que pagou"
+                                                />
+                                                <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    min="0"
+                                                    value={editando.valor}
+                                                    onChange={(e) => setEditando({ ...editando, valor: e.target.value })}
+                                                    className="w-28 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 dark:text-slate-100"
+                                                    aria-label="Valor pago"
+                                                />
+                                                <button onClick={handleSalvarEdicao} disabled={isSubmitting} className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer">Salvar</button>
+                                                <button onClick={() => setEditando(null)} className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-bold cursor-pointer">Cancelar</button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-3">
                                     <p className={`font-black ${parcela.status === 'paga' ? 'text-emerald-600 dark:text-emerald-500' : 'text-slate-800 dark:text-slate-100'}`}>
-                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(parcela.valor_esperado)}
+                                        {brl(parcela.valor_esperado)}
                                     </p>
-                                    {parcela.status !== 'paga' && (
-                                        <button 
-                                            onClick={() => handleAbrirPagamento(parcela)}
-                                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                                    {parcela.status === 'paga' && editando?.id !== parcela.id && (
+                                        <button
+                                            onClick={() => setEditando({ id: parcela.id, data: String(parcela.data_pagamento || parcela.data_vencimento || "").slice(0, 10), valor: String(Number(parcela.valor_pago ?? parcela.valor_esperado).toFixed(2)) })}
+                                            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 rounded-lg cursor-pointer"
+                                            title="Informar/corrigir a data e o valor que você pagou"
                                         >
-                                            Pagar
+                                            <Pencil size={15} />
                                         </button>
+                                    )}
+                                    {parcela.status !== 'paga' && (
+                                        <>
+                                            <button
+                                                onClick={() => handleMarcarPagasAte(parcela)}
+                                                disabled={isSubmitting}
+                                                className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-lg cursor-pointer"
+                                                title={`Já paguei até esta: marca como pagas todas as parcelas em aberto até a #${parcela.numero_parcela}`}
+                                            >
+                                                <ListChecks size={16} />
+                                            </button>
+                                            <button
+                                                onClick={() => handleAbrirPagamento(parcela)}
+                                                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                                            >
+                                                Pagar
+                                            </button>
+                                        </>
                                     )}
                                 </div>
                             </div>
@@ -394,20 +521,66 @@ export default function DividaDetalheModal({ isOpen, onClose, divida, userId, on
                         </h4>
                         
                         <div className="space-y-4">
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase">Conta para Débito</label>
-                                <select 
-                                    value={contaId} 
-                                    onChange={(e) => setContaId(e.target.value)}
-                                    className="w-full mt-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                >
-                                    <option value="" disabled>Selecione uma conta</option>
-                                    {contas.map(c => (
-                                        <option key={c.id} value={c.id}>{c.nome}</option>
-                                    ))}
-                                </select>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 -mt-2">
+                                Vencimento {dataBr(parcelaSelecionada?.data_vencimento)} · previsto {brl(parcelaSelecionada?.valor_esperado)}. Se adiantou, informe a data e o valor que pagou de fato.
+                            </p>
+                            <div className="space-y-2">
+                                <label className={`flex items-start gap-2 p-2.5 rounded-xl border cursor-pointer ${jaSaiuDaConta ? "border-purple-300 bg-purple-50/60 dark:bg-purple-950/20 dark:border-purple-800" : "border-slate-200 dark:border-slate-700"}`}>
+                                    <input type="radio" checked={jaSaiuDaConta} onChange={() => setJaSaiuDaConta(true)} className="mt-0.5 accent-purple-600" />
+                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">O dinheiro já saiu da conta (está no extrato): só dar baixa</span>
+                                </label>
+                                <label className={`flex items-start gap-2 p-2.5 rounded-xl border cursor-pointer ${!jaSaiuDaConta ? "border-purple-300 bg-purple-50/60 dark:bg-purple-950/20 dark:border-purple-800" : "border-slate-200 dark:border-slate-700"}`}>
+                                    <input type="radio" checked={!jaSaiuDaConta} onChange={() => setJaSaiuDaConta(false)} className="mt-0.5 accent-purple-600" />
+                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Lançar a saída agora na conta</span>
+                                </label>
                             </div>
-                            
+
+                            {jaSaiuDaConta ? (
+                                lancamentos.length > 0 && (
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 uppercase">Lançamento do extrato (opcional)</label>
+                                        <select
+                                            value={lancamentoId}
+                                            onChange={(e) => handleEscolherLancamento(e.target.value)}
+                                            className="w-full mt-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-100 font-bold text-xs focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                        >
+                                            <option value="">Não ligar a um lançamento</option>
+                                            {lancamentos.map((t) => (
+                                                <option key={t.id} value={t.id}>
+                                                    {dataBr(t.data)} · {brl(t.valor)} · {t.descricao}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )
+                            ) : (
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Conta para Débito</label>
+                                    <select
+                                        value={contaId}
+                                        onChange={(e) => setContaId(e.target.value)}
+                                        className="w-full mt-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    >
+                                        <option value="" disabled>Selecione uma conta</option>
+                                        {contas.map(c => (
+                                            <option key={c.id} value={c.id}>{c.nome}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">Valor pago</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={valorPago}
+                                    onChange={(e) => setValorPago(e.target.value)}
+                                    className="w-full mt-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                />
+                            </div>
+
                             <div>
                                 <label className="text-xs font-bold text-slate-500 uppercase">Data do Pagamento</label>
                                 <input 
