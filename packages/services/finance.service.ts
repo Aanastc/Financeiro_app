@@ -3,13 +3,14 @@ import { supabase } from "./supabase";
 import { getFaturaCycle, getFaturaMesReferencia } from "../utils/cartao.utils";
 import { encontrarPorInstituicao } from "../utils/instituicoes";
 import { buscarTodasPaginas } from "./paginacao";
-import { sincronizarCaixinhas } from "./caixinhas.service";
+import { sincronizarCaixinhas, ocultarCaixinha, contaDaCaixinha } from "./caixinhas.service";
 import {
   detectarProdutoInvestimento,
   ehAplicacaoInvestimento,
   ehResgateInvestimento,
   instituicaoDoInvestimento,
   metaIdDoInvestimento,
+  corretoraComMeta,
 } from "../utils/investimentos";
 
 /** Colunas da migration 007; se ainda não existirem no banco, salva sem elas. */
@@ -1718,9 +1719,12 @@ export const financeService = {
   /** Exclui o investimento e seu histórico de valores (ação explícita do usuário). */
   async deleteInvestimento(usuario_id: string, id: string) {
     const { data: inv, error: errBusca } = await supabase
-      .from("investimentos").select("id").eq("id", id).eq("usuario_id", usuario_id).maybeSingle();
+      .from("investimentos").select("*").eq("id", id).eq("usuario_id", usuario_id).maybeSingle();
     if (errBusca) throw errBusca;
     if (!inv) throw new Error("Investimento não encontrado.");
+    // Caixinha do banco apagada não deve ser recriada pelas aplicações da conta
+    const contaCaixinha = await contaDaCaixinha(usuario_id, inv);
+    if (contaCaixinha) await ocultarCaixinha(usuario_id, contaCaixinha);
     const { error: errHist } = await supabase.from("historico_investimentos").delete().eq("investimento_id", id);
     if (errHist) throw errHist;
     const { error } = await supabase.from("investimentos").delete().eq("id", id).eq("usuario_id", usuario_id);
@@ -1751,6 +1755,26 @@ export const financeService = {
 
   async addMeta(usuario_id: string, dados: any) {
     const { error } = await supabase.from("metas").insert([{ ...dados, usuario_id }]);
+    if (error) throw error;
+  },
+
+  async updateMeta(usuario_id: string, id: string, dados: any) {
+    const { error } = await supabase.from("metas").update(dados).eq("id", id).eq("usuario_id", usuario_id);
+    if (error) throw error;
+  },
+
+  /**
+   * Apaga a meta (ação explícita do usuário). Os investimentos/caixinhas ligados a ela
+   * continuam existindo, só perdem o vínculo; os depósitos da meta saem junto (cascade).
+   */
+  async deleteMeta(usuario_id: string, id: string) {
+    const { data: invs } = await supabase.from("investimentos").select("id, corretora").eq("usuario_id", usuario_id);
+    for (const inv of invs || []) {
+      if (metaIdDoInvestimento(inv.corretora) === id) {
+        await supabase.from("investimentos").update({ corretora: corretoraComMeta(inv.corretora, null) }).eq("id", inv.id).eq("usuario_id", usuario_id);
+      }
+    }
+    const { error } = await supabase.from("metas").delete().eq("id", id).eq("usuario_id", usuario_id);
     if (error) throw error;
   },
 

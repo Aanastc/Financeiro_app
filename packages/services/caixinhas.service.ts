@@ -38,6 +38,37 @@ export const tituloCaixinha = (conta: { nome?: string | null; instituicao?: stri
 const pareceCaixinhaAntiga = (inv: any) => /caixinha|porquinho|cofrinho|reserva|rdb|cdb|poupan/i.test(inv.titulo || "");
 const ehAgregadoAntigo = (inv: any) => /^reserva\s*\(rdb\s*\/\s*caixinha\)$/i.test((inv.titulo || "").trim());
 
+// ------------------------------------------------------------------------------
+// Caixinha apagada pelo usuário não volta: marca a conta (SQL seção 12) e, como reserva,
+// guarda no navegador (funciona antes do SQL rodar).
+// ------------------------------------------------------------------------------
+const CHAVE_OCULTAS = "caixinhas-apagadas";
+const ocultasLocais = (): string[] => {
+  try {
+    return JSON.parse(localStorage.getItem(CHAVE_OCULTAS) || "[]");
+  } catch {
+    return [];
+  }
+};
+
+/** Não recriar a caixinha desta conta (o usuário apagou). */
+export async function ocultarCaixinha(usuario_id: string, conta_id: string) {
+  try {
+    localStorage.setItem(CHAVE_OCULTAS, JSON.stringify([...new Set([...ocultasLocais(), conta_id])]));
+  } catch {
+    /* sem armazenamento local */
+  }
+  await supabase.from("contas_bancarias").update({ sem_caixinha: true }).eq("id", conta_id).eq("usuario_id", usuario_id);
+}
+
+/** Conta dona de um investimento-caixinha (pela coluna ou pelo nome "Caixinha <Banco>"). */
+export async function contaDaCaixinha(usuario_id: string, inv: any): Promise<string | null> {
+  if (inv?.conta_id) return inv.conta_id;
+  if (!/^caixinha\s+\S/i.test((inv?.titulo || "").trim())) return null;
+  const { data } = await supabase.from("contas_bancarias").select("id, nome, instituicao").eq("usuario_id", usuario_id);
+  return (data || []).find((c: any) => norm(tituloCaixinha(c)) === norm(inv.titulo))?.id || null;
+}
+
 let emAndamento: Promise<void> | null = null;
 
 export async function sincronizarCaixinhas(usuario_id: string): Promise<void> {
@@ -51,7 +82,7 @@ export async function sincronizarCaixinhas(usuario_id: string): Promise<void> {
 
 async function executar(usuario_id: string) {
   const [contasRes, invsRes, metasRes, txs] = await Promise.all([
-    supabase.from("contas_bancarias").select("id, nome, instituicao").eq("usuario_id", usuario_id),
+    supabase.from("contas_bancarias").select("*").eq("usuario_id", usuario_id),
     supabase.from("investimentos").select("*").eq("usuario_id", usuario_id),
     supabase.from("metas").select("id, titulo").eq("usuario_id", usuario_id),
     buscarTodasPaginas<any>((de, ate) =>
@@ -98,8 +129,10 @@ async function executar(usuario_id: string) {
   };
 
   const usados = new Set<string>();
+  const apagadas = new Set(ocultasLocais());
   for (const conta of contas) {
     const fluxos = fluxosPorConta.get(conta.id);
+    if (conta.sem_caixinha === true || apagadas.has(conta.id)) continue;
     if (!fluxos || fluxos.length === 0) continue;
     const banco = bancoDaConta(conta);
     const titulo = tituloCaixinha(conta);
@@ -203,5 +236,5 @@ async function recalcular(
   if (Object.keys(dados).length) await atualizar(inv, dados);
 }
 
-export const caixinhasService = { sincronizarCaixinhas, bancoDaConta, tituloCaixinha };
+export const caixinhasService = { sincronizarCaixinhas, bancoDaConta, tituloCaixinha, ocultarCaixinha, contaDaCaixinha };
 export { metaIdDoInvestimento };

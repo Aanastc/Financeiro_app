@@ -8,17 +8,23 @@ import { toast } from "react-hot-toast";
 interface AddMetaProps {
 	onClose: () => void;
 	onSuccess: () => void;
+	/** Meta existente: abre em modo edição */
+	meta?: any;
 }
 
-export default function AddMetaWeb({ onClose, onSuccess }: AddMetaProps) {
+const paraMoeda = (v: any) =>
+	v === null || v === undefined || v === "" ? "" : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+export default function AddMetaWeb({ onClose, onSuccess, meta }: AddMetaProps) {
+	const editando = Boolean(meta?.id);
 	const [loading, setLoading] = useState(false);
 	const [form, setForm] = useState({
-		titulo: "",
-		valor: "",
-		prazo: new Date().toISOString().split('T')[0],
-		debito_automatico: false,
-		debito_dia: "",
-		debito_valor: ""
+		titulo: meta?.titulo || "",
+		valor: paraMoeda(meta?.valor),
+		prazo: meta?.prazo ? String(meta.prazo).slice(0, 10) : new Date().toISOString().split('T')[0],
+		debito_automatico: Boolean(meta?.debito_automatico),
+		debito_dia: meta?.debito_dia ? String(meta.debito_dia) : "",
+		debito_valor: paraMoeda(meta?.debito_valor)
 	});
 
 	const handleSubmit = async (e: React.FormEvent) => {
@@ -45,16 +51,18 @@ export default function AddMetaWeb({ onClose, onSuccess }: AddMetaProps) {
 			const { data: { user } } = await supabase.auth.getUser();
 			if (!user) throw new Error("Usuário não autenticado");
 
-			await financeService.addMeta(user.id, {
+			const dados = {
 				titulo: form.titulo,
 				valor: parseFloat(form.valor.replace(/\./g, "").replace(",", ".")),
 				prazo: form.prazo,
 				debito_automatico: form.debito_automatico,
 				debito_dia: form.debito_automatico ? parseInt(form.debito_dia) : null,
 				debito_valor: form.debito_automatico ? parseFloat(form.debito_valor.replace(/\./g, "").replace(",", ".")) : null
-			});
+			};
+			if (editando) await financeService.updateMeta(user.id, meta.id, dados);
+			else await financeService.addMeta(user.id, dados);
 
-			toast.success("Meta adicionada com sucesso!");
+			toast.success(editando ? "Meta atualizada!" : "Meta adicionada com sucesso!");
 			onSuccess();
 			onClose();
 		} catch (error: any) {
@@ -73,7 +81,7 @@ export default function AddMetaWeb({ onClose, onSuccess }: AddMetaProps) {
 							<Target size={20} />
 						</div>
 						<div>
-							<h2 className="text-lg sm:text-xl font-black text-slate-800 dark:text-slate-100">Nova Meta</h2>
+							<h2 className="text-lg sm:text-xl font-black text-slate-800 dark:text-slate-100">{editando ? "Editar Meta" : "Nova Meta"}</h2>
 							<p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Qual o seu próximo sonho?</p>
 						</div>
 					</div>

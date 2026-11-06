@@ -6,7 +6,9 @@ import {
 	Target,
 	ArrowUpRight,
 	PiggyBank,
-	FileText
+	FileText,
+	Pencil,
+	Trash2
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import AddMetaWeb from "../components/AddMetaWeb";
@@ -17,11 +19,46 @@ import PageLoader from "../components/PageLoader";
 export default function MetasWeb() {
 	const [metas, setMetas] = useState<any[]>([]);
 	const [investimentos, setInvestimentos] = useState<any[]>([]);
-	const [transacoesPatrimoniais, setTransacoesPatrimoniais] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [isAddMetaOpen, setIsAddMetaOpen] = useState(false);
 	const [depositoMeta, setDepositoMeta] = useState<{id: string, titulo: string} | null>(null);
 	const [extratoMeta, setExtratoMeta] = useState<any | null>(null);
+	const [metaEmEdicao, setMetaEmEdicao] = useState<any | null>(null);
+
+	const apagarMeta = async (meta: any, totalDepositado: number) => {
+		const avisoDepositos = totalDepositado > 0
+			? `\n\nOs depósitos registrados nela (R$ ${totalDepositado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}) também serão apagados.`
+			: "";
+		if (!window.confirm(`Apagar a meta "${meta.titulo}"?\n\nAs caixinhas e investimentos ligados a ela continuam existindo, só deixam de contar para esta meta.${avisoDepositos}`)) return;
+		try {
+			const { data: { user } } = await supabase.auth.getUser();
+			if (!user) return;
+			await financeService.deleteMeta(user.id, meta.id);
+			toast.success("Meta apagada.");
+			loadMetas();
+		} catch (e: any) {
+			toast.error(e?.message || "Não foi possível apagar a meta.");
+		}
+	};
+
+	const criarReservaSugerida = async () => {
+		try {
+			const { data: { user } } = await supabase.auth.getUser();
+			if (!user) return;
+			const prazo = new Date();
+			prazo.setFullYear(prazo.getFullYear() + 1);
+			await financeService.addMeta(user.id, {
+				titulo: "Reserva de Emergência",
+				valor: 10000,
+				prazo: prazo.toISOString().split("T")[0],
+				debito_automatico: false,
+			});
+			toast.success("Meta criada. Edite o valor e o prazo como quiser.");
+			loadMetas();
+		} catch (e: any) {
+			toast.error(e?.message || "Não foi possível criar a meta.");
+		}
+	};
 
 	// O loader só aparece no primeiro carregamento (recargas em tempo real não piscam a tela)
 	const loadMetas = useCallback(async () => {
@@ -31,7 +68,7 @@ export default function MetasWeb() {
 				// Sincroniza vínculos entre metas, investimentos e transações de RDB
 				await financeService.syncMetasInvestimentos(user.id).catch(() => {});
 
-				const [resMetas, resInv, resTx] = await Promise.all([
+				const [resMetas, resInv] = await Promise.all([
 					supabase
 						.from("metas")
 						.select(`
@@ -45,11 +82,6 @@ export default function MetasWeb() {
 						.eq("usuario_id", user.id)
 						.order("prazo", { ascending: true }),
 					financeService.getInvestimentos(user.id),
-					supabase
-						.from("transacoes")
-						.select("id, valor, tipo, descricao, data, conta_id")
-						.eq("usuario_id", user.id)
-						.in("tipo", ["APORTE", "RESGATE"])
 				]);
 			
 				if (resMetas.error) toast.error("Erro ao carregar metas");
@@ -57,7 +89,6 @@ export default function MetasWeb() {
 					setMetas(resMetas.data || []);
 				}
 				setInvestimentos(resInv || []);
-				setTransacoesPatrimoniais(resTx.data || []);
 			}
 		} catch (e) {
 			console.error("Erro ao carregar metas:", e);
@@ -123,27 +154,9 @@ export default function MetasWeb() {
 			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
 				{metas.length > 0 ? metas.map((meta) => {
 					const totalDepositado = meta.metas_depositos?.reduce((acc: number, d: any) => acc + Number(d.valor), 0) || 0;
-					const isReservaMeta = /reserva(\s+de)?\s+emerg[eê]ncia|caixinha/i.test(meta.titulo);
-
-					const invVinculados = investimentos.filter(inv => {
-						const mId = parseMetaId(inv.corretora);
-						if (mId === meta.id) return true;
-						return isReservaMeta && (/rdb|reserva|caixinha/i.test(inv.titulo || "") || /rdb|caixinha/i.test(inv.corretora || "")) && !mId;
-					});
-					const totalInvestidoInvs = invVinculados.reduce((acc, inv) => acc + Number(inv.valor_atual), 0);
-
-					// Calcula o saldo das transações da tabela transacoes (APORTE e RESGATE RDB)
-					const txVinculadas = transacoesPatrimoniais.filter(t => {
-						const desc = (t.descricao || "").toLowerCase();
-						return isReservaMeta && (desc.includes("rdb") || desc.includes("caixinha") || desc.includes("reserva") || t.tipo === "APORTE" || t.tipo === "RESGATE");
-					});
-					const saldoTx = txVinculadas.reduce((acc, t) => {
-						const val = Number(t.valor || 0);
-						const isResgate = t.tipo === "RESGATE" || (t.descricao || "").toLowerCase().includes("resgate");
-						return isResgate ? acc - val : acc + val;
-					}, 0);
-
-					const totalInvestido = Math.max(totalInvestidoInvs, Math.max(0, saldoTx));
+					// Investimentos/caixinhas ligados a esta meta (as caixinhas dos bancos vêm ligadas à reserva)
+					const invVinculados = investimentos.filter(inv => parseMetaId(inv.corretora) === meta.id);
+					const totalInvestido = Math.round(invVinculados.reduce((acc, inv) => acc + Number(inv.valor_atual || 0), 0) * 100) / 100;
 					const totalAcumulado = totalDepositado + totalInvestido;
 					const progresso = (totalAcumulado / meta.valor) * 100;
 					
@@ -166,6 +179,24 @@ export default function MetasWeb() {
 										>
 											{meta.titulo}
 										</h3>
+										<div className="flex justify-end gap-1 mt-1">
+											<button
+												onClick={() => setMetaEmEdicao(meta)}
+												title="Editar meta"
+												aria-label="Editar meta"
+												className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+											>
+												<Pencil size={14} />
+											</button>
+											<button
+												onClick={() => apagarMeta(meta, totalDepositado)}
+												title="Apagar meta"
+												aria-label="Apagar meta"
+												className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer"
+											>
+												<Trash2 size={14} />
+											</button>
+										</div>
 										{meta.debito_automatico && (
 											<span className="inline-block mt-2 bg-pink-50 dark:bg-pink-950/20 text-pink-600 dark:text-pink-400 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider truncate max-w-full">
 												🔄 Débito: Dia {meta.debito_dia} (R$ {Number(meta.debito_valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
@@ -217,7 +248,7 @@ export default function MetasWeb() {
 										</div>
 										<p className="font-black text-[#3D3030] dark:text-slate-200 text-sm">R$ {totalAcumulado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
 										<p className="text-[8px] text-slate-400 dark:text-slate-500 font-bold mt-0.5">
-											Dep: R$ {totalDepositado.toLocaleString()} • Inv: R$ {totalInvestido.toLocaleString()}
+											Depósitos: R$ {totalDepositado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} • Caixinhas/investimentos: R$ {totalInvestido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 										</p>
 									</div>
 									<div className="text-right">
@@ -253,12 +284,30 @@ export default function MetasWeb() {
 						</div>
 					</div>
 				)}
+				{metas.length === 0 && (
+					<div className="col-span-full text-center">
+						<button
+							onClick={criarReservaSugerida}
+							className="px-6 py-3 rounded-2xl bg-pink-50 dark:bg-pink-950/30 text-pink-600 dark:text-pink-400 font-black text-sm hover:bg-pink-100 dark:hover:bg-pink-900/40 cursor-pointer"
+						>
+							🐷 Começar com uma Reserva de Emergência (dá para editar ou apagar depois)
+						</button>
+					</div>
+				)}
 			</div>
 
 			{isAddMetaOpen && (
 				<AddMetaWeb 
 					onClose={() => setIsAddMetaOpen(false)} 
 					onSuccess={loadMetas} 
+				/>
+			)}
+
+			{metaEmEdicao && (
+				<AddMetaWeb
+					meta={metaEmEdicao}
+					onClose={() => setMetaEmEdicao(null)}
+					onSuccess={loadMetas}
 				/>
 			)}
 
@@ -276,12 +325,7 @@ export default function MetasWeb() {
 					isOpen={Boolean(extratoMeta)} 
 					onClose={() => setExtratoMeta(null)} 
 					meta={extratoMeta} 
-					investimentosVinculados={investimentos.filter(inv => {
-						const mId = parseMetaId(inv.corretora);
-						if (mId === extratoMeta.id) return true;
-						const isReserva = /reserva(\s+de)?\s+emerg[eê]ncia|caixinha/i.test(extratoMeta.titulo);
-						return isReserva && (/rdb|reserva|caixinha/i.test(inv.titulo || "") || /rdb|caixinha/i.test(inv.corretora || "")) && !mId;
-					})} 
+					investimentosVinculados={investimentos.filter(inv => parseMetaId(inv.corretora) === extratoMeta.id)} 
 					onSuccess={loadMetas} 
 				/>
 			)}
