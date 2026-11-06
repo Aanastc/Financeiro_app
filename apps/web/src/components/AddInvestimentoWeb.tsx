@@ -1,3 +1,4 @@
+import InputMoeda from "./InputMoeda";
 import { useState, useEffect } from "react";
 import { X, TrendingUp, Save, Target, Building2, Percent } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
@@ -229,14 +230,11 @@ export default function AddInvestimentoWeb({ onClose, onSuccess, investimento }:
 					<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 						<div className="space-y-1.5">
 							<label className={ROTULO}>Valor aplicado (R$)</label>
-							<input
-								type="text"
-								inputMode="decimal"
+							<InputMoeda
 								required
 								className={`${CAMPO} text-green-700 dark:text-green-400`}
-								placeholder="0,00"
 								value={form.valor_investido}
-								onChange={e => setForm({ ...form, valor_investido: e.target.value })}
+								onChange={(v) => setForm({ ...form, valor_investido: v })}
 							/>
 						</div>
 						<div className="space-y-1.5">
@@ -254,13 +252,10 @@ export default function AddInvestimentoWeb({ onClose, onSuccess, investimento }:
 					{editando && (
 						<div className="space-y-1.5">
 							<label className={ROTULO}>Saldo atual (R$)</label>
-							<input
-								type="text"
-								inputMode="decimal"
+							<InputMoeda
 								className={CAMPO}
-								placeholder="Valor que aparece hoje no banco"
 								value={form.valor_atual}
-								onChange={e => setForm({ ...form, valor_atual: e.target.value })}
+								onChange={(v) => setForm({ ...form, valor_atual: v })}
 							/>
 						</div>
 					)}

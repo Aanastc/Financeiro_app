@@ -329,7 +329,9 @@ class DespesasCompartilhadasService {
 
       // Já pago (total ou parcial): desconta do saldo de quem devia e de quem recebeu
       const quemPagouCompra = pagadorId && mapaBalancos.has(pagadorId) ? pagadorId : (membros.find(m => m.is_user) || membros[0])?.id;
-      const jaAcertado = d.terceiro_pago ? Number(d.valor) || 0 : Number(meta?.valor_pago) || 0;
+      // Cobrança opcional recusada: quem pagou fica com o valor (sai do que o outro deve)
+      const recusada = meta?.resposta_cobranca === "recusada";
+      const jaAcertado = d.terceiro_pago || recusada ? Number(d.valor) || 0 : Number(meta?.valor_pago) || 0;
       if (jaAcertado > 0 && quemPagouCompra) {
         let devedores: { id: string; peso: number }[] = [];
         if (d.terceiro) {

@@ -1,3 +1,4 @@
+import InputMoeda from "./InputMoeda";
 import { useState } from "react";
 import { X, Target, Save } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
@@ -97,13 +98,11 @@ export default function AddMetaWeb({ onClose, onSuccess }: AddMetaProps) {
 					<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 						<div className="space-y-1.5">
 							<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">Valor Objetivo (R$)</label>
-							<input 
-								type="text" 
+							<InputMoeda 
 								required
 								className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-3.5 font-black text-pink-500 dark:text-pink-400 outline-none focus:ring-2 focus:ring-pink-500 text-sm transition-colors"
-								placeholder="0,00"
 								value={form.valor}
-								onChange={e => setForm({...form, valor: e.target.value})}
+								onChange={(v) => setForm({...form, valor: v})}
 							/>
 						</div>
 						<div className="space-y-1.5">
@@ -149,13 +148,11 @@ export default function AddMetaWeb({ onClose, onSuccess }: AddMetaProps) {
 								</div>
 								<div className="space-y-1.5">
 									<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">Valor do Débito (R$)</label>
-									<input 
-										type="text" 
+									<InputMoeda 
 										required
 										className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-3.5 font-black text-pink-500 dark:text-pink-400 outline-none focus:ring-2 focus:ring-pink-500 text-sm transition-colors"
-										placeholder="0,00"
 										value={form.debito_valor}
-										onChange={e => setForm({...form, debito_valor: e.target.value})}
+										onChange={(v) => setForm({...form, debito_valor: v})}
 									/>
 								</div>
 							</div>

@@ -1,3 +1,4 @@
+import InputMoeda from "./InputMoeda";
 import { useState } from "react";
 import { X, ArrowUpRight, Save } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
@@ -67,13 +68,11 @@ export default function AddDepositoWeb({ metaId, metaTitulo, onClose, onSuccess 
 				<form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-6 overflow-y-auto flex-1 scrollbar-thin">
 					<div className="space-y-2">
 						<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">Valor do Depósito (R$)</label>
-						<input 
-							type="text" 
+						<InputMoeda 
 							required
 							className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-3.5 font-black text-pink-500 dark:text-pink-400 outline-none focus:ring-2 focus:ring-pink-500 text-center text-3xl"
-							placeholder="0,00"
 							value={form.valor}
-							onChange={e => setForm({...form, valor: e.target.value})}
+							onChange={(v) => setForm({...form, valor: v})}
 							autoFocus
 						/>
 					</div>

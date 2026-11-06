@@ -1,3 +1,4 @@
+import InputMoeda from "./InputMoeda";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { X, HandCoins, Building, Calendar, DollarSign } from "lucide-react";
@@ -34,7 +35,7 @@ export default function AddDividaModal({ isOpen, onClose, userId }: any) {
 
         try {
             const numParcelas = parseInt(quantidadeParcelas);
-            const valTotal = parseFloat(valorTotal.replace(",", "."));
+            const valTotal = parseFloat(valorTotal.replace(/\./g, "").replace(",", "."));
             const valorParcela = valTotal / numParcelas;
 
             const dividaPayload = {
@@ -144,13 +145,10 @@ export default function AddDividaModal({ isOpen, onClose, userId }: any) {
                                 <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Valor Total (R$)</label>
                                 <div className="relative">
                                     <DollarSign size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                                    <input 
-                                        type="number"
-                                        step="0.01"
+                                    <InputMoeda
                                         required
                                         value={valorTotal}
-                                        onChange={(e) => setValorTotal(e.target.value)}
-                                        placeholder="0.00"
+                                        onChange={(v) => setValorTotal(v)}
                                         className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl pl-12 pr-4 py-3.5 text-slate-800 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-purple-500/50"
                                     />
                                 </div>

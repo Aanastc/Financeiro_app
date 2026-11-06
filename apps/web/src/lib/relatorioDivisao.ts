@@ -1,12 +1,12 @@
 import ExcelJS from "exceljs";
-import { CORES, FMT_DATA, FMT_MOEDA, cabecalho, dataExcel, linha, secao, titulo } from "./relatorioExcel";
+import { CORES, FMT_MOEDA, FONTE } from "./relatorioExcel";
 
 /**
- * Planilhas da divisão de contas (por pessoa e por grupo).
- * Só lê os dados já carregados na tela. Uma compra parcelada aparece:
- *   - por mês (quanto vence em cada data),
- *   - por compra (uma linha por item comprado),
- *   - e em detalhe (cada parcela).
+ * Planilhas da divisão de contas:
+ *   aba "Resumo": quanto foi, quanto já pagaram, quanto falta e uma linha por mês
+ *   (clicando no mês abre a aba dele);
+ *   uma aba por mês com os itens daquele mês.
+ * Só lê os dados já carregados na tela.
  */
 
 const lerMeta = (obs?: string | null): any => {
@@ -25,227 +25,301 @@ async function baixar(wb: ExcelJS.Workbook, nomeArquivo: string) {
 
 const slug = (t: string) =>
 	(t || "planilha").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w]+/g, "_").replace(/^_|_$/g, "").toLowerCase();
-
 const hojeISO = () => {
 	const d = new Date();
 	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 const centavos = (v: number) => Math.round(v * 100) / 100;
-const letra = (n: number) => {
-	let s = "";
-	while (n > 0) {
-		const r = (n - 1) % 26;
-		s = String.fromCharCode(65 + r) + s;
-		n = Math.floor((n - 1) / 26);
-	}
-	return s;
+const dataBR = (iso: string) => {
+	const [a, m, d] = iso.split("-");
+	return `${d}/${m}/${a}`;
 };
+const moeda = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 /** "Projetor HY300 (2/6) (Parte Julia) [69]" -> "Projetor HY300" */
 const limparDescricao = (texto: string, nomes: string[] = []) => {
 	let t = String(texto || "");
-	t = t.replace(/\s*\[[^\]]*\]\s*$/, "");
-	t = t.replace(/\s*\(Parte [^)]*\)\s*$/i, "");
+	t = t.replace(/\s*\[[^\]]*\]\s*$/, "").replace(/\s*\(Parte [^)]*\)\s*$/i, "");
 	for (const n of nomes) if (n) t = t.replace(new RegExp(`\\s*-\\s*${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "i"), "");
-	t = t.replace(/\s*\(\d+\/\d+\)\s*$/, "");
-	return t.trim();
+	return t.replace(/\s*\(\d+\/\d+\)\s*$/, "").trim();
 };
 
-interface ItemNormalizado {
+interface Item {
 	data: string;
 	compra: string;
-	parcela: number;
-	totalParcelas: number;
+	parcela: string;
 	valor: number;
 	pago: number;
 	aberto: number;
 	opcional: boolean;
 	recusado: boolean;
-	situacao: string;
-	dataCompra: string | null;
-	valorCompra: number | null;
-	grupo: string;
+	quitado: boolean;
 	meta: any;
-	original: any;
 }
 
-function normalizar(i: any, nomes: string[]): ItemNormalizado {
+function normalizar(i: any, nomes: string[]): Item {
 	const meta = lerMeta(i.observacao);
 	const valor = Number(i.valor) || 0;
-	const pago = i.terceiro_pago ? valor : Math.min(valor, Number(meta.valor_pago) || 0);
 	const recusado = meta.resposta_cobranca === "recusada";
-	const aberto = i.terceiro_pago || recusado ? 0 : centavos(Math.max(0, valor - pago));
-	const parcelaTexto = String(i.descricao || "").match(/\((\d+)\/(\d+)\)/);
-	const parcela = Number(meta.parcela) || (parcelaTexto ? Number(parcelaTexto[1]) : 1);
-	const totalParcelas = Number(meta.total_parcelas) || (parcelaTexto ? Number(parcelaTexto[2]) : 1);
-	const situacao = i.terceiro_pago
-		? "Quitado"
-		: recusado
-			? "Recusado"
-			: pago > 0
-				? "Parcial"
-				: i.data <= hojeISO()
-					? "Vencido"
-					: "A vencer";
+	const pago = i.terceiro_pago ? valor : Math.min(valor, Number(meta.valor_pago) || 0);
+	const m = String(i.descricao || "").match(/\((\d+)\/(\d+)\)/);
+	const p = Number(meta.parcela) || (m ? Number(m[1]) : 1);
+	const t = Number(meta.total_parcelas) || (m ? Number(m[2]) : 1);
 	return {
 		data: i.data,
 		compra: limparDescricao(meta.descricao_original || i.descricao, nomes),
-		parcela,
-		totalParcelas,
+		parcela: t > 1 ? `${p}/${t}` : "",
 		valor,
 		pago,
-		aberto,
+		aberto: i.terceiro_pago || recusado ? 0 : centavos(Math.max(0, valor - pago)),
 		opcional: Boolean(meta.opcional),
 		recusado,
-		situacao,
-		dataCompra: meta.data_compra || null,
-		valorCompra: Number(meta.valor_compra) || null,
-		grupo: meta.grupo_nome || "",
+		quitado: Boolean(i.terceiro_pago),
 		meta,
-		original: i,
 	};
 }
 
-const agrupar = <T>(lista: T[], chave: (x: T) => string) => {
-	const mapa = new Map<string, T[]>();
-	for (const x of lista) mapa.set(chave(x), [...(mapa.get(chave(x)) || []), x]);
-	return mapa;
+
+/** Situação de um mês, em português direto */
+const situacaoMes = (itens: Item[], hoje: string) => {
+	const aberto = centavos(itens.reduce((s, i) => s + i.aberto, 0));
+	if (aberto <= 0) return { texto: "PAGO", cor: CORES.receita };
+	const pago = itens.some((i) => i.pago > 0);
+	if (itens[0].data <= hoje) return { texto: pago ? `VENCIDO · falta ${moeda(aberto)}` : "VENCIDO", cor: CORES.despesa };
+	return { texto: pago ? `PARCIAL · falta ${moeda(aberto)}` : "A VENCER", cor: CORES.neutro };
 };
 
-const corSituacao = (s: string) =>
-	s === "Quitado" ? CORES.receita.texto : s === "Vencido" || s === "Recusado" ? CORES.despesa.texto : undefined;
+// ----------------------------------------------------------------------------
+// Estilos simples
+// ----------------------------------------------------------------------------
+const fonte = (bold = false, size = 10.5, cor = "263238", italic = false): Partial<ExcelJS.Font> => ({ name: FONTE, size, bold, italic, color: { argb: cor } });
+const preencher = (cell: ExcelJS.Cell, argb: string) => (cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb } });
 
-/** Linha "Total" com SOMA nas colunas indicadas. */
-function linhaTotal(aba: ExcelJS.Worksheet, colunas: number, somar: number[], inicio: number, fim: number, cor = CORES.resultado.total) {
-	const tot = linha(aba, ["Total", ...Array(colunas - 1).fill(null)], {}, { negrito: true, fundo: cor });
-	for (const c of somar) {
-		tot.getCell(c).value = fim >= inicio ? { formula: `SUM(${letra(c)}${inicio}:${letra(c)}${fim})` } : 0;
-		tot.getCell(c).numFmt = FMT_MOEDA;
-		tot.getCell(c).alignment = { horizontal: "right", vertical: "middle" };
-	}
+function tituloPlanilha(ws: ExcelJS.Worksheet, texto: string, sub: string, colunas: number) {
+	const r = ws.addRow([texto]);
+	ws.mergeCells(r.number, 1, r.number, colunas);
+	r.height = 34;
+	r.getCell(1).font = fonte(true, 15, "FFFFFF");
+	r.getCell(1).alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+	preencher(r.getCell(1), CORES.titulo);
+	const s = ws.addRow([sub]);
+	ws.mergeCells(s.number, 1, s.number, colunas);
+	s.getCell(1).font = fonte(false, 9.5, "78909C", true);
+	s.getCell(1).alignment = { indent: 1 };
+	ws.addRow([]);
 }
 
-function chaveValor(aba: ExcelJS.Worksheet, rotulo: string, valor: number | string, destaque?: string) {
-	const r = linha(aba, [rotulo, valor], typeof valor === "number" ? { 2: FMT_MOEDA } : {}, { corTexto: destaque });
-	r.getCell(1).font = { ...r.getCell(1).font, bold: true };
+/** Bloco de números grandes: rótulos em cima, valores embaixo. */
+function destaques(ws: ExcelJS.Worksheet, itens: { rotulo: string; valor: number; cor?: string }[]) {
+	const r1 = ws.addRow(itens.map((i) => i.rotulo));
+	const r2 = ws.addRow(itens.map((i) => i.valor));
+	itens.forEach((i, k) => {
+		const c1 = r1.getCell(k + 1);
+		c1.font = fonte(true, 9, "607D8B");
+		c1.alignment = { horizontal: "left", indent: 1 };
+		preencher(c1, "F5F7F8");
+		const c2 = r2.getCell(k + 1);
+		c2.font = fonte(true, 14, i.cor || "263238");
+		c2.numFmt = FMT_MOEDA;
+		c2.alignment = { horizontal: "left", indent: 1 };
+		preencher(c2, "F5F7F8");
+	});
+	r2.height = 26;
+	ws.addRow([]);
+}
+
+function cabecalhoTabela(ws: ExcelJS.Worksheet, colunas: string[]) {
+	const r = ws.addRow(colunas);
+	r.height = 22;
+	r.eachCell((c, n) => {
+		c.font = fonte(true, 10, "FFFFFF");
+		preencher(c, CORES.cabecalho);
+		c.alignment = { vertical: "middle", horizontal: n === 1 ? "left" : "center", indent: n === 1 ? 1 : 0 };
+	});
 	return r;
+}
+
+function linhaMes(ws: ExcelJS.Worksheet, valores: ExcelJS.CellValue[], moedas: number[], cor: { texto: string; fundo: string }) {
+	const r = ws.addRow(valores);
+	r.height = 22;
+	r.eachCell({ includeEmpty: true }, (c, n) => {
+		c.font = fonte(true, 10.5, n === valores.length ? cor.texto : "263238");
+		preencher(c, cor.fundo);
+		c.border = { top: { style: "thin", color: { argb: "B0BEC5" } } };
+		c.alignment = { vertical: "middle", horizontal: moedas.includes(n) ? "right" : n === 1 ? "left" : "center", indent: n === 1 ? 1 : 0 };
+		if (moedas.includes(n)) c.numFmt = FMT_MOEDA;
+	});
+	return r;
+}
+
+function linhaItem(ws: ExcelJS.Worksheet, valores: ExcelJS.CellValue[], moedas: number[], apagado = false) {
+	const r = ws.addRow(valores);
+	r.outlineLevel = 1; // dá para recolher os itens no Excel (+/−)
+	r.eachCell({ includeEmpty: true }, (c, n) => {
+		c.font = { ...fonte(false, 10, apagado ? "9E9E9E" : "37474F"), strike: apagado && n === 1 };
+		c.alignment = { vertical: "middle", horizontal: moedas.includes(n) ? "right" : n === 1 ? "left" : "center", indent: n === 1 ? 3 : 0 };
+		if (moedas.includes(n)) c.numFmt = FMT_MOEDA;
+	});
+	return r;
+}
+
+function linhaTotal(ws: ExcelJS.Worksheet, valores: ExcelJS.CellValue[], moedas: number[]) {
+	ws.addRow([]);
+	const r = ws.addRow(valores);
+	r.height = 24;
+	r.eachCell({ includeEmpty: true }, (c, n) => {
+		c.font = fonte(true, 11, "FFFFFF");
+		preencher(c, CORES.titulo);
+		c.alignment = { vertical: "middle", horizontal: moedas.includes(n) ? "right" : n === 1 ? "left" : "center", indent: n === 1 ? 1 : 0 };
+		if (moedas.includes(n)) c.numFmt = FMT_MOEDA;
+	});
+}
+
+function nota(ws: ExcelJS.Worksheet, texto: string, colunas: number) {
+	const r = ws.addRow([texto]);
+	ws.mergeCells(r.number, 1, r.number, colunas);
+	r.getCell(1).font = fonte(false, 9, "78909C", true);
+	r.getCell(1).alignment = { indent: 1, wrapText: true };
+}
+
+// ============================================================================
+// Abas por mês
+// ============================================================================
+const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+const MESES_LONGOS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+const nomeAba = (ym: string) => `${MESES[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
+const nomeMesLongo = (ym: string) => `${MESES_LONGOS[Number(ym.slice(5, 7)) - 1]} de ${ym.slice(0, 4)}`;
+
+const porMes = <T extends { data: string }>(itens: T[]) => {
+	const mapa = new Map<string, T[]>();
+	for (const i of [...itens].sort((a, b) => a.data.localeCompare(b.data))) {
+		const ym = i.data.slice(0, 7);
+		mapa.set(ym, [...(mapa.get(ym) || []), i]);
+	}
+	return [...mapa.entries()];
+};
+
+/** Célula com link para outra aba */
+const linkAba = (texto: string, aba: string): ExcelJS.CellValue => ({ text: texto, hyperlink: `#'${aba}'!A1` });
+
+function voltarAoResumo(ws: ExcelJS.Worksheet, colunas: number) {
+	const r = ws.addRow([linkAba("← Voltar ao resumo", "Resumo")]);
+	ws.mergeCells(r.number, 1, r.number, colunas);
+	r.getCell(1).font = { ...fonte(true, 9.5, CORES.resultado.texto), underline: true };
+	r.getCell(1).alignment = { indent: 1 };
 }
 
 // ============================================================================
 // PESSOA
 // ============================================================================
+const AMARELO = { fundo: "FFF4CC", texto: "7A5A00" }; // linhas de itens opcionais
+
+/** Pinta a linha de um item opcional e escreve a legenda quando precisa. */
+function pintarOpcional(r: ExcelJS.Row, colunas: number) {
+	for (let n = 1; n <= colunas; n++) preencher(r.getCell(n), AMARELO.fundo);
+}
+
+function legendaOpcional(ws: ExcelJS.Worksheet, colunas: number) {
+	const r = ws.addRow(["Linhas em amarelo = itens OPCIONAIS (a pessoa pode recusar)"]);
+	ws.mergeCells(r.number, 1, r.number, colunas);
+	preencher(r.getCell(1), AMARELO.fundo);
+	r.getCell(1).font = fonte(true, 9.5, AMARELO.texto);
+	r.getCell(1).alignment = { indent: 1 };
+}
+
+/** Itens obrigatórios primeiro, depois os opcionais; dentro de cada parte, por data e nome */
+const ordenarItens = <T extends { opcional: boolean; data: string; compra: string }>(lista: T[]) =>
+	[...lista].sort((a, b) => Number(a.opcional) - Number(b.opcional) || a.data.localeCompare(b.data) || a.compra.localeCompare(b.compra));
+
 export async function exportarExcelPessoa(params: { nome: string; itens: any[] }) {
-	const { nome, itens: brutos } = params;
-	const itens = brutos.map((i) => normalizar(i, [nome])).sort((a, b) => a.data.localeCompare(b.data) || a.compra.localeCompare(b.compra));
+	const { nome } = params;
+	const itens = params.itens.map((i) => normalizar(i, [nome]));
 	const primeiro = nome.split(" ")[0];
+	const hoje = hojeISO();
+	const valorConta = (i: Item) => (i.recusado ? i.pago : i.valor); // recusado não conta (só o que já tinha sido pago)
+	const soma = (lista: Item[], f: (i: Item) => number) => centavos(lista.reduce((s, i) => s + f(i), 0));
+	const comOpc = (lista: Item[]) => soma(lista, valorConta);
+	const soObrig = (lista: Item[]) => soma(lista, (i) => (i.opcional ? 0 : valorConta(i)));
+	const meses = porMes(itens);
+
 	const wb = new ExcelJS.Workbook();
 	wb.creator = "Tech Finance";
-	const hoje = hojeISO();
 
-	// --- Resumo
+	// --- RESUMO
 	const resumo = wb.addWorksheet("Resumo");
-	resumo.columns = [{ width: 34 }, { width: 20 }, { width: 14 }, { width: 18 }];
-	titulo(resumo, `DIVISÃO DE CONTAS COM ${nome.toUpperCase()}`, 4, `Gerado em ${new Date().toLocaleString("pt-BR")}`);
-	const soma = (f: (i: ItemNormalizado) => number) => centavos(itens.reduce((s, i) => s + f(i), 0));
-	secao(resumo, "SITUAÇÃO", 4, CORES.resultado);
-	chaveValor(resumo, "Total lançado", soma((i) => i.valor));
-	chaveValor(resumo, "Já recebido", soma((i) => i.pago), CORES.receita.texto);
-	chaveValor(resumo, `Em aberto (${primeiro} te deve)`, soma((i) => i.aberto), CORES.resultado.texto);
-	chaveValor(resumo, "   vencido até hoje", soma((i) => (i.data <= hoje ? i.aberto : 0)), CORES.despesa.texto);
-	chaveValor(resumo, "   desse total, opcional", soma((i) => (i.opcional ? i.aberto : 0)));
-	chaveValor(resumo, "Recusado (não cobra mais)", soma((i) => (i.recusado ? i.valor - i.pago : 0)));
-	chaveValor(resumo, "Compras", String(new Set(itens.map((i) => i.compra)).size));
-
+	resumo.columns = [{ width: 26 }, { width: 18 }, { width: 18 }, { width: 16 }, { width: 16 }, { width: 28 }];
+	tituloPlanilha(resumo, `Divisão de contas com ${nome}`, `Gerado em ${new Date().toLocaleString("pt-BR")}`, 6);
+	destaques(resumo, [
+		{ rotulo: "TOTAL COM OPCIONAIS", valor: comOpc(itens) },
+		{ rotulo: "SÓ OBRIGATÓRIOS", valor: soObrig(itens) },
+		{ rotulo: "JÁ PAGOU", valor: soma(itens, (i) => i.pago), cor: CORES.receita.texto },
+		{ rotulo: "FALTA RECEBER", valor: soma(itens, (i) => i.aberto), cor: CORES.resultado.texto },
+		{ rotulo: "JÁ VENCIDO", valor: soma(itens, (i) => (i.data <= hoje ? i.aberto : 0)), cor: CORES.despesa.texto },
+	]);
+	cabecalhoTabela(resumo, ["Mês (clique para abrir)", "Com opcionais", "Só obrigatórios", "Já pagou", "Falta", "Situação"]);
+	for (const [ym, lista] of meses) {
+		const s = situacaoMes(lista, hoje);
+		const r = linhaMes(
+			resumo,
+			[linkAba(nomeMesLongo(ym), nomeAba(ym)), comOpc(lista), soObrig(lista), soma(lista, (i) => i.pago), soma(lista, (i) => i.aberto), s.texto],
+			[2, 3, 4, 5],
+			s.cor,
+		);
+		r.getCell(1).font = { ...fonte(true, 10.5, CORES.resultado.texto), underline: true };
+	}
+	linhaTotal(resumo, ["TOTAL", comOpc(itens), soObrig(itens), soma(itens, (i) => i.pago), soma(itens, (i) => i.aberto), ""], [2, 3, 4, 5]);
 	resumo.addRow([]);
-	secao(resumo, "PRÓXIMOS VENCIMENTOS", 4, CORES.receita);
-	cabecalho(resumo, ["Vencimento", "Em aberto", "Itens", "Situação"]);
-	const proximos = [...agrupar(itens.filter((i) => i.aberto > 0), (i) => i.data).entries()].slice(0, 12);
-	if (proximos.length === 0) linha(resumo, ["Nada em aberto", "", "", ""]);
-	for (const [data, lista] of proximos) {
-		const vencido = data <= hoje;
-		linha(resumo, [dataExcel(data), centavos(lista.reduce((s, i) => s + i.aberto, 0)), lista.length, vencido ? "Vencido" : "A vencer"], { 1: FMT_DATA, 2: FMT_MOEDA }, { corTexto: vencido ? CORES.despesa.texto : undefined });
-	}
+	const recusado = soma(itens, (i) => (i.recusado ? i.valor - i.pago : 0));
+	nota(
+		resumo,
+		`Cada mês tem a sua aba com os itens. "Com opcionais" soma tudo; "Só obrigatórios" deixa de fora o que ${primeiro} pode recusar. Itens recusados não entram em nenhum total.${recusado > 0 ? ` Total recusado: ${moeda(recusado)}.` : ""}`,
+		6,
+	);
 
-	// --- Por mês
-	const mes = wb.addWorksheet("Por mês", { views: [{ state: "frozen", ySplit: 1 }] });
-	mes.columns = [{ width: 13 }, { width: 8 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 13 }];
-	cabecalho(mes, ["Vencimento", "Itens", "Valor", "Recebido", "Em aberto", "Opcional", "Situação"]);
-	let inicio = mes.rowCount + 1;
-	for (const [data, lista] of agrupar(itens, (i) => i.data)) {
-		const aberto = lista.reduce((s, i) => s + i.aberto, 0);
-		const pago = lista.reduce((s, i) => s + i.pago, 0);
-		const situacao = aberto <= 0 ? (lista.every((i) => i.recusado) ? "Recusado" : "Quitado") : pago > 0 ? "Parcial" : data <= hoje ? "Vencido" : "A vencer";
-		linha(
-			mes,
-			[dataExcel(data), lista.length, centavos(lista.reduce((s, i) => s + i.valor, 0)), centavos(pago), centavos(aberto), centavos(lista.filter((i) => i.opcional).reduce((s, i) => s + i.aberto, 0)), situacao],
-			{ 1: FMT_DATA, 3: FMT_MOEDA, 4: FMT_MOEDA, 5: FMT_MOEDA, 6: FMT_MOEDA },
-			{ corTexto: corSituacao(situacao) },
-		);
-	}
-	linhaTotal(mes, 7, [3, 4, 5, 6], inicio, mes.rowCount, CORES.receita.total);
-
-	// --- Compras (uma linha por item comprado)
-	const compras = wb.addWorksheet("Compras", { views: [{ state: "frozen", ySplit: 1 }] });
-	compras.columns = [{ width: 46 }, { width: 13 }, { width: 10 }, { width: 16 }, { width: 16 }, { width: 15 }, { width: 15 }, { width: 10 }, { width: 14 }];
-	cabecalho(compras, ["Compra", "Data da compra", "Parcelas", "Valor da compra", `Parte de ${primeiro}`, "Recebido", "Em aberto", "Opcional", "Grupo"]);
-	inicio = compras.rowCount + 1;
-	for (const [compra, lista] of agrupar(itens, (i) => `${i.compra}|${i.dataCompra || ""}`)) {
-		const p = lista[0];
-		linha(
-			compras,
-			[
-				compra.split("|")[0],
-				p.dataCompra ? dataExcel(p.dataCompra) : dataExcel(p.data),
-				p.totalParcelas > 1 ? `${p.totalParcelas}x` : "à vista",
-				p.valorCompra,
-				centavos(lista.reduce((s, i) => s + i.valor, 0)),
-				centavos(lista.reduce((s, i) => s + i.pago, 0)),
-				centavos(lista.reduce((s, i) => s + i.aberto, 0)),
-				p.opcional ? (lista.some((i) => i.recusado) ? "Recusado" : "Sim") : "",
-				p.grupo,
-			],
-			{ 2: FMT_DATA, 4: FMT_MOEDA, 5: FMT_MOEDA, 6: FMT_MOEDA, 7: FMT_MOEDA },
-		);
-	}
-	linhaTotal(compras, 9, [5, 6, 7], inicio, compras.rowCount, CORES.receita.total);
-	compras.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 9 } };
-
-	// --- Parcelas (detalhe)
-	const det = wb.addWorksheet("Parcelas", { views: [{ state: "frozen", ySplit: 1 }] });
-	det.columns = [{ width: 13 }, { width: 46 }, { width: 9 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 10 }, { width: 12 }];
-	cabecalho(det, ["Vencimento", "Compra", "Parcela", "Valor", "Recebido", "Em aberto", "Opcional", "Situação"]);
-	inicio = det.rowCount + 1;
-	for (const i of itens) {
-		linha(
-			det,
-			[dataExcel(i.data), i.compra, i.totalParcelas > 1 ? `${i.parcela}/${i.totalParcelas}` : "única", i.valor, i.pago, i.aberto, i.opcional ? "Sim" : "", i.situacao],
-			{ 1: FMT_DATA, 4: FMT_MOEDA, 5: FMT_MOEDA, 6: FMT_MOEDA },
-			{ corTexto: corSituacao(i.situacao) },
-		);
-	}
-	linhaTotal(det, 8, [4, 5, 6], inicio, det.rowCount, CORES.receita.total);
-	det.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 8 } };
-
-	// --- Recebimentos (o que já foi pago)
-	const rec = wb.addWorksheet("Recebimentos");
-	rec.columns = [{ width: 13 }, { width: 16 }, { width: 14 }];
-	cabecalho(rec, ["Data", "Valor", "Itens abatidos"]);
-	const recebimentos = new Map<string, { data: string; valor: number; itens: number }>();
-	for (const i of itens) {
-		const pagamentos: any[] = Array.isArray(i.meta.pagamentos) ? i.meta.pagamentos : i.original.terceiro_pago ? [{ data: i.meta.data_pagamento || i.data, valor: i.valor }] : [];
-		for (const p of pagamentos) {
-			const chave = p.recebimento_id || `${p.data}|${i.original.id}`;
-			const atual = recebimentos.get(chave) || { data: p.data, valor: 0, itens: 0 };
-			atual.valor = centavos(atual.valor + (Number(p.valor) || 0));
-			atual.itens += 1;
-			recebimentos.set(chave, atual);
+	// --- UMA ABA POR MÊS
+	for (const [ym, lista] of meses) {
+		const ws = wb.addWorksheet(nomeAba(ym));
+		ws.columns = [{ width: 13 }, { width: 50 }, { width: 10 }, { width: 15 }, { width: 24 }];
+		tituloPlanilha(ws, `${nomeMesLongo(ym)} — ${nome}`, `${lista.length} ${lista.length === 1 ? "item" : "itens"}`, 5);
+		voltarAoResumo(ws, 5);
+		ws.addRow([]);
+		destaques(ws, [
+			{ rotulo: "COM OPCIONAIS", valor: comOpc(lista) },
+			{ rotulo: "SÓ OBRIGATÓRIOS", valor: soObrig(lista) },
+			{ rotulo: "JÁ PAGOU", valor: soma(lista, (i) => i.pago), cor: CORES.receita.texto },
+			{ rotulo: "FALTA", valor: soma(lista, (i) => i.aberto), cor: CORES.resultado.texto },
+		]);
+		if (lista.some((i) => i.opcional)) legendaOpcional(ws, 5);
+		cabecalhoTabela(ws, ["Vencimento", "Item", "Parcela", "Valor", "Situação"]);
+		for (const i of ordenarItens(lista)) {
+			const situacao = [
+				i.recusado ? "recusado" : i.quitado ? "pago" : i.pago > 0 ? `pagou ${moeda(i.pago)}` : i.data <= hoje ? "vencido" : "a vencer",
+				i.opcional ? "opcional" : "",
+			]
+				.filter(Boolean)
+				.join(" · ");
+			const r = linhaItem(ws, [dataBR(i.data), i.compra, i.parcela, valorConta(i), situacao], [4], false);
+			r.outlineLevel = 0;
+			r.getCell(1).alignment = { horizontal: "left", indent: 1 };
+			r.getCell(2).alignment = { horizontal: "left" };
+			r.getCell(2).font = { ...fonte(false, 10, i.recusado ? "9E9E9E" : i.opcional ? AMARELO.texto : "37474F"), strike: i.recusado };
+			if (i.opcional) pintarOpcional(r, 5);
+			if (i.quitado) r.getCell(5).font = fonte(true, 10, CORES.receita.texto);
+			else if (!i.recusado && i.data <= hoje) r.getCell(5).font = fonte(true, 10, CORES.despesa.texto);
 		}
+		linhaTotal(ws, ["TOTAL COM OPCIONAIS", "", "", comOpc(lista), `falta ${moeda(soma(lista, (i) => i.aberto))}`], [4]);
+		if (lista.some((i) => i.opcional)) {
+			const r = ws.addRow(["TOTAL SÓ OBRIGATÓRIOS", "", "", soObrig(lista), `falta ${moeda(soma(lista, (i) => (i.opcional ? 0 : i.aberto)))}`]);
+			r.height = 22;
+			r.eachCell({ includeEmpty: true }, (c, n) => {
+				c.font = fonte(true, 10.5, "263238");
+				preencher(c, "E0E0E0");
+				c.alignment = { vertical: "middle", horizontal: n === 4 ? "right" : n === 1 ? "left" : "center", indent: n === 1 ? 1 : 0 };
+				if (n === 4) c.numFmt = FMT_MOEDA;
+			});
+		}
+		ws.views = [{ state: "frozen", ySplit: lista.some((i) => i.opcional) ? 10 : 9 }];
 	}
-	inicio = rec.rowCount + 1;
-	const listaRec = [...recebimentos.values()].sort((a, b) => String(a.data).localeCompare(String(b.data)));
-	if (listaRec.length === 0) linha(rec, ["Nenhum pagamento registrado", "", ""]);
-	for (const r of listaRec) linha(rec, [r.data ? dataExcel(r.data) : "", r.valor, r.itens], { 1: FMT_DATA, 2: FMT_MOEDA });
-	if (listaRec.length) linhaTotal(rec, 3, [2], inicio, rec.rowCount, CORES.receita.total);
 
 	await baixar(wb, `divisao_${slug(nome)}_${hoje}.xlsx`);
 }
@@ -261,114 +335,139 @@ export async function exportarExcelGrupo(params: {
 }) {
 	const { grupo, balancos = [], acertos = [] } = params;
 	const membros = grupo.membros || [];
-	const nomeMembro = (m?: { nome: string; is_user?: boolean }) => (m ? (m.is_user ? `${m.nome} (você)` : m.nome) : "");
-	const nomes = membros.map((m) => m.nome);
+	const curto = (m?: { nome: string; is_user?: boolean }) => (m ? (m.is_user ? "Você" : m.nome.split(" ")[0]) : "");
 	const hoje = hojeISO();
 
-	const despesas = params.despesas
-		.map((d) => {
-			const n = normalizar(d, nomes);
-			const pagador = membros.find((m) => m.id === n.meta.pago_por_id);
-			const total = Number(n.meta.valor_total ?? d.valor) || 0;
-			const partes = membros.map((m) => {
-				const p = (n.meta.participantes || []).find((x: any) => x.id === m.id || (x.is_user && m.is_user));
-				return Number(p?.valor_devido) || 0;
-			});
-			const pagoPor = pagador ? nomeMembro(pagador) : n.meta.voce_pagou ? nomeMembro(membros.find((m) => m.is_user)) : n.meta.pago_por_nome || "";
-			return { ...n, total, partes, pagoPor };
-		})
-		.sort((a, b) => a.data.localeCompare(b.data) || a.compra.localeCompare(b.compra));
+	const despesas = params.despesas.map((d) => {
+		const n = normalizar(d, membros.map((m) => m.nome));
+		const total = Number(n.meta.valor_total ?? d.valor) || 0;
+		const partes = membros.map((m) => {
+			const p = (n.meta.participantes || []).find((x: any) => x.id === m.id || (x.is_user && m.is_user));
+			return Number(p?.valor_devido) || 0;
+		});
+		const pagador = membros.find((m) => m.id === n.meta.pago_por_id) || (n.meta.voce_pagou ? membros.find((m) => m.is_user) : undefined);
+		return { ...n, total, partes, pagoPor: pagador ? curto(pagador) : n.meta.pago_por_nome || "" };
+	});
+	type D = (typeof despesas)[number];
+	const soma = (lista: D[], f: (d: D) => number) => centavos(lista.reduce((s, d) => s + f(d), 0));
+	const comOpc = (lista: D[]) => soma(lista, (d) => d.total);
+	const soObrig = (lista: D[]) => soma(lista, (d) => (d.opcional ? 0 : d.total));
+	const meses = porMes(despesas);
 
 	const wb = new ExcelJS.Workbook();
 	wb.creator = "Tech Finance";
-	const colsMembros = membros.map((m) => `Parte ${nomeMembro(m)}`);
 
-	// --- Resumo
+	// --- RESUMO
+	const colsResumo = 4 + membros.length;
 	const resumo = wb.addWorksheet("Resumo");
-	resumo.columns = [{ width: 32 }, { width: 18 }, { width: 18 }, { width: 22 }];
-	titulo(resumo, `GRUPO ${grupo.nome.toUpperCase()}`, 4, `${membros.map(nomeMembro).join(", ")} · gerado em ${new Date().toLocaleString("pt-BR")}`);
-	secao(resumo, "VISÃO GERAL", 4, CORES.resultado);
-	chaveValor(resumo, "Total gasto no grupo", centavos(despesas.reduce((s, d) => s + d.total, 0)));
-	chaveValor(resumo, "Compras", String(new Set(despesas.map((d) => d.compra)).size));
-	chaveValor(resumo, "Vencimentos", String(new Set(despesas.map((d) => d.data)).size));
-	chaveValor(resumo, "Em aberto (ainda não acertado)", centavos(despesas.reduce((s, d) => s + d.aberto, 0)), CORES.despesa.texto);
-
+	resumo.columns = [{ width: 26 }, { width: 16 }, { width: 16 }, ...membros.map(() => ({ width: 16 })), { width: 26 }];
+	tituloPlanilha(resumo, `Grupo ${grupo.nome}`, `${membros.map((m) => (m.is_user ? `${m.nome} (você)` : m.nome)).join(", ")} · gerado em ${new Date().toLocaleString("pt-BR")}`, colsResumo);
+	destaques(resumo, [
+		{ rotulo: "TOTAL COM OPCIONAIS", valor: comOpc(despesas) },
+		{ rotulo: "SÓ OBRIGATÓRIOS", valor: soObrig(despesas) },
+		...membros.map((m, k) => ({ rotulo: `PARTE ${curto(m).toUpperCase()}`, valor: soma(despesas, (d) => d.partes[k]) })),
+		{ rotulo: "FALTA ACERTAR", valor: soma(despesas, (d) => d.aberto), cor: CORES.despesa.texto },
+	]);
+	const frases = acertos.length
+		? acertos.map((a) => {
+				const de = membros.find((m) => m.nome === a.devedorNome);
+				const para = membros.find((m) => m.nome === a.credorNome);
+				return `${de?.is_user ? "Você paga" : `${a.devedorNome.split(" ")[0]} paga`} ${moeda(a.valor)} para ${para?.is_user ? "você" : a.credorNome.split(" ")[0]}`;
+			})
+		: ["Tudo acertado neste grupo."];
+	for (const f of frases) {
+		const r = resumo.addRow([f]);
+		resumo.mergeCells(r.number, 1, r.number, colsResumo);
+		r.getCell(1).font = fonte(true, 11.5, CORES.resultado.texto);
+		r.getCell(1).alignment = { indent: 1 };
+	}
+	if (balancos.length) {
+		nota(
+			resumo,
+			balancos
+				.map((b) => {
+					const m = membros.find((x) => x.id === b.membroId) || membros.find((x) => x.nome === b.nome);
+					return `${curto(m) || b.nome}: pagou ${moeda(b.totalPago)}, parte ${moeda(b.totalDevido)}`;
+				})
+				.join("   ·   "),
+			colsResumo,
+		);
+	}
 	resumo.addRow([]);
-	secao(resumo, "BALANÇO DOS MEMBROS", 4, CORES.resultado);
-	cabecalho(resumo, ["Membro", "Pagou", "Parte dele(a)", "Situação"]);
-	for (const b of balancos) {
-		const m = membros.find((x) => x.id === b.membroId) || membros.find((x) => x.nome === b.nome);
-		const situacao = b.saldoLiquido > 0.01 ? `recebe ${b.saldoLiquido.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}` : b.saldoLiquido < -0.01 ? `deve ${Math.abs(b.saldoLiquido).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}` : "em dia";
-		linha(resumo, [nomeMembro(m) || b.nome, b.totalPago, b.totalDevido, situacao], { 2: FMT_MOEDA, 3: FMT_MOEDA }, { corTexto: b.saldoLiquido < -0.01 ? CORES.despesa.texto : b.saldoLiquido > 0.01 ? CORES.receita.texto : undefined });
-	}
-	resumo.addRow([]);
-	secao(resumo, "QUEM PAGA QUEM", 4, CORES.receita);
-	cabecalho(resumo, ["Quem paga", "Para quem", "Valor", ""]);
-	if (acertos.length === 0) linha(resumo, ["Tudo acertado", "", "", ""]);
-	for (const a of acertos) linha(resumo, [a.devedorNome, a.credorNome, a.valor, ""], { 3: FMT_MOEDA });
-
-	// --- Por mês
-	const mes = wb.addWorksheet("Por mês", { views: [{ state: "frozen", ySplit: 1 }] });
-	mes.columns = [{ width: 13 }, { width: 8 }, { width: 15 }, ...membros.map(() => ({ width: 18 })), { width: 15 }, { width: 12 }];
-	cabecalho(mes, ["Vencimento", "Itens", "Total", ...colsMembros, "Em aberto", "Situação"]);
-	let inicio = mes.rowCount + 1;
-	for (const [data, lista] of agrupar(despesas, (d) => d.data)) {
-		const aberto = lista.reduce((s, d) => s + d.aberto, 0);
-		const situacao = aberto <= 0 ? "Quitado" : lista.some((d) => d.pago > 0) ? "Parcial" : data <= hoje ? "Vencido" : "A vencer";
-		const formatos: Record<number, string> = { 1: FMT_DATA, 3: FMT_MOEDA, [4 + membros.length]: FMT_MOEDA };
-		membros.forEach((_, k) => (formatos[4 + k] = FMT_MOEDA));
-		linha(
-			mes,
-			[dataExcel(data), lista.length, centavos(lista.reduce((s, d) => s + d.total, 0)), ...membros.map((_, k) => centavos(lista.reduce((s, d) => s + d.partes[k], 0))), centavos(aberto), situacao],
-			formatos,
-			{ corTexto: corSituacao(situacao) },
+	const moedasResumo = [2, 3, ...membros.map((_, k) => 4 + k)];
+	cabecalhoTabela(resumo, ["Mês (clique para abrir)", "Com opcionais", "Só obrigatórios", ...membros.map((m) => `Parte ${curto(m)}`), "Situação"]);
+	for (const [ym, lista] of meses) {
+		const s = situacaoMes(lista, hoje);
+		const r = linhaMes(
+			resumo,
+			[linkAba(nomeMesLongo(ym), nomeAba(ym)), comOpc(lista), soObrig(lista), ...membros.map((_, k) => soma(lista, (d) => d.partes[k])), s.texto],
+			moedasResumo,
+			s.cor,
 		);
+		r.getCell(1).font = { ...fonte(true, 10.5, CORES.resultado.texto), underline: true };
 	}
-	linhaTotal(mes, 5 + membros.length, [3, ...membros.map((_, k) => 4 + k), 4 + membros.length], inicio, mes.rowCount);
+	linhaTotal(
+		resumo,
+		["TOTAL", comOpc(despesas), soObrig(despesas), ...membros.map((_, k) => soma(despesas, (d) => d.partes[k])), `falta ${moeda(soma(despesas, (d) => d.aberto))}`],
+		moedasResumo,
+	);
 
-	// --- Compras
-	const compras = wb.addWorksheet("Compras", { views: [{ state: "frozen", ySplit: 1 }] });
-	compras.columns = [{ width: 46 }, { width: 13 }, { width: 10 }, { width: 22 }, { width: 15 }, ...membros.map(() => ({ width: 18 })), { width: 10 }];
-	cabecalho(compras, ["Compra", "Data da compra", "Parcelas", "Pago por", "Total", ...colsMembros, "Opcional"]);
-	inicio = compras.rowCount + 1;
-	for (const [, lista] of agrupar(despesas, (d) => `${d.compra}|${d.dataCompra || ""}|${d.pagoPor}`)) {
-		const p = lista[0];
-		const formatos: Record<number, string> = { 2: FMT_DATA, 5: FMT_MOEDA };
-		membros.forEach((_, k) => (formatos[6 + k] = FMT_MOEDA));
-		linha(
-			compras,
-			[
-				p.compra,
-				dataExcel(p.dataCompra || p.data),
-				p.totalParcelas > 1 ? `${p.totalParcelas}x` : "à vista",
-				p.pagoPor,
-				centavos(lista.reduce((s, d) => s + d.total, 0)),
-				...membros.map((_, k) => centavos(lista.reduce((s, d) => s + d.partes[k], 0))),
-				p.opcional ? (lista.some((d) => d.recusado) ? "Recusado" : "Sim") : "",
-			],
-			formatos,
+	// --- UMA ABA POR MÊS
+	const colsMes = 5 + membros.length;
+	const moedasMes = [4, ...membros.map((_, k) => 5 + k)];
+	for (const [ym, lista] of meses) {
+		const ws = wb.addWorksheet(nomeAba(ym));
+		ws.columns = [{ width: 13 }, { width: 46 }, { width: 10 }, { width: 15 }, ...membros.map(() => ({ width: 15 })), { width: 28 }];
+		tituloPlanilha(ws, `${nomeMesLongo(ym)} — grupo ${grupo.nome}`, `${lista.length} ${lista.length === 1 ? "item" : "itens"}`, colsMes);
+		voltarAoResumo(ws, colsMes);
+		ws.addRow([]);
+		destaques(ws, [
+			{ rotulo: "COM OPCIONAIS", valor: comOpc(lista) },
+			{ rotulo: "SÓ OBRIGATÓRIOS", valor: soObrig(lista) },
+			...membros.map((m, k) => ({ rotulo: `PARTE ${curto(m).toUpperCase()}`, valor: soma(lista, (d) => d.partes[k]) })),
+			{ rotulo: "FALTA ACERTAR", valor: soma(lista, (d) => d.aberto), cor: CORES.despesa.texto },
+		]);
+		if (lista.some((d) => d.opcional)) legendaOpcional(ws, colsMes);
+		cabecalhoTabela(ws, ["Vencimento", "Item", "Parcela", "Total", ...membros.map((m) => `Parte ${curto(m)}`), "Situação"]);
+		for (const d of ordenarItens(lista)) {
+			const situacao = [
+				d.recusado ? "recusado" : d.quitado ? "acertado" : d.data <= hoje ? "vencido" : "a vencer",
+				d.opcional ? "opcional" : "",
+				d.pagoPor ? `pago por ${d.pagoPor === "Você" ? "você" : d.pagoPor}` : "",
+			]
+				.filter(Boolean)
+				.join(" · ");
+			const r = linhaItem(ws, [dataBR(d.data), d.compra, d.parcela, d.total, ...d.partes, situacao], moedasMes, false);
+			r.outlineLevel = 0;
+			r.getCell(1).alignment = { horizontal: "left", indent: 1 };
+			r.getCell(2).alignment = { horizontal: "left" };
+			r.getCell(2).font = { ...fonte(false, 10, d.recusado ? "9E9E9E" : d.opcional ? AMARELO.texto : "37474F"), strike: d.recusado };
+			if (d.opcional) pintarOpcional(r, colsMes);
+		}
+		linhaTotal(
+			ws,
+			["TOTAL COM OPCIONAIS", "", "", comOpc(lista), ...membros.map((_, k) => soma(lista, (d) => d.partes[k])), `falta ${moeda(soma(lista, (d) => d.aberto))}`],
+			moedasMes,
 		);
+		if (lista.some((d) => d.opcional)) {
+			const r = ws.addRow([
+				"TOTAL SÓ OBRIGATÓRIOS",
+				"",
+				"",
+				soObrig(lista),
+				...membros.map((_, k) => soma(lista, (d) => (d.opcional ? 0 : d.partes[k]))),
+				`falta ${moeda(soma(lista, (d) => (d.opcional ? 0 : d.aberto)))}`,
+			]);
+			r.height = 22;
+			r.eachCell({ includeEmpty: true }, (c, n) => {
+				c.font = fonte(true, 10.5, "263238");
+				preencher(c, "E0E0E0");
+				c.alignment = { vertical: "middle", horizontal: moedasMes.includes(n) ? "right" : n === 1 ? "left" : "center", indent: n === 1 ? 1 : 0 };
+				if (moedasMes.includes(n)) c.numFmt = FMT_MOEDA;
+			});
+		}
+		ws.views = [{ state: "frozen", ySplit: lista.some((d) => d.opcional) ? 10 : 9 }];
 	}
-	linhaTotal(compras, 6 + membros.length, [5, ...membros.map((_, k) => 6 + k)], inicio, compras.rowCount);
-	compras.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 6 + membros.length } };
-
-	// --- Lançamentos (detalhe)
-	const det = wb.addWorksheet("Lançamentos", { views: [{ state: "frozen", ySplit: 1 }] });
-	det.columns = [{ width: 13 }, { width: 46 }, { width: 9 }, { width: 22 }, { width: 14 }, ...membros.map(() => ({ width: 18 })), { width: 10 }, { width: 12 }];
-	cabecalho(det, ["Vencimento", "Compra", "Parcela", "Pago por", "Total", ...colsMembros, "Opcional", "Situação"]);
-	inicio = det.rowCount + 1;
-	for (const d of despesas) {
-		const formatos: Record<number, string> = { 1: FMT_DATA, 5: FMT_MOEDA };
-		membros.forEach((_, k) => (formatos[6 + k] = FMT_MOEDA));
-		linha(
-			det,
-			[dataExcel(d.data), d.compra, d.totalParcelas > 1 ? `${d.parcela}/${d.totalParcelas}` : "única", d.pagoPor, d.total, ...d.partes, d.opcional ? "Sim" : "", d.situacao],
-			formatos,
-			{ corTexto: corSituacao(d.situacao) },
-		);
-	}
-	linhaTotal(det, 7 + membros.length, [5, ...membros.map((_, k) => 6 + k)], inicio, det.rowCount);
-	det.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 7 + membros.length } };
 
 	await baixar(wb, `grupo_${slug(grupo.nome)}_${hoje}.xlsx`);
 }

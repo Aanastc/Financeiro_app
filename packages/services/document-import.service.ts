@@ -1,5 +1,6 @@
 import { aiService, type ParteIA } from "./ai.service";
 import { recebimentosDivisaoService } from "./recebimentos-divisao.service";
+import { notificacoesService } from "./notificacoes.service";
 import { detectarInstituicao, mesmaInstituicao, nomeArquivoIndicaExtrato } from "../utils/instituicoes";
 import { supabase } from "./supabase";
 import { financeService } from "./finance.service";
@@ -1550,6 +1551,14 @@ ${fileContent.textContent}`];
               }
               if (conc?.resultado === "abatido") {
                 abatidos++;
+                notificacoesService
+                  .criarParaMim({
+                    tipo: "pagamento_recebido",
+                    titulo: `${conc.contatoNome} te pagou ${Number(t.valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`,
+                    mensagem: "Pix reconhecido no extrato e abatido do que essa pessoa te devia.",
+                    link: "/devedores",
+                  })
+                  .catch(() => {});
                 total++;
                 continue;
               }

@@ -1,3 +1,4 @@
+import InputMoeda from "../components/InputMoeda";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { 
@@ -554,12 +555,10 @@ export default function ImportadorWeb() {
 											<span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-black text-xs text-slate-400 dark:text-slate-500 select-none">
 												R$
 											</span>
-											<input 
-												type="number" 
-												step="0.01"
+											<InputMoeda
 												className="w-full bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-bold pl-10 pr-3 py-3 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
 												value={editPayload.valor_original || 0}
-												onChange={(e) => setEditPayload({ ...editPayload, valor_original: parseFloat(e.target.value) || 0 })}
+												onChange={(v) => setEditPayload({ ...editPayload, valor_original: parseFloat(v) || 0 })}
 											/>
 										</div>
 										{editPayload.valor_original > 0 && (
@@ -575,12 +574,10 @@ export default function ImportadorWeb() {
 											<span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-black text-xs text-slate-400 dark:text-slate-500 select-none">
 												R$
 											</span>
-											<input 
-												type="number" 
-												step="0.01"
+											<InputMoeda
 												className="w-full bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-bold pl-10 pr-3 py-3 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
 												value={editPayload.valor_total_com_juros || editPayload.valor_original || 0}
-												onChange={(e) => setEditPayload({ ...editPayload, valor_total_com_juros: parseFloat(e.target.value) || 0 })}
+												onChange={(v) => setEditPayload({ ...editPayload, valor_total_com_juros: parseFloat(v) || 0 })}
 											/>
 										</div>
 										{(editPayload.valor_total_com_juros || editPayload.valor_original) > 0 && (
@@ -609,12 +606,10 @@ export default function ImportadorWeb() {
 											<span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-black text-xs text-slate-400 dark:text-slate-500 select-none">
 												R$
 											</span>
-											<input 
-												type="number" 
-												step="0.01"
+											<InputMoeda
 												className="w-full bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-bold pl-10 pr-3 py-3 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
 												value={editPayload.valor_parcela || 0}
-												onChange={(e) => setEditPayload({ ...editPayload, valor_parcela: parseFloat(e.target.value) || 0 })}
+												onChange={(v) => setEditPayload({ ...editPayload, valor_parcela: parseFloat(v) || 0 })}
 											/>
 										</div>
 										{editPayload.valor_parcela > 0 && (

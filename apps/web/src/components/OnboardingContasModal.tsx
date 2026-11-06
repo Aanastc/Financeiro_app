@@ -1,3 +1,4 @@
+import InputMoeda from "./InputMoeda";
 import React, { useState } from "react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { Building2, CreditCard, Wallet, Plus, Check, X, ChevronLeft, UserPlus } from "lucide-react";
@@ -40,12 +41,6 @@ export default function OnboardingContasModal({ isOpen, userId, onComplete, init
   }, [isOpen, initialStep]);
 
   if (!isOpen) return null;
-
-  const formatCurrency = (value: string) => {
-    const onlyNumbers = value.replace(/\D/g, "");
-    if (!onlyNumbers) return "";
-    return new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2 }).format(parseFloat(onlyNumbers) / 100);
-  };
 
   const handleSaveConta = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -256,13 +251,10 @@ export default function OnboardingContasModal({ isOpen, userId, onComplete, init
                     <div className="pt-3 grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in slide-in-from-top-2">
                       <div className="sm:col-span-2">
                         <label className="text-xs font-bold text-indigo-600/70 dark:text-indigo-400/70 uppercase">Limite (R$)</label>
-                        <input
+                        <InputMoeda
                           required={temCredito}
-                          type="text"
-                          inputMode="numeric"
                           value={limite}
-                          onChange={(e) => setLimite(formatCurrency(e.target.value))}
-                          placeholder="Ex: 5.000,00"
+                          onChange={(v) => setLimite(v)}
                           className="w-full mt-1 p-3 bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-xl outline-none focus:border-indigo-500 font-bold"
                         />
                       </div>
@@ -318,13 +310,10 @@ export default function OnboardingContasModal({ isOpen, userId, onComplete, init
                               <label className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase ml-2 tracking-wider">
                                 Limite Específico (Opcional)
                               </label>
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                placeholder="R$ (Mesmo limite se vazio)"
+                              <InputMoeda
                                 className="w-full p-3 bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-xl outline-none focus:border-indigo-500 font-bold text-emerald-600 dark:text-emerald-400"
                                 value={dependenteLimite}
-                                onChange={(e) => setDependenteLimite(formatCurrency(e.target.value))}
+                                onChange={(v) => setDependenteLimite(v)}
                               />
                             </div>
                           </div>

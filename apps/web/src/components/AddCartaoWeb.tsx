@@ -1,3 +1,4 @@
+import InputMoeda from "./InputMoeda";
 import { useState, useEffect } from "react";
 import { X, CreditCard, Save, Info, Calendar, UserPlus } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
@@ -35,15 +36,6 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 	};
 
 	// Função de formatação idêntica à do Gasto para manter consistência
-	const formatCurrency = (value: string) => {
-		const onlyNumbers = value.replace(/\D/g, "");
-		const options = { minimumFractionDigits: 2 };
-		const result = new Intl.NumberFormat("pt-BR", options).format(
-			parseFloat(onlyNumbers) / 100,
-		);
-		return result === "NaN" ? "" : result;
-	};
-
     const handleDayChange = (field: "vencimento_dia" | "fechamento_dia", value: string) => {
         let numericValue = value.replace(/\D/g, "");
         if (numericValue !== "") {
@@ -161,14 +153,11 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 						<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-2 tracking-wider">
 							Limite Total (R$)
 						</label>
-						<input
-							type="text"
-							inputMode="numeric"
-							placeholder="0,00"
+						<InputMoeda
 							className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-black text-emerald-600 dark:text-emerald-400 text-2xl outline-none border border-slate-200 dark:border-slate-700 focus:border-emerald-500 transition-colors"
 							value={form.limite}
-							onChange={(e) =>
-								setForm({ ...form, limite: formatCurrency(e.target.value) })
+							onChange={(v) =>
+								setForm({ ...form, limite: v })
 							}
 						/>
 					</div>
@@ -248,13 +237,10 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 									<label className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase ml-2 tracking-wider">
 										Limite Específico (Opcional)
 									</label>
-									<input
-										type="text"
-										inputMode="numeric"
-										placeholder="R$ (Mesmo limite se vazio)"
+									<InputMoeda
 										className="w-full p-3.5 bg-white dark:bg-slate-800 rounded-2xl font-bold text-emerald-600 dark:text-emerald-400 outline-none border border-slate-200 dark:border-slate-700 focus:border-emerald-500 transition-colors text-sm"
 										value={form.dependente_limite}
-										onChange={(e) => setForm({ ...form, dependente_limite: formatCurrency(e.target.value) })}
+										onChange={(v) => setForm({ ...form, dependente_limite: v })}
 									/>
 								</div>
 							</div>

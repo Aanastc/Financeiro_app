@@ -1,3 +1,5 @@
+import SeletorCategoria from "./SeletorCategoria";
+import InputMoeda from "./InputMoeda";
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { X, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, Building2, CreditCard, Tag, Calendar, AlignLeft } from "lucide-react";
@@ -26,7 +28,6 @@ export default function GlobalTransactionModal({ isOpen, onClose, userId }: { is
     // Dados de suporte
     const [contas, setContas] = useState<any[]>([]);
     const [cartoes, setCartoes] = useState<any[]>([]);
-    const [categorias, setCategorias] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -42,28 +43,19 @@ export default function GlobalTransactionModal({ isOpen, onClose, userId }: { is
 
     const loadSupportData = async () => {
         try {
-            const [resContas, resCartoes, resCategorias] = await Promise.all([
+            const [resContas, resCartoes] = await Promise.all([
                 supabase.from("contas_bancarias").select("id, nome, cor_hex, instituicao").eq("usuario_id", userId),
-                supabase.from("cartoes").select("id, nome, cor_hex").eq("usuario_id", userId),
-                supabase.from("categorias").select("id, nome, tipo, cor_hex").eq("usuario_id", userId).eq("ativa", true)
+                supabase.from("cartoes").select("id, nome, cor_hex").eq("usuario_id", userId)
             ]);
 
             setContas(resContas.data || []);
             setCartoes(resCartoes.data || []);
-            setCategorias(resCategorias.data || []);
             
             if (resContas.data && resContas.data.length > 0) setContaId(resContas.data[0].id);
             if (resCartoes.data && resCartoes.data.length > 0) setCartaoId(resCartoes.data[0].id);
         } catch (error) {
             console.error("Erro ao carregar dados:", error);
         }
-    };
-
-    const formatCurrencyInput = (value: string) => {
-        const v = value.replace(/\D/g, "");
-        if (v === "") return "";
-        const numericValue = parseInt(v, 10) / 100;
-        return numericValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -102,7 +94,6 @@ export default function GlobalTransactionModal({ isOpen, onClose, userId }: { is
         }
     };
 
-    const catsFiltradas = categorias.filter(c => tipo === "TRANSFERENCIA" || c.tipo === tipo || c.tipo === "AMBOS");
 
     if (!isOpen) return null;
 
@@ -157,17 +148,15 @@ export default function GlobalTransactionModal({ isOpen, onClose, userId }: { is
                     <div className="space-y-4">
                         <div className="relative">
                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-black text-slate-400">R$</span>
-                            <input 
-                                type="text"
+                            <InputMoeda
                                 required
                                 value={valor}
-                                onChange={(e) => setValor(formatCurrencyInput(e.target.value))}
+                                onChange={(v) => setValor(v)}
                                 className={`w-full bg-slate-50 dark:bg-slate-800 border-none outline-none text-4xl font-black rounded-3xl py-6 pl-14 pr-6 focus:ring-4 transition-all ${
                                     tipo === "GASTO" ? "text-rose-500 focus:ring-rose-500/20" : 
                                     tipo === "ENTRADA" ? "text-emerald-500 focus:ring-emerald-500/20" : 
                                     "text-indigo-500 focus:ring-indigo-500/20"
                                 }`}
-                                placeholder="0,00"
                             />
                         </div>
                         <input 
@@ -201,17 +190,15 @@ export default function GlobalTransactionModal({ isOpen, onClose, userId }: { is
                                 <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-2">
                                     <Tag size={14} /> Categoria
                                 </label>
-                                <select 
+                                <SeletorCategoria
                                     required
+                                    usuarioId={userId}
+                                    tipo={tipo === "ENTRADA" ? "RECEITA" : "DESPESA"}
                                     value={categoriaId}
-                                    onChange={(e) => setCategoriaId(e.target.value)}
+                                    onChange={setCategoriaId}
+                                    textoVazio="Selecione..."
                                     className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-slate-100 font-medium outline-none focus:border-indigo-500"
-                                >
-                                    <option value="" disabled>Selecione...</option>
-                                    {catsFiltradas.map(c => (
-                                        <option key={c.id} value={c.id}>{c.nome}</option>
-                                    ))}
-                                </select>
+                                />
                             </div>
                         )}
                     </div>

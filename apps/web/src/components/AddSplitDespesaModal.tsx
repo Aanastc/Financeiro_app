@@ -1,3 +1,6 @@
+import SeletorCategoria from "./SeletorCategoria";
+import InputMoeda from "./InputMoeda";
+import { notificacoesService } from "../../../../packages/services/notificacoes.service";
 import { useState, useEffect } from "react";
 import {
 	X,
@@ -44,7 +47,6 @@ export default function AddSplitDespesaModal({
 	const [grupos, setGrupos] = useState<Grupo[]>([]);
 	const [cartoes, setCartoes] = useState<any[]>([]);
 	const [contas, setContas] = useState<any[]>([]);
-	const [categorias, setCategorias] = useState<any[]>([]);
 
 	// TIPO DE SPLIT: AMIGO OU GRUPO
 	const [tipoDestino, setTipoDestino] = useState<"AMIGO" | "GRUPO">("AMIGO");
@@ -115,7 +117,7 @@ export default function AddSplitDespesaModal({
 				user.user_metadata?.full_name || user.email?.split("@")[0] || "Você",
 			);
 
-			const [contatosRes, gruposRes, cartoesRes, contasRes, categoriasRes] =
+			const [contatosRes, gruposRes, cartoesRes, contasRes] =
 				await Promise.all([
 					supabase
 						.from("contatos")
@@ -125,7 +127,6 @@ export default function AddSplitDespesaModal({
 					despesasCompartilhadasService.getGrupos(user.id),
 					financeService.getCartoes(user.id).catch(() => []),
 					financeService.getContasBancarias(user.id).catch(() => []),
-					financeService.getCategorias(user.id).catch(() => []),
 				]);
 
 			const cList = contatosRes.data || [];
@@ -133,7 +134,6 @@ export default function AddSplitDespesaModal({
 			setGrupos(gruposRes || []);
 			setCartoes(cartoesRes || []);
 			setContas(contasRes || []);
-			setCategorias(categoriasRes || []);
 
 			if (contasRes && contasRes.length > 0) setContaId(contasRes[0].id);
 			if (cartoesRes && cartoesRes.length > 0) setCartaoId(cartoesRes[0].id);
@@ -533,6 +533,9 @@ export default function AddSplitDespesaModal({
 				idsParaAvisar.push(...(inseridas || []).map((t: any) => t.id));
 			}
 
+			// Aviso no app para quem já aceitou o convite (não bloqueia)
+			notificacoesService.avisarDivisaoVinculados(idsParaAvisar);
+
 			// Aviso por e-mail (não bloqueia: falha só gera log)
 			if (avisarPorEmail && idsParaAvisar.length > 0) {
 				notificarDivisaoPorEmail(idsParaAvisar).then((r) => {
@@ -640,12 +643,10 @@ export default function AddSplitDespesaModal({
 							<label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 ml-1">
 								Valor Total (R$) *
 							</label>
-							<input
-								type="text"
+							<InputMoeda
 								required
-								placeholder="0,00"
 								value={valorTotalStr}
-								onChange={(e) => setValorTotalStr(e.target.value)}
+								onChange={(v) => setValorTotalStr(v)}
 								className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-black text-emerald-600 dark:text-emerald-400 text-lg outline-none focus:ring-2 focus:ring-emerald-500"
 							/>
 						</div>
@@ -656,19 +657,7 @@ export default function AddSplitDespesaModal({
 						<label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 ml-1">
 							Categoria
 						</label>
-						<select
-							value={categoriaId}
-							onChange={(e) => setCategoriaId(e.target.value)}
-							className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer">
-							<option value="">Sem categoria (Outros)</option>
-							{categorias
-								.filter((c: any) => !c.tipo || /despesa|gasto/i.test(c.tipo))
-								.map((c: any) => (
-									<option key={c.id} value={c.id}>
-										{c.nome}
-									</option>
-								))}
-						</select>
+						<SeletorCategoria tipo="DESPESA" value={categoriaId} onChange={setCategoriaId} />
 					</div>
 
 					{/* SE DESTINO FOR AMIGO */}
@@ -973,17 +962,14 @@ export default function AddSplitDespesaModal({
 												<span className="text-xs font-bold text-slate-700 dark:text-slate-300 w-28 truncate">
 													{p.nome}:
 												</span>
-												<input
-													type="number"
-													step="0.01"
-													placeholder="0,00"
+												<InputMoeda
 													value={p.valorExato}
-													onChange={(e) => {
+													onChange={(v) => {
 														const copia = [...participantesGrupo];
 														const realIdx = copia.findIndex(
 															(item) => item.id === p.id,
 														);
-														copia[realIdx].valorExato = e.target.value;
+														copia[realIdx].valorExato = v;
 														setParticipantesGrupo(copia);
 													}}
 													className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-100"
@@ -1087,12 +1073,9 @@ export default function AddSplitDespesaModal({
 									<label className="text-[10px] font-bold text-slate-400">
 										Minha Parte (R$)
 									</label>
-									<input
-										type="number"
-										step="0.01"
-										placeholder="0,00"
+									<InputMoeda
 										value={minhaParteStr}
-										onChange={(e) => setMinhaParteStr(e.target.value)}
+										onChange={(v) => setMinhaParteStr(v)}
 										className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-bold text-slate-800 dark:text-slate-100 outline-none"
 									/>
 								</div>
@@ -1100,12 +1083,9 @@ export default function AddSplitDespesaModal({
 									<label className="text-[10px] font-bold text-slate-400">
 										Parte do {contatoSelecionado?.nome || "Amigo"} (R$)
 									</label>
-									<input
-										type="number"
-										step="0.01"
-										placeholder="0,00"
+									<InputMoeda
 										value={parteContatoStr}
-										onChange={(e) => setParteContatoStr(e.target.value)}
+										onChange={(v) => setParteContatoStr(v)}
 										className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-bold text-slate-800 dark:text-slate-100 outline-none"
 									/>
 								</div>

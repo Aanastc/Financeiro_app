@@ -16,6 +16,7 @@ import { toast } from "react-hot-toast";
 import { aiService } from "../../../../packages/services/ai.service";
 import { supabase } from "../../../../packages/services/supabase";
 import { notificarDivisaoPorEmail } from "../../../../packages/services/convite.service";
+import { notificacoesService } from "../../../../packages/services/notificacoes.service";
 import type { Grupo, GrupoMembro } from "../../../../packages/services/despesas-compartilhadas.service";
 
 /* ============================================================================
@@ -77,6 +78,14 @@ interface Rascunho {
 	itens: ItemDivisao[];
 	tipoRelacao: "DEVO_PARA_ELE" | "ELE_ME_DEVE" | null;
 	cronograma: PagamentoAcordo[];
+	/** Valores já emprestados/adiantados que ABATEM das próximas parcelas (ex.: "emprestei 200 dia 03/11") */
+	creditos: CreditoAcordo[];
+}
+
+interface CreditoAcordo {
+	data: string; // DD/MM ou DD/MM/AAAA
+	valor: number;
+	descricao?: string;
 }
 
 type Pergunta =
@@ -111,6 +120,12 @@ interface Mensagem {
 }
 
 interface Lancamento {
+	/** Quanto desta parcela já foi abatido por um empréstimo/adiantamento */
+	compensado?: number;
+	compensacaoData?: string;
+	compensacaoDescricao?: string;
+	/** Sobra de crédito: vira dívida no sentido contrário (a outra pessoa te deve) */
+	inverso?: boolean;
 	itemId?: string;
 	data: string; // AAAA-MM-DD
 	descricao: string;
@@ -210,6 +225,7 @@ const rascunhoVazio = (): Rascunho => ({
 	itens: [],
 	tipoRelacao: null,
 	cronograma: [],
+	creditos: [],
 });
 
 const aplicarEmTodos = (r: Rascunho, campo: keyof ItemDivisao, valor: any, soVazios = true): Rascunho => ({
@@ -255,10 +271,17 @@ const vencimento = (dataCompra: string, dia: number, n: number) => {
 	return `${alvo.getFullYear()}-${pad(alvo.getMonth() + 1)}-${pad(Math.min(dia, ultimo))}`;
 };
 
+/** "03/11" ou "03/11/2026" -> ISO (sem ano: o ano corrente) */
+const dataCreditoISO = (d: string) => {
+	const [dia, mes, ano] = d.split("/");
+	const a = ano ? Number(ano.length === 2 ? `20${ano}` : ano) : new Date().getFullYear();
+	return `${a}-${pad(Number(mes))}-${pad(Number(dia))}`;
+};
+
 const gerarLancamentos = (r: Rascunho): Lancamento[] => {
 	if (r.modo === "ACORDO") {
 		const datas = datasDoAcordo(r.cronograma);
-		return r.cronograma.map((p, idx) => ({
+		const parcelas: Lancamento[] = r.cronograma.map((p, idx) => ({
 			data: datas[idx],
 			descricao: `Acordo ${idx + 1}/${r.cronograma.length}${p.observacao ? ` — ${p.observacao}` : ""}`,
 			valor: centavos(p.valor),
@@ -267,6 +290,37 @@ const gerarLancamentos = (r: Rascunho): Lancamento[] => {
 			parcela: idx + 1,
 			totalParcelas: r.cronograma.length,
 		}));
+		// Créditos (empréstimo/adiantamento) abatem as próximas parcelas em aberto, a partir da data do crédito
+		const ordenadas = [...parcelas].sort((a, b) => a.data.localeCompare(b.data));
+		const sobras: Lancamento[] = [];
+		for (const c of [...(r.creditos || [])].sort((a, b) => dataCreditoISO(a.data).localeCompare(dataCreditoISO(b.data)))) {
+			const dataC = dataCreditoISO(c.data);
+			let resta = centavos(c.valor);
+			for (const l of ordenadas) {
+				if (resta <= 0) break;
+				if (l.pago || l.data < dataC) continue;
+				const livre = centavos(l.valor - (l.compensado || 0));
+				if (livre <= 0) continue;
+				const usar = Math.min(resta, livre);
+				l.compensado = centavos((l.compensado || 0) + usar);
+				l.compensacaoData = dataC;
+				l.compensacaoDescricao = c.descricao || "Empréstimo/adiantamento";
+				resta = centavos(resta - usar);
+			}
+			if (resta > 0) {
+				sobras.push({
+					data: dataC,
+					descricao: `Saldo de ${(c.descricao || "empréstimo").toLowerCase()}`,
+					valor: resta,
+					opcional: false,
+					pago: false,
+					parcela: 1,
+					totalParcelas: 1,
+					inverso: true,
+				});
+			}
+		}
+		return [...parcelas, ...sobras];
 	}
 	const out: Lancamento[] = [];
 	for (const i of r.itens) {
@@ -295,10 +349,11 @@ const gerarLancamentos = (r: Rascunho): Lancamento[] => {
 
 /** Agrupa as parcelas por data de vencimento (para o resumo não virar uma lista de 180 linhas). */
 const porData = (lanc: Lancamento[]) => {
-	const mapa = new Map<string, { data: string; total: number; opcional: number; itens: Lancamento[] }>();
+	const mapa = new Map<string, { data: string; total: number; opcional: number; compensado: number; itens: Lancamento[] }>();
 	for (const l of lanc) {
-		const g = mapa.get(l.data) || { data: l.data, total: 0, opcional: 0, itens: [] };
+		const g = mapa.get(l.data) || { data: l.data, total: 0, opcional: 0, compensado: 0, itens: [] };
 		g.total = centavos(g.total + l.valor);
+		g.compensado = centavos(g.compensado + (l.compensado || 0));
 		if (l.opcional) g.opcional = centavos(g.opcional + l.valor);
 		g.itens.push(l);
 		mapa.set(l.data, g);
@@ -437,7 +492,7 @@ export default function ChatAcordosIaModal({
 				};
 			case "pessoa":
 				return {
-					texto: "Com quem você vai dividir? Escolha abaixo ou escreva o nome (se for alguém novo, eu cadastro).",
+					texto: `${r.modo === "ACORDO" ? "Com quem é esse acordo?" : "Com quem você vai dividir?"} Escolha abaixo ou escreva o nome (se for alguém novo, eu cadastro).`,
 					chips: [
 						...grupos.slice(0, 6).map((gr) => ({ rotulo: `Grupo ${gr.nome}`, aplicar: (x: Rascunho) => definirGrupo(x, gr) })),
 						...contatos.slice(0, 10).map((c) => ({ rotulo: c.nome, aplicar: (x: Rascunho) => ({ ...x, contatoId: c.id, pessoaNome: c.nome }) })),
@@ -759,6 +814,10 @@ export default function ChatAcordosIaModal({
 					opcional: typeof i.opcional === "boolean" ? i.opcional : (ant?.opcional ?? false),
 				};
 			});
+		const creditos: CreditoAcordo[] = (Array.isArray(b.creditos) ? b.creditos : [])
+			.filter((c: any) => c && /^\d{1,2}\/\d{1,2}(\/\d{2,4})?$/.test(String(c.data || "").trim()))
+			.map((c: any) => ({ data: String(c.data).trim(), valor: numeroSeguro(c.valor) || 0, descricao: c.descricao ? String(c.descricao) : undefined }))
+			.filter((c: CreditoAcordo) => c.valor > 0);
 		const cronograma: PagamentoAcordo[] = (Array.isArray(b.cronograma) ? b.cronograma : [])
 			.filter((p: any) => p && /^\d{1,2}\/\d{1,2}(\/\d{2,4})?$/.test(String(p.data || "").trim()))
 			.map((p: any) => ({
@@ -775,6 +834,7 @@ export default function ChatAcordosIaModal({
 			modo: modo || (cronograma.length ? "ACORDO" : itensIa.length ? "DIVISAO" : null),
 			itens: itensIa.length ? itensIa : anterior.itens,
 			cronograma: cronograma.length ? cronograma : anterior.cronograma,
+			creditos: creditos.length ? creditos : anterior.creditos || [],
 			quemPagou: b.quemPagou === "EU" || b.quemPagou === "OUTRO" ? b.quemPagou : anterior.quemPagou,
 			jaNoExtrato: typeof b.jaNoExtrato === "boolean" ? b.jaNoExtrato : anterior.jaNoExtrato,
 			diaVencimento: (() => {
@@ -819,7 +879,7 @@ ${texto}
 """
 
 Atualize o rascunho com as informações da nova mensagem e responda SOMENTE um JSON:
-{ "rascunho": { "modo", "pessoaNome", "grupoNome", "quemPagou", "jaNoExtrato", "diaVencimento", "tipoRelacao", "itens": [...], "cronograma": [...] }, "comentario": string ou null }
+{ "rascunho": { "modo", "pessoaNome", "grupoNome", "quemPagou", "jaNoExtrato", "diaVencimento", "tipoRelacao", "itens": [...], "cronograma": [...], "creditos": [...] }, "comentario": string ou null }
 
 Regras:
 - Mantenha tudo o que já está preenchido, a não ser que o usuário peça para mudar. NUNCA invente valores: use null quando não souber.
@@ -831,6 +891,10 @@ Regras:
 - "quemPagou": "EU" se o usuário pagou, "OUTRO" se a outra pessoa pagou.
 - "jaNoExtrato": true se a compra já está/vai estar no extrato ou fatura do usuário.
 - ACORDO: "cronograma": [{ "data": "DD/MM" ou "DD/MM/AAAA", "valor", "observacao", "pago" }], "tipoRelacao": "DEVO_PARA_ELE" ou "ELE_ME_DEVE".
+  * Cada item do cronograma é UMA parcela com o seu valor CHEIO (ex.: celular R$ 333,50 + seguro R$ 48,45 = R$ 381,95). Não junte empréstimos ou adiantamentos no valor da parcela.
+  * "creditos": [{ "data", "valor", "descricao" }] = dinheiro que já foi EMPRESTADO, ADIANTADO ou transferido a mais e que vai ABATER das próximas parcelas.
+    Ex.: "emprestei R$ 200 para ele dia 03/11, que desconta da próxima parcela" -> creditos [{ "data": "03/11", "valor": 200, "descricao": "Empréstimo" }].
+    O crédito é sempre no sentido contrário da dívida: se o usuário deve as parcelas, o crédito é algo que ele adiantou/emprestou.
 - "comentario": no máximo 1 frase curta, só se o usuário perguntou algo; senão null.`;
 
 		try {
@@ -1011,7 +1075,17 @@ Regras:
 					}))
 					.filter((p) => p.valor > 0);
 				if (cronograma.length >= 2) {
-					avancar({ ...rascunho, modo: "ACORDO", cronograma });
+					// "emprestei R$ 200 dia 03/11" / "adiantei 150 em 10/11": crédito que abate as próximas parcelas
+					const creditos: CreditoAcordo[] = texto
+						.split("\n")
+						.filter((l) => /emprest|adiant|transferi a mais|paguei adiantado/i.test(l))
+						.map((l) => {
+							const data = l.match(/\b(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/)?.[1];
+							const valor = lerValor(l.replace(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, ""));
+							return data && valor ? { data, valor, descricao: /adiant/i.test(l) ? "Adiantamento" : "Empréstimo" } : null;
+						})
+						.filter(Boolean) as CreditoAcordo[];
+					avancar({ ...rascunho, modo: "ACORDO", cronograma, creditos });
 					return;
 				}
 				const itens = itensLocais(texto);
@@ -1102,21 +1176,30 @@ Regras:
 					meta.data_compra = item.dataCompra;
 				}
 				if (r.modo === "ACORDO") meta.acordo_ia = true;
+				// Parte da parcela já abatida por empréstimo/adiantamento
+				const compensado = l.compensado || 0;
+				if (compensado > 0) {
+					meta.valor_pago = compensado;
+					meta.data_pagamento = l.compensacaoData;
+					meta.pagamentos = [{ valor: compensado, data: l.compensacaoData, tipo: "compensacao", descricao: l.compensacaoDescricao }];
+				}
+				const quitadoPorCompensacao = compensado >= l.valor - 0.005;
+				const sentidoDevo = l.inverso ? !devoEu : devoEu;
 
 				const base = {
 					usuario_id: uid,
 					tipo: "DESPESA",
 					valor: l.valor,
 					data: l.data,
-					status: l.pago || l.data <= hoje ? "confirmada" : "pendente",
+					status: l.pago || quitadoPorCompensacao || l.data <= hoje ? "confirmada" : "pendente",
 				};
-				if (devoEu) {
+				if (sentidoDevo) {
 					// Eu devo à outra pessoa: aparece em "A quem você deve"
 					return {
 						...base,
 						descricao: `${l.descricao} - ${r.pessoaNome}`,
 						terceiro: false,
-						terceiro_pago: l.pago,
+						terceiro_pago: l.pago || quitadoPorCompensacao,
 						observacao: JSON.stringify({ ...meta, pago_por: "AMIGO", parceria_credor_id: contatoId, parceria_credor_nome: r.pessoaNome }),
 					};
 				}
@@ -1127,7 +1210,7 @@ Regras:
 					descricao: `${l.descricao} (Parte ${r.pessoaNome})`,
 					considerar_soma: !jaNoExtrato,
 					terceiro: true,
-					terceiro_pago: l.pago,
+					terceiro_pago: l.pago || quitadoPorCompensacao,
 					contato_id: contatoId,
 					observacao: JSON.stringify({ ...meta, pago_por: "VOCE", ja_no_extrato: jaNoExtrato, opcional: l.opcional }),
 				};
@@ -1135,7 +1218,9 @@ Regras:
 
 			const { data: inseridas, error } = await supabase.from("transacoes").insert(linhas).select("id");
 			if (error) throw error;
-			notificarDivisaoPorEmail((inseridas || []).map((t: any) => t.id));
+			const idsInseridos = (inseridas || []).map((t: any) => t.id);
+			notificarDivisaoPorEmail(idsInseridos);
+			notificacoesService.avisarDivisaoVinculados(idsInseridos);
 
 			toast.success(`${linhas.length} lançamento(s) registrado(s)!`);
 			onSuccess();
@@ -1155,8 +1240,11 @@ Regras:
 
 	const resumo = () => {
 		const r = rascunho;
-		const lanc = gerarLancamentos(r);
-		const total = lanc.reduce((s, l) => s + l.valor, 0);
+		const todos = gerarLancamentos(r);
+		const lanc = todos.filter((l) => !l.inverso);
+		const sobras = todos.filter((l) => l.inverso);
+		const total = lanc.reduce((s, l) => s + l.valor - (l.compensado || 0), 0);
+		const abatido = lanc.reduce((s, l) => s + (l.compensado || 0), 0);
 		const devoEu = r.modo === "ACORDO" ? r.tipoRelacao === "DEVO_PARA_ELE" : r.quemPagou === "OUTRO";
 		const podeOpcional = r.modo === "DIVISAO" && r.quemPagou === "EU";
 		return (
@@ -1225,10 +1313,28 @@ Regras:
 										</span>
 									)}
 								</div>
-								<span className="font-black tabular-nums text-slate-800 dark:text-slate-100 shrink-0">{moeda(g.total)}</span>
+								{g.compensado > 0 ? (
+									<span className="text-right shrink-0 leading-tight">
+										<span className="block text-[10px] text-slate-400 line-through tabular-nums">{moeda(g.total)}</span>
+										<span className="block font-black tabular-nums text-slate-800 dark:text-slate-100">{moeda(g.total - g.compensado)}</span>
+										<span className="block text-[10px] font-bold text-emerald-600 dark:text-emerald-400">− {moeda(g.compensado)} abatido</span>
+									</span>
+								) : (
+									<span className="font-black tabular-nums text-slate-800 dark:text-slate-100 shrink-0">{moeda(g.total)}</span>
+								)}
 							</div>
 						))}
 					</div>
+					{abatido > 0 && (
+						<p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+							{moeda(abatido)} abatido de {(r.creditos || []).map((c) => `${(c.descricao || "empréstimo").toLowerCase()} de ${c.data}`).join(", ")}.
+						</p>
+					)}
+					{sobras.map((s, k) => (
+						<p key={k} className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">
+							Sobram {moeda(s.valor)} do crédito: fica registrado que {devoEu ? `${primeiroNome} te deve` : `você deve a ${primeiroNome}`} esse valor.
+						</p>
+					))}
 					{r.modo === "DIVISAO" && r.quemPagou === "EU" && (
 						<p className="text-[11px] text-slate-500 dark:text-slate-400">
 							{r.jaNoExtrato !== false

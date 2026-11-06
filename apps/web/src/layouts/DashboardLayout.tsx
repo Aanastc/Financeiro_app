@@ -1,4 +1,5 @@
 import { Suspense, useEffect, useState } from "react";
+import NotificacoesSino from "../components/NotificacoesSino";
 import { Outlet, useNavigate, useLocation, Link } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -301,7 +302,10 @@ export default function DashboardLayout() {
               </h1>
             </div>
 
-            <div className="flex items-center gap-3 ml-auto">
+            <div className="flex items-center gap-1.5 sm:gap-3 ml-auto">
+              {/* Notificações */}
+              <NotificacoesSino usuarioId={userProfile?.id} />
+
               {/* Botão de Tema */}
               <button
                 onClick={toggleTheme}

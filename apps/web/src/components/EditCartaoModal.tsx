@@ -1,3 +1,4 @@
+import InputMoeda from "./InputMoeda";
 import React, { useState, useEffect } from "react";
 import { X,  Calendar, Palette, Edit3, Info } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
@@ -119,14 +120,11 @@ export default function EditCartaoModal({ isOpen, onClose, onSuccess, cartao }: 
 
 					<div className="space-y-1.5">
 						<label className="text-xs font-bold text-slate-600 dark:text-slate-300 ml-2">Limite Total (R$)</label>
-						<input
-							type="text"
-							inputMode="numeric"
+						<InputMoeda
 							required
 							value={form.limite}
-							onChange={e => setForm({...form, limite: formatCurrency(e.target.value)})}
+							onChange={(v) => setForm({...form, limite: v})}
 							className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none transition-all font-bold text-emerald-600 dark:text-emerald-400 text-2xl"
-							placeholder="0,00"
 						/>
 					</div>
 

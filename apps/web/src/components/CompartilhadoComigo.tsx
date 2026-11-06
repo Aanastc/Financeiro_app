@@ -1,7 +1,9 @@
+import InputMoeda from "./InputMoeda";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowDownLeft, ArrowUpRight, Check, Users, X } from "lucide-react";
 import toast from "react-hot-toast";
 import ListaPorData from "./ListaPorData";
+import { notificacoesService } from "../../../../packages/services/notificacoes.service";
 import { conviteService, type DespesaCompartilhadaComigo } from "../../../../packages/services/convite.service";
 
 const moeda = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -14,6 +16,20 @@ const moeda = (v: number) => v.toLocaleString("pt-BR", { style: "currency", curr
 export default function CompartilhadoComigo() {
 	const [itens, setItens] = useState<DespesaCompartilhadaComigo[] | null>(null);
 	const [respondendo, setRespondendo] = useState<string | null>(null);
+	// "Avisar que paguei": pessoa selecionada e valor digitado
+	const [avisando, setAvisando] = useState<{ pessoa: string; valor: string } | null>(null);
+
+	const avisarPagamento = async (lista: DespesaCompartilhadaComigo[]) => {
+		if (!avisando) return;
+		const valor = Number(avisando.valor.replace(/\./g, "").replace(",", "."));
+		if (!(valor > 0)) return toast.error("Informe o valor que você pagou.");
+		const item = lista.find((i) => i.direcao === "VOCE_DEVE" && !i.quitado && i.resposta !== "recusada");
+		if (!item) return toast.error("Não há nada em aberto com essa pessoa.");
+		const r = await notificacoesService.informarPagamento(item.id, valor);
+		if (!r.ok) return toast.error("Não foi possível avisar agora.");
+		toast.success(r.repetido ? "Você já tinha avisado esse pagamento." : `${avisando.pessoa.split(" ")[0]} foi avisada(o) no app.`);
+		setAvisando(null);
+	};
 
 	const carregar = () => conviteService.compartilhadasComigo().then(setItens);
 
@@ -68,6 +84,32 @@ export default function CompartilhadoComigo() {
 								{saldo > 0 ? `te deve ${moeda(saldo)}` : saldo < 0 ? `você deve ${moeda(-saldo)}` : "tudo acertado"}
 							</p>
 						</div>
+						{g.voceDeve > 0 &&
+							(avisando?.pessoa === pessoa ? (
+								<div className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/50">
+									<span className="text-xs font-bold text-emerald-800 dark:text-emerald-200">Quanto você pagou?</span>
+									<InputMoeda
+										autoFocus
+										value={avisando.valor}
+										onChange={(v) => setAvisando({ pessoa, valor: v })}
+										className="w-28 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 rounded-lg px-2 py-1 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500"
+									/>
+									<button
+										onClick={() => avisarPagamento(g.itens)}
+										className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer">
+										Avisar {pessoa.split(" ")[0]}
+									</button>
+									<button onClick={() => setAvisando(null)} className="text-xs font-bold text-slate-500 dark:text-slate-400 hover:underline cursor-pointer">
+										Cancelar
+									</button>
+								</div>
+							) : (
+								<button
+									onClick={() => setAvisando({ pessoa, valor: g.voceDeve.toFixed(2).replace(".", ",") })}
+									className="px-3 py-1.5 rounded-xl border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-xs font-bold cursor-pointer">
+									Já paguei — avisar {pessoa.split(" ")[0]}
+								</button>
+							))}
 						<ListaPorData
 							compacto
 							limite={4}

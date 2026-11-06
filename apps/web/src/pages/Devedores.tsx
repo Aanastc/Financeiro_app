@@ -1,4 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import InputMoeda from "../components/InputMoeda";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { recebimentosDivisaoService } from "../../../../packages/services/recebimentos-divisao.service";
 import { authService } from "../../../../packages/services/auth.service";
 import { financeService } from "../../../../packages/services/finance.service";
 import { despesasCompartilhadasService } from "../../../../packages/services/despesas-compartilhadas.service";
@@ -18,15 +20,13 @@ import {
 	Sparkles,
 	Search,
 	UserCheck,
-	MessageSquare,
-	ArrowUpRight,
-	ArrowDownLeft,
 	Layers,
 	ArrowRight,
 	Send,
-	Check,
 	Trash2,
-	Receipt } from "lucide-react";
+	Receipt,
+	Pencil,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import AddContatoWeb from "../components/AddContatoWeb";
 import AddSplitDespesaModal from "../components/AddSplitDespesaModal";
@@ -35,6 +35,11 @@ import CompartilhadoComigo from "../components/CompartilhadoComigo";
 import ChatAcordosIaModal from "../components/ChatAcordosIaModal";
 import ReceberPagamentoModal from "../components/ReceberPagamentoModal";
 import ListaPorData from "../components/ListaPorData";
+import ResumoDivisao from "../components/divisao/ResumoDivisao";
+import PessoasDivisao from "../components/divisao/PessoasDivisao";
+import DetalhePessoa from "../components/divisao/DetalhePessoa";
+import { montarPessoas } from "../lib/divisaoPessoas";
+import EditarLancamentoModal from "../components/EditarLancamentoModal";
 import PedirTelefoneModal from "../components/PedirTelefoneModal";
 import CriarGrupoModal from "../components/CriarGrupoModal";
 import { telefoneWhatsApp } from "../../../../packages/services/convite.service";
@@ -58,7 +63,7 @@ export default function Devedores() {
 	// NAVEGAÇÃO ENTRE ABAS
 	const [activeTab, setActiveTab] = useState<
 		"grupos" | "amigos" | "atividades" | "convites"
-	>("grupos");
+	>("amigos");
 	const [termoBusca, setTermoBusca] = useState("");
 
 	// VISÃO DETALHADA DE UM GRUPO SELECIONADO
@@ -79,6 +84,11 @@ export default function Devedores() {
 	const [contatoParaConvite, setContatoParaConvite] = useState<any>(null);
 	// Recebimento de quem te deve (com a conta onde o dinheiro entrou)
 	const [cobrarSemTelefone, setCobrarSemTelefone] = useState<any>(null);
+	const [editandoId, setEditandoId] = useState<string | null>(null);
+	// Painel lateral com tudo de uma pessoa
+	const [pessoaAbertaId, setPessoaAbertaId] = useState<string | null>(null);
+	// Evita cruzar saldos duas vezes ao mesmo tempo (recarregamentos em sequência)
+	const compensandoRef = useRef(false);
 	const [receberDe, setReceberDe] = useState<{ contato: { id: string; nome: string }; itemIds?: string[]; valorSugerido?: number } | null>(null);
 	const [initialGrupoIdForSplit, setInitialGrupoIdForSplit] = useState<
 		string | null
@@ -93,6 +103,8 @@ export default function Devedores() {
 	);
 	const [paymentType, setPaymentType] = useState<"total" | "parcial">("total");
 	const [partialAmount, setPartialAmount] = useState("");
+	// Acerto feito descontando um empréstimo/adiantamento (não sai dinheiro da conta agora)
+	const [pagamentoCompensado, setPagamentoCompensado] = useState(false);
 
 	const loadAllData = async () => {
 		setLoading(true);
@@ -210,11 +222,15 @@ export default function Devedores() {
 						? (contaNome ? `Débito (${contaNome})` : "Débito")
 						: "Débito / Pix";
 
+					// Já pago ou abatido (parcial): o que falta é o valor menos o que já foi acertado
+					const jaAcertado = Number(getPaymentInfo(g.observacao)?.valor_pago) || 0;
 					credor.itens.push({
 						id: g.id,
 						descricao: g.descricao,
 						data: g.data,
-						valor_parcela_usuario: valorParcela,
+						valor: valorParcela,
+						valor_pago: jaAcertado,
+						valor_parcela_usuario: Math.max(0, Math.round((valorParcela - jaAcertado) * 100) / 100),
 						valor_original: valorOriginal,
 						quitado: g.terceiro_pago || false,
 						observacao: g.observacao,
@@ -233,10 +249,40 @@ export default function Devedores() {
 						(sum: number, i: any) => sum + Number(i.valor_parcela_usuario),
 						0,
 					);
-				return { ...c, total_devido };
+				// Parcelas em ordem de vencimento (1/6, 2/6, ...); quitadas vão para o fim
+				const itens = [...c.itens].sort(
+					(x: any, y: any) => Number(x.quitado) - Number(y.quitado) || String(x.data).localeCompare(String(y.data)),
+				);
+				return { ...c, itens, total_devido };
 			});
 
 			setCredores(credoresList);
+
+			// Mesma pessoa nos dois lados: abate um do outro (como o Splitwise)
+			const contatosNosDoisLados = (devedoresData || [])
+				.filter((d: any) => Number(d.total_devido) > 0.009)
+				.map((d: any) => d.contato)
+				.filter((c: any) => credoresList.some((cr: any) => cr.contato?.id === c?.id && cr.total_devido > 0.009));
+			if (contatosNosDoisLados.length > 0 && !compensandoRef.current) {
+				compensandoRef.current = true;
+				try {
+					const hoje = new Date().toISOString().slice(0, 10);
+					const feitos: string[] = [];
+					for (const c of contatosNosDoisLados) {
+						const r = await recebimentosDivisaoService.compensarSaldos(user.id, c.id, hoje);
+						if (r.valor > 0) feitos.push(`${r.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} com ${c.nome.split(" ")[0]}`);
+					}
+					if (feitos.length) {
+						toast.success(`Saldos cruzados: ${feitos.join(", ")} abatidos do que você deve.`, { duration: 6000 });
+						compensandoRef.current = false;
+						return loadAllData();
+					}
+				} catch (e) {
+					console.warn("Não foi possível cruzar os saldos:", e);
+				} finally {
+					compensandoRef.current = false;
+				}
+			}
 
 			// Se havia um grupo selecionado, atualiza-o com dados frescos
 			if (grupoSelecionado) {
@@ -316,9 +362,9 @@ export default function Devedores() {
 			return;
 		}
 
-		const itensPendentes = (devedor.itens || []).filter(
-			(i: any) => !i.terceiro_pago && getPaymentInfo(i.observacao)?.resposta_cobranca !== "recusada",
-		);
+		const itensPendentes = (devedor.itens || [])
+			.filter((i: any) => !i.terceiro_pago && getPaymentInfo(i.observacao)?.resposta_cobranca !== "recusada")
+			.sort((a: any, b: any) => String(a.data).localeCompare(String(b.data)));
 		if (itensPendentes.length === 0) {
 			toast.error("Não há despesas pendentes para este contato.");
 			return;
@@ -346,8 +392,6 @@ export default function Devedores() {
 		const destino = telefone ? `https://wa.me/${telefone}` : "https://wa.me/";
 		window.open(`${destino}?text=${encodeURIComponent(mensagem)}`, "_blank", "noopener");
 	};
-
-	const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 
 	const contatoTemConta = (c: any) =>
 		Boolean(c && (c.usuario_vinculado_id || (c.email && usuariosComConta.has(String(c.email).toLowerCase()))));
@@ -455,6 +499,11 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 		}
 	};
 
+	const handleConvidarContato = (contato: any) => {
+		setPessoaAbertaId(null);
+		setContatoParaConvite(contato);
+	};
+
 	const handleAlternarOpcional = async (item: any, opcional: boolean) => {
 		try {
 			await financeService.definirCobrancaOpcional(item, opcional);
@@ -499,6 +548,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 		setPaymentDate(new Date().toISOString().split("T")[0]);
 		setPaymentType("total");
 		setPartialAmount("");
+		setPagamentoCompensado(false);
 		setPaymentModalOpen(true);
 	};
 
@@ -538,7 +588,12 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 			const obsTexto = selectedItemForPayment.observacao;
 			// Observação em texto (ex.: "Categoria: Lazer") é preservada, não sobrescrita
 			const base = getPaymentInfo(obsTexto) || (obsTexto ? { observacao_original: obsTexto } : {});
-			const pagamentos = [...(Array.isArray(base.pagamentos) ? base.pagamentos : []), { valor: valorPago, data: paymentDate }];
+			const pagamentos = [
+				...(Array.isArray(base.pagamentos) ? base.pagamentos : []),
+				pagamentoCompensado
+					? { valor: valorPago, data: paymentDate, tipo: "compensacao", descricao: "Abatido de empréstimo/adiantamento" }
+					: { valor: valorPago, data: paymentDate },
+			];
 			const metadata = {
 				...base,
 				pagamentos,
@@ -579,6 +634,31 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 	};
 
 	const handleDesfazerPagamento = async (gastoId: string) => {
+		// Abatimento entre saldos: desfaz dos dois lados (e não refaz sozinho)
+		const metaItem = getPaymentInfo(
+			todasDespesasSplit.find((t: any) => t.id === gastoId)?.observacao ||
+				devedores.flatMap((d: any) => d.itens || []).find((t: any) => t.id === gastoId)?.observacao ||
+				"",
+		);
+		const compensacoes = [
+			...new Set(
+				(Array.isArray(metaItem?.pagamentos) ? metaItem.pagamentos : [])
+					.map((p: any) => p.compensacao_id)
+					.filter(Boolean),
+			),
+		] as string[];
+		if (compensacoes.length > 0) {
+			if (!confirm("Este valor foi abatido do saldo com a mesma pessoa. Desfazer o abatimento dos dois lados?")) return;
+			try {
+				for (const id of compensacoes) await recebimentosDivisaoService.desfazerCompensacao(userId, id);
+				toast.success("Abatimento desfeito.");
+				loadAllData();
+			} catch (e) {
+				console.error(e);
+				toast.error("Erro ao desfazer o abatimento");
+			}
+			return;
+		}
 		if (
 			!confirm("Deseja realmente reabrir esta despesa e desfazer o pagamento?")
 		)
@@ -622,15 +702,6 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 	};
 
 	// CÁLCULOS TOTAIS
-	const totalAReceber = devedores.reduce(
-		(sum, d) => sum + Number(d.total_devido || 0),
-		0,
-	);
-	const totalAPagar = credores.reduce(
-		(sum, c) => sum + Number(c.total_devido || 0),
-		0,
-	);
-	const saldoLiquidoGeral = totalAReceber - totalAPagar;
 
 	// FILTROS DE BUSCA
 	const gruposFiltrados = useMemo(() => {
@@ -643,17 +714,6 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 		);
 	}, [grupos, termoBusca]);
 
-	const devedoresFiltrados = useMemo(() => {
-		if (!termoBusca.trim()) return devedores;
-		const query = termoBusca.toLowerCase();
-		return devedores.filter(
-			(d) =>
-				(d.contato?.nome || "").toLowerCase().includes(query) ||
-				(d.itens || []).some((i: any) =>
-					(i.descricao || "").toLowerCase().includes(query),
-				),
-		);
-	}, [devedores, termoBusca]);
 
 	// DESPESAS DO GRUPO SELECIONADO
 	const despesasDoGrupoSelecionado = useMemo(() => {
@@ -698,6 +758,22 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 		);
 	}, [grupoSelecionado, despesasDoGrupoSelecionado]);
 
+	// Uma pessoa = um saldo (o que ela te deve menos o que você deve a ela)
+	const pessoas = useMemo(() => montarPessoas(devedores, credores), [devedores, credores]);
+	const pessoasFiltradas = useMemo(() => {
+		const q = termoBusca.trim().toLowerCase();
+		if (!q) return pessoas;
+		return pessoas.filter((p) => (p.contato?.nome || "").toLowerCase().includes(q) || p.itens.some((i) => i.descricao.toLowerCase().includes(q)));
+	}, [pessoas, termoBusca]);
+	const pessoaAberta = pessoas.find((p) => p.contato.id === pessoaAbertaId) || null;
+	const proximoGeral = useMemo(() => {
+		const candidatos = pessoas.filter((p) => p.proximo).sort((a, b) => a.proximo!.data.localeCompare(b.proximo!.data));
+		const p = candidatos[0];
+		return p ? { ...p.proximo!, nome: p.contato.nome } : null;
+	}, [pessoas]);
+	const totalTeDevem = pessoas.reduce((s, p) => s + Math.max(0, p.saldo), 0);
+	const totalVoceDeve = pessoas.reduce((s, p) => s + Math.max(0, -p.saldo), 0);
+
 	return (
 		<motion.div
 			initial={{ opacity: 0 }}
@@ -706,134 +782,48 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 			{!grupoSelecionado && (
 			<>
 			<CompartilhadoComigo />
-			{/* ========================================================
-          CABEÇALHO COM IDENTIDADE COMPARTILHADAS
-         ======================================================== */}
-			<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-3xl sm:rounded-[36px] shadow-sm border border-slate-100 dark:border-slate-800">
+			{/* TOPO */}
+			<div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
 				<div>
-					<div className="flex items-center gap-3">
-						<div className="bg-gradient-to-tr from-emerald-500 to-teal-600 p-3 rounded-2xl text-white shadow-md shadow-emerald-500/20">
-							<Split size={28} />
-						</div>
-						<div>
-							<div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 mb-1">
-								Despesas Compartilhadas
-							</div>
-							<h1 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight">
-								Devedores & Divisão de Contas
-							</h1>
-							<p className="text-slate-400 dark:text-slate-500 font-medium text-xs sm:text-sm mt-0.5">
-								Crie grupos, convide amigos e divida despesas com rateio
-								inteligente em partes iguais, exatas ou porcentagens.
-							</p>
-						</div>
-					</div>
+					<h1 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Divisão de contas</h1>
+					<p className="text-sm text-slate-500 dark:text-slate-400">Quem te deve, a quem você deve e o que vence em cada mês.</p>
 				</div>
-
-				{/* BOTÕES DE AÇÃO RÁPIDA */}
-				<div className="flex flex-wrap items-center gap-2.5">
+				<div className="flex flex-wrap items-center gap-2">
 					<button
 						onClick={() => setIsChatIaOpen(true)}
-						className="px-4 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-2xl font-black flex items-center justify-center gap-2 shadow-md shadow-purple-500/20 transition-all cursor-pointer text-xs whitespace-nowrap">
-						<Sparkles size={16} className="text-amber-300 animate-pulse" />{" "}
-						Assistente IA
+						className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-black flex items-center gap-2 shadow-md shadow-purple-500/20 cursor-pointer">
+						<Sparkles size={15} /> Assistente IA
 					</button>
-
-					<button
-						onClick={() => setIsCriarGrupoOpen(true)}
-						className="px-4 py-3 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/30 dark:hover:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded-2xl font-bold flex items-center justify-center gap-2 border border-purple-200 dark:border-purple-800/40 transition-all cursor-pointer text-xs whitespace-nowrap">
-						<Layers size={16} /> Criar Grupo
-					</button>
-
-					<button
-						onClick={() => setIsAddContatoOpen(true)}
-						className="px-4 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer text-xs whitespace-nowrap">
-						<UserCheck size={16} /> Novo Amigo
-					</button>
-
 					<button
 						onClick={() => {
 							setInitialGrupoIdForSplit(null);
 							setIsAddSplitOpen(true);
 						}}
-						className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all cursor-pointer text-xs whitespace-nowrap">
-						<Split size={16} /> Dividir Gasto (Split)
+						className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-2 shadow-md shadow-emerald-600/20 cursor-pointer">
+						<Plus size={15} /> Nova despesa
+					</button>
+					<button
+						onClick={() => setIsCriarGrupoOpen(true)}
+						title="Criar grupo"
+						className="px-3 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer">
+						<Layers size={15} /> Grupo
+					</button>
+					<button
+						onClick={() => setIsAddContatoOpen(true)}
+						title="Adicionar contato"
+						className="px-3 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer">
+						<UserCheck size={15} /> Contato
 					</button>
 				</div>
 			</div>
 
-			{/* ========================================================
-          KPIS GERAIS COMPARTILHADAS
-         ======================================================== */}
-			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-				{/* Total a Receber */}
-				<div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
-					<p className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-						<ArrowDownLeft size={14} /> Total que te devem
-					</p>
-					<h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
-						R${" "}
-						{totalAReceber.toLocaleString("pt-BR", {
-							minimumFractionDigits: 2,
-						})}
-					</h3>
-					<span className="text-xs text-slate-400 mt-1 block font-medium">
-						{devedores.filter((d) => d.total_devido > 0).length} amigo(s) com
-						valor pendente
-					</span>
-				</div>
-
-				{/* Total a Pagar */}
-				<div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
-					<p className="text-[10px] font-black uppercase tracking-wider text-rose-500 flex items-center gap-1">
-						<ArrowUpRight size={14} /> Total que você deve
-					</p>
-					<h3 className="text-2xl font-black text-rose-500 mt-1">
-						R${" "}
-						{totalAPagar.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-					</h3>
-					<span className="text-xs text-slate-400 mt-1 block font-medium">
-						{credores.filter((c) => c.total_devido > 0).length} amigo(s) a quem
-						você deve
-					</span>
-				</div>
-
-				{/* Saldo Líquido Geral */}
-				<div
-					className={`p-5 rounded-3xl shadow-md text-white ${
-						saldoLiquidoGeral >= 0
-							? "bg-gradient-to-br from-indigo-600 to-purple-600 shadow-indigo-500/20"
-							: "bg-gradient-to-br from-rose-600 to-red-700 shadow-rose-500/20"
-					}`}>
-					<p className="text-[10px] font-black uppercase tracking-wider text-white/80">
-						Saldo Líquido Geral
-					</p>
-					<h3 className="text-2xl font-black mt-1">
-						{saldoLiquidoGeral >= 0 ? "+" : "-"}R${" "}
-						{Math.abs(saldoLiquidoGeral).toLocaleString("pt-BR", {
-							minimumFractionDigits: 2,
-						})}
-					</h3>
-					<span className="text-xs text-white/80 mt-1 block font-medium">
-						{saldoLiquidoGeral >= 0
-							? "Você está positivo no geral"
-							: "Você tem acertos a fazer"}
-					</span>
-				</div>
-
-				{/* Grupos e Contatos */}
-				<div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
-					<p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-						Grupos & Contatos
-					</p>
-					<h3 className="text-2xl font-black text-slate-800 dark:text-slate-100 mt-1">
-						{plural(grupos.length, "grupo", "grupos")} • {plural(contatos.length, "contato", "contatos")}
-					</h3>
-					<span className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 block font-bold">
-						{contatos.filter(contatoTemConta).length} com conta ativa no app
-					</span>
-				</div>
-			</div>
+			<ResumoDivisao
+				transacoes={todasDespesasSplit}
+				totalReceber={totalTeDevem}
+				totalPagar={totalVoceDeve}
+				proximo={proximoGeral}
+				pessoasComSaldo={pessoas.filter((p) => Math.abs(p.saldo) > 0.009).length}
+			/>
 			</>
 			)}
 
@@ -842,49 +832,30 @@ Valores, datas e pagamentos continuam iguais.`)) return;
          ======================================================== */}
 			{!grupoSelecionado && (
 				<div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4">
-					<div className="flex flex-wrap bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-700 gap-1">
-						<button
-							onClick={() => setActiveTab("grupos")}
-							className={`px-4 sm:px-5 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center gap-2 ${
-								activeTab === "grupos"
-									? "bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-sm"
-									: "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-							}`}>
-							<Layers size={15} /> Grupos ({grupos.length})
-						</button>
-
-						<button
-							onClick={() => setActiveTab("amigos")}
-							className={`px-4 sm:px-5 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center gap-2 ${
-								activeTab === "amigos"
-									? "bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm"
-									: "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-							}`}>
-							<Users size={15} /> Amigos & Saldos (
-							{devedores.length + credores.length})
-						</button>
-
-						<button
-							onClick={() => setActiveTab("atividades")}
-							className={`px-4 sm:px-5 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center gap-2 ${
-								activeTab === "atividades"
-									? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm"
-									: "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-							}`}>
-							<Split size={15} /> Atividades & Lançamentos (
-							{todasDespesasSplit.length})
-						</button>
-
-						<button
-							onClick={() => setActiveTab("convites")}
-							className={`px-4 sm:px-5 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center gap-2 ${
-								activeTab === "convites"
-									? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm"
-									: "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-							}`}>
-							<Send size={15} /> Convidar Amigos ({contatos.length})
-						</button>
-					</div>
+						<div className="flex flex-wrap bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl border border-slate-200 dark:border-slate-700 gap-1" role="tablist">
+							{[
+								{ id: "amigos" as const, rotulo: "Pessoas", n: pessoas.filter((p) => Math.abs(p.saldo) > 0.009).length, icone: <Users size={15} /> },
+								{ id: "grupos" as const, rotulo: "Grupos", n: grupos.length, icone: <Layers size={15} /> },
+								{ id: "atividades" as const, rotulo: "Histórico", n: null, icone: <Receipt size={15} /> },
+								{ id: "convites" as const, rotulo: "Contatos", n: contatos.length, icone: <Send size={15} /> },
+							].map((aba) => (
+								<button
+									key={aba.id}
+									role="tab"
+									aria-selected={activeTab === aba.id}
+									onClick={() => setActiveTab(aba.id)}
+									className={`px-4 py-2 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center gap-2 ${
+										activeTab === aba.id
+											? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
+											: "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+									}`}>
+									{aba.icone} {aba.rotulo}
+									{aba.n !== null && aba.n > 0 && (
+										<span className="px-1.5 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-[10px] text-slate-600 dark:text-slate-300">{aba.n}</span>
+									)}
+								</button>
+							))}
+						</div>
 
 					<div className="relative min-w-[260px]">
 						<Search
@@ -895,7 +866,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 							type="text"
 							value={termoBusca}
 							onChange={(e) => setTermoBusca(e.target.value)}
-							placeholder="Buscar grupo, amigo ou despesa..."
+							placeholder="Buscar pessoa, grupo ou despesa..."
 							className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
 						/>
 					</div>
@@ -1264,6 +1235,13 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 													</div>
 													<div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
 														<span className="font-black text-[13px] tabular-nums text-slate-900 dark:text-slate-100">{fmt(i.total)}</span>
+														<button
+																onClick={() => setEditandoId(d.id)}
+																title="Editar lançamento"
+																aria-label="Editar lançamento"
+																className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:text-indigo-300 dark:hover:bg-indigo-950/40 cursor-pointer transition-colors">
+																<Pencil size={14} />
+															</button>
 														{statusItem(d, dentroDoMes)}
 													</div>
 												</div>
@@ -1381,313 +1359,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 					)}
 				</div>
 			) : activeTab === "amigos" ? (
-				/* ========================================================
-           ABA 2: AMIGOS E SALDOS (DEVEDORES & CREDORES)
-           ======================================================== */
-				<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-					{/* DEVEDORES (QUEM TE DEVE) */}
-					<div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
-						<div className="flex items-center justify-between">
-							<div>
-								<h3 className="font-black text-base text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
-									<ArrowDownLeft size={18} /> Quem te Deve (A Receber)
-								</h3>
-								<p className="text-xs text-slate-400 font-medium">
-									Contas pagas por você com partes em aberto
-								</p>
-							</div>
-							<span className="font-black text-sm text-emerald-600">
-								R${" "}
-								{totalAReceber.toLocaleString("pt-BR", {
-									minimumFractionDigits: 2,
-								})}
-							</span>
-						</div>
-
-						{devedoresFiltrados.length === 0 ? (
-							<div className="p-8 text-center text-slate-400 text-xs font-medium bg-slate-50 dark:bg-slate-800/40 rounded-2xl">
-								Nenhum amigo te deve nada no momento. Tudo certo!
-							</div>
-						) : (
-							<div className="space-y-3">
-								{devedoresFiltrados.map((d, idx) => (
-									<div
-										key={idx}
-										className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex flex-col gap-3">
-										<div className="flex items-center justify-between">
-											<div>
-												<h4 className="font-black text-sm text-slate-800 dark:text-slate-100">
-													{d.contato.nome}
-												</h4>
-												<p className="text-[10px] text-slate-400">
-													{d.contato.telefone ||
-														d.contato.email ||
-														"Sem contato cadastrado"}
-												</p>
-											</div>
-											<div className="text-right">
-												<span className="font-black text-base text-emerald-600 dark:text-emerald-400">
-													R${" "}
-													{Number(d.total_devido).toLocaleString("pt-BR", {
-														minimumFractionDigits: 2,
-													})}
-												</span>
-											</div>
-										</div>
-
-										{(() => {
-											const pendentes = (d.itens || []).filter((i: any) => !i.terceiro_pago);
-											if (pendentes.length === 0) return null;
-											const fmt = (v: number) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-											const aberto = (i: any) => Math.max(0, Number(i.valor) - (Number(getPaymentInfo(i.observacao)?.valor_pago) || 0));
-											return (
-												<ListaPorData
-													compacto
-													limite={3}
-													itens={pendentes}
-													dataDe={(i: any) => i.data}
-													resumo={(lista: any[]) => {
-														const recusadas = lista.filter((i) => getPaymentInfo(i.observacao)?.resposta_cobranca === "recusada");
-														const opcionais = lista.filter((i) => getPaymentInfo(i.observacao)?.opcional);
-														const valido = lista.filter((i) => !recusadas.includes(i));
-														return {
-															total: valido.reduce((s, i) => s + aberto(i), 0),
-															detalhe: [
-																opcionais.length ? `${fmt(opcionais.filter((i) => !recusadas.includes(i)).reduce((s, i) => s + aberto(i), 0))} opcional` : "",
-																recusadas.length ? `${recusadas.length} recusado(s)` : "",
-															]
-																.filter(Boolean)
-																.join(" · ") || undefined,
-														};
-													}}
-													renderItem={(i: any) => {
-														const meta = getPaymentInfo(i.observacao) || {};
-														const recusada = meta.resposta_cobranca === "recusada";
-														return (
-															<div className="flex items-center justify-between gap-2 text-[11px] py-1">
-																<span className={`truncate ${recusada ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-600 dark:text-slate-300"}`}>
-																	{new Date(i.data + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ·{" "}
-																	{meta.descricao_original || i.descricao}
-																</span>
-																<span className="flex items-center gap-1.5 shrink-0">
-																	{recusada ? (
-																		<span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 text-[9px] font-black uppercase">Recusada</span>
-																	) : meta.resposta_cobranca === "aceita" ? (
-																		<span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 text-[9px] font-black uppercase">Aceita</span>
-																	) : null}
-																	<button
-																		onClick={() => handleAlternarOpcional(i, !meta.opcional)}
-																		title={meta.opcional ? "Tornar obrigatória" : "Tornar opcional (a pessoa poderá recusar)"}
-																		className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase cursor-pointer transition-colors ${meta.opcional ? "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200" : "bg-slate-100 text-slate-500 hover:text-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-200"}`}>
-																		{meta.opcional ? "Opcional" : "Obrigatória"}
-																	</button>
-																	<span className="font-bold tabular-nums text-slate-700 dark:text-slate-200">{fmt(aberto(i))}</span>
-																</span>
-															</div>
-														);
-													}}
-												/>
-											);
-										})()}
-
-										{(() => {
-											const foraDoGrupo = (d.itens || []).filter((i: any) => !getPaymentInfo(i.observacao)?.grupo_id).length;
-											const opcoes = gruposDoContato(d.contato);
-											if (foraDoGrupo === 0 || opcoes.length === 0) return null;
-											return (
-												<div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/50">
-													<span className="text-[11px] font-semibold text-purple-800 dark:text-purple-200">
-														{foraDoGrupo} lançamento(s) fora de grupo
-													</span>
-													<div className="flex flex-wrap gap-1.5">
-														{opcoes.map(({ grupo, membro }) => (
-															<button
-																key={grupo.id}
-																onClick={() => handleMoverParaGrupo(d, grupo, membro)}
-																className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold cursor-pointer transition-colors">
-																Mover para o grupo {grupo.nome}
-															</button>
-														))}
-													</div>
-												</div>
-											);
-										})()}
-
-										<div className="flex items-center gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
-											<button
-												onClick={() => handleCobrarWhatsApp(d)}
-												className="flex-1 py-2 px-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer">
-												<MessageSquare size={14} /> Cobrar no WhatsApp
-											</button>
-
-											<button
-												onClick={() =>
-													exportarExcelPessoa({ nome: d.contato.nome, itens: d.itens || [] }).catch(() =>
-														toast.error("Não foi possível gerar a planilha."),
-													)
-												}
-												title={`Baixar planilha com ${d.contato.nome}`}
-												aria-label={`Baixar planilha com ${d.contato.nome}`}
-												className="py-2 px-3 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-100 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer">
-												<Download size={14} /> Excel
-											</button>
-
-											<button
-												onClick={() => setReceberDe({ contato: { id: d.contato.id, nome: d.contato.nome } })}
-												className="py-2 px-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer">
-												Receber pagamento
-											</button>
-										</div>
-									</div>
-								))}
-							</div>
-						)}
-					</div>
-
-					{/* CREDORES (A QUEM VOCÊ DEVE) */}
-					<div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
-						<div className="flex items-center justify-between">
-							<div>
-								<h3 className="font-black text-base text-rose-500 flex items-center gap-2">
-									<ArrowUpRight size={18} /> A Quem Você Deve (A Pagar)
-								</h3>
-								<p className="text-xs text-slate-400 font-medium">
-									Sua parte em contas pagas por outras pessoas
-								</p>
-							</div>
-							<span className="font-black text-sm text-rose-500">
-								R${" "}
-								{totalAPagar.toLocaleString("pt-BR", {
-									minimumFractionDigits: 2,
-								})}
-							</span>
-						</div>
-
-						{credores.length === 0 ? (
-							<div className="p-8 text-center text-slate-400 text-xs font-medium bg-slate-50 dark:bg-slate-800/40 rounded-2xl">
-								Você não deve nada a nenhum amigo. Tudo quitado!
-							</div>
-						) : (
-							<div className="space-y-3">
-								{credores.map((c, idx) => (
-									<div
-										key={idx}
-										className="p-4 sm:p-5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex flex-col gap-4">
-										<div className="flex items-center justify-between">
-											<div>
-												<div className="flex items-center gap-2">
-													<h4 className="font-black text-base text-slate-800 dark:text-slate-100">
-														{c.contato.nome}
-													</h4>
-													<span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
-														{c.itens.length} despesa(s)
-													</span>
-												</div>
-												<p className="text-xs text-slate-400 mt-0.5">
-													{c.contato.telefone ||
-														c.contato.email ||
-														"Sem contato cadastrado"}
-												</p>
-											</div>
-											<div className="text-right">
-												<span className="text-[10px] font-bold uppercase text-slate-400 block">Total a Pagar</span>
-												<span className="font-black text-lg text-rose-600 dark:text-rose-400">
-													R${" "}
-													{Number(c.total_devido).toLocaleString("pt-BR", {
-														minimumFractionDigits: 2,
-													})}
-												</span>
-											</div>
-										</div>
-
-										{/* DETALHAMENTO ITEM A ITEM DAS DESPESAS */}
-										<div className="space-y-2 pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
-											<div className="flex items-center justify-between text-xs font-black text-slate-700 dark:text-slate-300">
-												<span className="flex items-center gap-1.5">
-													<Receipt size={14} className="text-rose-500" />
-													Detalhamento das Contas & Parcelas
-												</span>
-												<span className="text-[11px] text-slate-400 font-semibold">
-													{c.itens.filter((i: any) => !i.quitado).length} pendente(s)
-												</span>
-											</div>
-
-											<div className="space-y-2 max-h-96 overflow-y-auto pr-1 custom-scrollbar">
-												{c.itens.map((item: any) => (
-													<div
-														key={item.id}
-														className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs transition-all ${
-															item.quitado
-																? "bg-slate-50/50 dark:bg-slate-800/20 border-slate-200/50 dark:border-slate-800 opacity-60"
-																: "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700/80 shadow-2xs"
-														}`}
-													>
-														<div className="min-w-0">
-															<div className="flex items-center gap-2 flex-wrap">
-																<span className="font-bold text-slate-800 dark:text-slate-100">
-																	{item.descricao}
-																</span>
-																<span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${
-																	item.is_credito
-																		? "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300"
-																		: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
-																}`}>
-																	{item.forma_pagamento}
-																</span>
-															</div>
-															<p className="text-[11px] text-slate-400 mt-1 flex items-center gap-2">
-																<span>Data: {new Date(item.data + "T12:00:00").toLocaleDateString("pt-BR")}</span>
-																{item.cartao_nome && <span>• Cartão: <strong>{item.cartao_nome}</strong></span>}
-																{item.conta_nome && <span>• Conta: <strong>{item.conta_nome}</strong></span>}
-															</p>
-														</div>
-
-														<div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-															<div className="text-right">
-																<span className="text-[9px] text-slate-400 block uppercase font-bold">Valor</span>
-																<span className={`font-black text-xs ${item.quitado ? "text-slate-500 line-through" : "text-rose-600 dark:text-rose-400"}`}>
-																	R$ {Number(item.valor_parcela_usuario).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-																</span>
-															</div>
-
-															{item.quitado ? (
-																<span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold">
-																	Quitado
-																</span>
-															) : (
-																<button
-																	onClick={() => handleOpenPaymentModal(item)}
-																	className="px-2.5 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-[11px] font-bold shadow-xs cursor-pointer transition-colors"
-																	title="Quitar este lançamento"
-																>
-																	Quitar
-																</button>
-															)}
-														</div>
-													</div>
-												))}
-											</div>
-										</div>
-
-										<div className="flex items-center gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
-											<button
-												onClick={() => {
-													const primeiroItem = c.itens.find(
-														(i: any) => !i.quitado,
-													);
-													if (primeiroItem)
-														handleOpenPaymentModal(primeiroItem);
-												}}
-												className="flex-1 py-2.5 px-3 bg-rose-500 hover:bg-rose-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer">
-												<Check size={14} /> Registrar Meu Pagamento / Acerto Geral
-											</button>
-										</div>
-									</div>
-								))}
-							</div>
-						)}
-					</div>
-				</div>
+				<PessoasDivisao pessoas={pessoasFiltradas} onAbrir={(p) => setPessoaAbertaId(p.contato.id)} />
 			) : activeTab === "atividades" ? (
 				/* ========================================================
            ABA 3: ATIVIDADES & LANÇAMENTOS
@@ -1749,6 +1421,13 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 													minimumFractionDigits: 2,
 												})}
 											</span>
+											<button
+												onClick={() => setEditandoId(d.id)}
+												title="Editar lançamento"
+												aria-label="Editar lançamento"
+												className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:text-indigo-300 dark:hover:bg-indigo-950/40 cursor-pointer transition-colors">
+												<Pencil size={14} />
+											</button>
 											{d.terceiro_pago ? (
 												<span className="flex items-center gap-2">
 													<span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">
@@ -1905,6 +1584,52 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 				/>
 			)}
 
+			<EditarLancamentoModal transacaoId={editandoId} onClose={() => setEditandoId(null)} onSalvo={loadAllData} />
+
+			<DetalhePessoa
+				pessoa={pessoaAberta}
+				temConta={contatoTemConta(pessoaAberta?.contato)}
+				onClose={() => setPessoaAbertaId(null)}
+				onReceber={(itemIds, valor) =>
+					pessoaAberta && setReceberDe({ contato: { id: pessoaAberta.contato.id, nome: pessoaAberta.contato.nome }, itemIds, valorSugerido: valor })
+				}
+				onPagar={(item) => handleOpenPaymentModal(item.raw)}
+				onEditar={(id) => setEditandoId(id)}
+				onDesfazer={(id) => handleDesfazerPagamento(id)}
+				onAlternarOpcional={(item) => handleAlternarOpcional(item.raw, !item.opcional)}
+				onCobrar={() => pessoaAberta?.devedor && handleCobrarWhatsApp(pessoaAberta.devedor)}
+				onExcel={() =>
+					pessoaAberta &&
+					exportarExcelPessoa({ nome: pessoaAberta.contato.nome, itens: pessoaAberta.devedor?.itens || [] }).catch(() =>
+						toast.error("Não foi possível gerar a planilha."),
+					)
+				}
+				onConvidar={() => pessoaAberta && handleConvidarContato(pessoaAberta.contato)}
+				extra={
+					pessoaAberta?.devedor
+						? (() => {
+								const d = pessoaAberta.devedor;
+								const foraDoGrupo = (d.itens || []).filter((i: any) => !getPaymentInfo(i.observacao)?.grupo_id).length;
+								const opcoes = gruposDoContato(d.contato);
+								if (foraDoGrupo === 0 || opcoes.length === 0) return null;
+								return (
+									<div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/50">
+										<span className="text-[11px] font-semibold text-purple-800 dark:text-purple-200">{foraDoGrupo} lançamento(s) fora de grupo</span>
+										{opcoes.map(({ grupo, membro }) => (
+											<button
+												key={grupo.id}
+												onClick={() => handleMoverParaGrupo(d, grupo, membro)}
+												className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold cursor-pointer">
+												Mover para o grupo {grupo.nome}
+											</button>
+										))}
+									</div>
+								);
+							})()
+						: null
+				}
+			/>
+
 			<PedirTelefoneModal
 				isOpen={Boolean(cobrarSemTelefone)}
 				contato={cobrarSemTelefone?.contato || null}
@@ -1950,7 +1675,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 					<div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 space-y-5 border border-slate-100 dark:border-slate-800 shadow-2xl animate-in zoom-in-95 duration-150">
 						<div className="flex justify-between items-center">
 							<h3 className="font-black text-lg text-slate-800 dark:text-slate-100">
-								Liquidar / Settle Up
+								Registrar pagamento
 							</h3>
 							<button
 								onClick={() => setPaymentModalOpen(false)}
@@ -1993,19 +1718,30 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 									<label className="text-[10px] font-bold text-slate-400">
 										Valor Pago (R$)
 									</label>
-									<input
-										type="text"
-										placeholder="0,00"
+									<InputMoeda
 										value={partialAmount}
-										onChange={(e) => setPartialAmount(e.target.value)}
+										onChange={(v) => setPartialAmount(v)}
 										className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-sm font-bold"
 									/>
 								</div>
 							)}
 
+							<label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer">
+								<input
+									type="checkbox"
+									className="mt-0.5 accent-emerald-600"
+									checked={pagamentoCompensado}
+									onChange={(e) => setPagamentoCompensado(e.target.checked)}
+								/>
+								<span className="text-xs text-slate-600 dark:text-slate-300">
+									<strong className="block text-slate-800 dark:text-slate-100">Abatido de um empréstimo ou adiantamento</strong>
+									Ex.: você emprestou R$ 200 e isso desconta desta parcela. Não sai dinheiro da conta agora.
+								</span>
+							</label>
+
 							<div className="space-y-1">
 								<label className="text-[10px] font-bold text-slate-400">
-									Data do Pagamento
+									{pagamentoCompensado ? "Data do empréstimo/adiantamento" : "Data do Pagamento"}
 								</label>
 								<input
 									type="date"

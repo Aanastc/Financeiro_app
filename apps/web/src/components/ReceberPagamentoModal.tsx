@@ -1,3 +1,4 @@
+import InputMoeda from "./InputMoeda";
 import { useEffect, useState } from "react";
 import { HandCoins, Landmark, Loader2, X } from "lucide-react";
 import toast from "react-hot-toast";
@@ -170,7 +171,7 @@ export default function ReceberPagamentoModal({ isOpen, onClose, onSuccess, user
 				<div className="grid grid-cols-2 gap-3">
 					<label className="space-y-1">
 						<span className="text-xs font-bold text-slate-600 dark:text-slate-300">Valor recebido</span>
-						<input value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" placeholder="0,00" className={campo} />
+						<InputMoeda value={valor} onChange={(v) => setValor(v)} className={campo} />
 					</label>
 					<label className="space-y-1">
 						<span className="text-xs font-bold text-slate-600 dark:text-slate-300">Data</span>

@@ -225,6 +225,123 @@ export const recebimentosDivisaoService = {
   },
 
   /**
+   * Cruza os saldos com a mesma pessoa (como o Splitwise): o que ela te deve
+   * abate o que você deve a ela, dos vencimentos mais antigos para os mais novos.
+   * Nenhum dinheiro passa por conta: os dois lados recebem um pagamento do tipo
+   * "compensacao" com o mesmo compensacao_id (para poder desfazer junto).
+   * Ficam de fora: cobranças opcionais ainda sem resposta e itens em que a
+   * pessoa desfez um abatimento (sem_compensacao).
+   */
+  async compensarSaldos(usuarioId: string, contatoId: string, data: string): Promise<{ valor: number; itens: number }> {
+    const podeCompensar = (meta: Record<string, any>) =>
+      !meta.sem_compensacao && meta.resposta_cobranca !== "recusada" && !(meta.opcional && meta.resposta_cobranca !== "aceita");
+
+    const teDeve = (await this.itensEmAberto(usuarioId, contatoId)).filter((i) => podeCompensar(i.meta));
+    if (teDeve.length === 0) return { valor: 0, itens: 0 };
+
+    const linhasDevo = await buscarTodasPaginas<any>((de, ate) =>
+      supabase
+        .from("transacoes")
+        .select("id, data, valor, observacao, terceiro_pago")
+        .eq("usuario_id", usuarioId)
+        .eq("terceiro", false)
+        .eq("terceiro_pago", false)
+        .ilike("observacao", `%${contatoId}%`)
+        .order("data", { ascending: true })
+        .order("id")
+        .range(de, ate),
+    );
+    const devo = linhasDevo
+      .map((t) => {
+        const meta = lerMeta(t.observacao);
+        return { ...t, meta, aberto: centavos(Math.max(0, Number(t.valor) - (Number(meta.valor_pago) || 0))) };
+      })
+      .filter((t) => t.meta.parceria_credor_id === contatoId && t.aberto > 0 && podeCompensar(t.meta));
+    if (devo.length === 0) return { valor: 0, itens: 0 };
+
+    const compensacaoId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `comp_${Date.now()}`;
+    const alterados = new Map<string, { t: any; usado: number; com: string[] }>();
+    const marcar = (t: any, usar: number, outro: string) => {
+      const a = alterados.get(t.id) || { t, usado: 0, com: [] };
+      a.usado = centavos(a.usado + usar);
+      a.com.push(outro);
+      alterados.set(t.id, a);
+    };
+
+    let i = 0;
+    let j = 0;
+    let total = 0;
+    while (i < teDeve.length && j < devo.length) {
+      const a = teDeve[i];
+      const b = devo[j];
+      const usar = centavos(Math.min(a.aberto, b.aberto));
+      if (usar > 0) {
+        marcar(a, usar, b.id);
+        marcar(b, usar, a.id);
+        a.aberto = centavos(a.aberto - usar);
+        b.aberto = centavos(b.aberto - usar);
+        total = centavos(total + usar);
+      }
+      if (a.aberto <= 0) i++;
+      if (b.aberto <= 0) j++;
+    }
+
+    for (const { t, usado, com } of alterados.values()) {
+      const pagoAntes = Number(t.meta.valor_pago) || 0;
+      const valorPago = centavos(pagoAntes + usado);
+      const quitado = valorPago >= Number(t.valor) - 0.005;
+      const meta = {
+        ...t.meta,
+        pagamentos: [
+          ...(Array.isArray(t.meta.pagamentos) ? t.meta.pagamentos : []),
+          { valor: usado, data, tipo: "compensacao", descricao: "Abatido do saldo com a mesma pessoa", compensacao_id: compensacaoId, com },
+        ],
+        valor_pago: valorPago,
+        data_pagamento: data,
+        total: quitado,
+      };
+      const { error } = await supabase
+        .from("transacoes")
+        .update({ terceiro_pago: quitado, observacao: JSON.stringify(meta) })
+        .eq("id", t.id)
+        .eq("usuario_id", usuarioId);
+      if (error) throw error;
+    }
+    return { valor: total, itens: alterados.size };
+  },
+
+  /**
+   * Desfaz um abatimento nos dois lados e marca os itens para não serem
+   * abatidos de novo automaticamente.
+   */
+  async desfazerCompensacao(usuarioId: string, compensacaoId: string) {
+    const { data } = await supabase
+      .from("transacoes")
+      .select("id, valor, observacao")
+      .eq("usuario_id", usuarioId)
+      .ilike("observacao", `%${compensacaoId}%`);
+    for (const t of data || []) {
+      const meta = lerMeta(t.observacao);
+      const pagamentos = (Array.isArray(meta.pagamentos) ? meta.pagamentos : []).filter((p: any) => p.compensacao_id !== compensacaoId);
+      const valorPago = centavos(pagamentos.reduce((s: number, p: any) => s + (Number(p.valor) || 0), 0));
+      const quitado = valorPago >= Number(t.valor) - 0.005 && valorPago > 0;
+      const novo: Record<string, any> = { ...meta, pagamentos, valor_pago: valorPago, total: quitado, sem_compensacao: true };
+      if (pagamentos.length === 0) {
+        delete novo.pagamentos;
+        delete novo.valor_pago;
+        delete novo.data_pagamento;
+        delete novo.total;
+      }
+      await supabase
+        .from("transacoes")
+        .update({ terceiro_pago: quitado, observacao: JSON.stringify(novo) })
+        .eq("id", t.id)
+        .eq("usuario_id", usuarioId);
+    }
+  },
+
+  /**
    * Linha "Pix recebido" do extrato. Devolve:
    *   "reconhecido" → já havia recebimento registrado à mão (não lança de novo);
    *   "abatido"     → lançado e abatido da dívida da pessoa;

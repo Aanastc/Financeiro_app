@@ -1,3 +1,5 @@
+import SeletorCategoria from "./SeletorCategoria";
+import InputMoeda from "./InputMoeda";
 import { useState, useEffect } from "react";
 import { X, ShoppingBag, CreditCard, Wallet } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
@@ -78,13 +80,6 @@ export function AddGastoWeb({
 			}));
 		}
 	}, [isOpen, initialCartaoId]);
-
-	const formatCurrency = (v: string) => {
-		const n = v.replace(/\D/g, "");
-		return new Intl.NumberFormat("pt-BR", {
-			minimumFractionDigits: 2,
-		}).format(parseFloat(n || "0") / 100);
-	};
 
 	// Cálculos de Parcelamento em tempo real
 	const previewParcelamento = () => {
@@ -243,11 +238,10 @@ export function AddGastoWeb({
 
 								<div className="space-y-1.5">
 									<label className="text-[9px] font-black uppercase text-rose-500 dark:text-rose-400 ml-2">Valor Total do Gasto</label>
-									<input
-										placeholder="Valor Total R$ 0,00"
+									<InputMoeda
 										className="w-full p-4.5 bg-white dark:bg-slate-800 rounded-2xl font-black text-rose-500 dark:text-rose-400 text-2xl border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none"
 										value={form.valor}
-										onChange={(e) => setForm({ ...form, valor: formatCurrency(e.target.value) })}
+										onChange={(v) => setForm({ ...form, valor: v })}
 									/>
 								</div>
 
@@ -285,11 +279,10 @@ export function AddGastoWeb({
 								
 								<div className="space-y-1.5">
 									<label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">Valor do Gasto</label>
-									<input
-										placeholder="Valor R$ 0,00"
+									<InputMoeda
 										className="w-full p-5 bg-slate-50 dark:bg-slate-800 rounded-3xl font-black text-rose-500 dark:text-rose-400 text-3xl border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none text-center"
 										value={form.valor}
-										onChange={(e) => setForm({ ...form, valor: formatCurrency(e.target.value) })}
+										onChange={(v) => setForm({ ...form, valor: v })}
 									/>
 								</div>
 							</div>
@@ -300,15 +293,15 @@ export function AddGastoWeb({
 					<div className="space-y-3">
 						<p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">4. Categorização</p>
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-							<select
-								className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
-								value={form.categoria}
-								onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
-								<option value="Outros">Categoria (Opcional)</option>
-								{CATEGORIAS_PADRAO.map((c) => (
-									<option key={c} value={c}>{c}</option>
-								))}
-							</select>
+							<SeletorCategoria
+								modo="nome"
+								tipo="DESPESA"
+								sugestoes={CATEGORIAS_PADRAO}
+								textoVazio="Categoria (opcional)"
+								value={form.categoria === "Outros" ? "" : form.categoria}
+								onChange={(nome) => setForm({ ...form, categoria: nome || "Outros" })}
+								className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 text-sm"
+							/>
 
 							<select
 								className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
