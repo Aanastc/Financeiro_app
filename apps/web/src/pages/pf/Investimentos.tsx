@@ -4,6 +4,7 @@ import { financeService } from "../../../../../packages/services/finance.service
 import { taxaAnualAtual } from "../../../../../packages/services/rendimento.service";
 import { Plus, TrendingUp, Briefcase, PiggyBank, Coins, Trash2, Pencil, AlertTriangle, Target, Info } from "lucide-react";
 import { toast } from "react-hot-toast";
+import { useOutletContext } from "react-router-dom";
 import AddInvestimentoWeb from "../../components/AddInvestimentoWeb";
 import PageLoader from "../../components/PageLoader";
 import { descreverRentabilidade, instituicaoDoInvestimento, metaIdDoInvestimento } from "../../../../../packages/utils/investimentos";
@@ -18,6 +19,9 @@ const ehCaixinha = (inv: any) => Boolean(inv.conta_id) || /^caixinha\s+\S/i.test
 const RENDA_VARIAVEL = ["Ações", "FIIs", "Criptomoedas"];
 
 export default function InvestimentosWeb() {
+	// Visão PF x Empresa: cada uma vê só os investimentos das próprias contas
+	const { visao = "PF", temEmpresa = false } = useOutletContext<any>() || {};
+	const [contaEmpresaId, setContaEmpresaId] = useState<string | null>(null);
 	const [investimentos, setInvestimentos] = useState<any[]>([]);
 	const [metas, setMetas] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -31,18 +35,22 @@ export default function InvestimentosWeb() {
 		const { data: { user } } = await supabase.auth.getUser();
 		if (user) {
 			try {
-				const [data, { data: metasData }] = await Promise.all([
+				const [data, { data: metasData }, { data: contas }] = await Promise.all([
 					financeService.getInvestimentos(user.id),
 					supabase.from("metas").select("*").eq("usuario_id", user.id),
+					supabase.from("contas_bancarias").select("id, empresa_id").eq("usuario_id", user.id),
 				]);
-				setInvestimentos(data || []);
+				const contasPJ = new Set((contas || []).filter((c: any) => c.empresa_id).map((c: any) => c.id));
+				setContaEmpresaId([...contasPJ][0] || null);
+				const daEmpresa = (i: any) => Boolean(i.conta_id && contasPJ.has(i.conta_id));
+				setInvestimentos(temEmpresa ? (data || []).filter((i: any) => daEmpresa(i) === (visao === "PJ")) : data || []);
 				setMetas(metasData || []);
 			} catch {
 				toast.error("Erro ao carregar investimentos");
 			}
 		}
 		setLoading(false);
-	}, []);
+	}, [visao, temEmpresa]);
 
 	const handleExcluir = async (inv: any) => {
 		const aviso = ehCaixinha(inv)
@@ -347,6 +355,7 @@ export default function InvestimentosWeb() {
 			{(isAddInvestimentoOpen || investimentoEmEdicao) && (
 				<AddInvestimentoWeb
 					investimento={investimentoEmEdicao}
+					contaId={visao === "PJ" ? contaEmpresaId : null}
 					onClose={() => {
 						setIsAddInvestimentoOpen(false);
 						setInvestimentoEmEdicao(null);

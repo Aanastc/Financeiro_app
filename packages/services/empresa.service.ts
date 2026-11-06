@@ -240,7 +240,11 @@ export interface PainelEmpresa {
   investimentos: InvestimentoEmpresa[];
 }
 
-const ehImposto = (desc: string, cat?: string | null) => /\b(das|simples nacional|darf|inss|iss|irpj|csll|pis|cofins|gps)\b/i.test(`${desc} ${cat || ""}`);
+/** Pagamento de imposto (DAS, DARF, ISS, Receita Federal, prefeitura…), pela descrição ou categoria. */
+export const ehImposto = (desc: string, cat?: string | null) =>
+  /\b(das|pgdas|simples nacional|darf|inss|iss|irpj|csll|pis|cofins|gps|receita federal|prefeitura|impostos?|tributos?)\b/i.test(
+    `${desc || ""} ${cat || ""}`.normalize("NFD").replace(/[̀-ͯ]/g, ""),
+  );
 const somaMes = (lista: { data: string; valor: number }[], ym: string) => lista.filter((l) => l.data.startsWith(ym)).reduce((s, l) => s + l.valor, 0);
 const ymAnterior = (ym: string, n: number) => {
   const [a, m] = ym.split("-").map(Number);

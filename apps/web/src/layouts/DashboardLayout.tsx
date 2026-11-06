@@ -254,6 +254,7 @@ export default function DashboardLayout() {
         <NavGroup title="Empresa">
           <NavItem to="/home" icon={LayoutDashboard} label="Painel da empresa" colorClass="text-emerald-500" />
           <NavItem to="/contas" icon={Wallet} label="Contas" />
+          <NavItem to="/investimentos" icon={Briefcase} label="Investimentos" colorClass="text-purple-500" />
         </NavGroup>
 
         <NavGroup title="Ferramentas">

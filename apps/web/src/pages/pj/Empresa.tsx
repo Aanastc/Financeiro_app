@@ -11,6 +11,7 @@ import { acrescimosPorAtraso, salarioMinimoVigente, type Acrescimos } from "../.
 import {
 	dasMeiSugerido,
 	definirContasDaEmpresa,
+	ehImposto,
 	minhasEmpresas,
 	painelEmpresa,
 	salvarEmpresa,
@@ -23,6 +24,8 @@ import {
 import { CORES, FMT_MOEDA, FONTE, cabecalho, linha, titulo } from "../../lib/relatorioExcel";
 import PageLoader from "../../components/PageLoader";
 import InputMoeda, { lerMoeda } from "../../components/InputMoeda";
+import AddInvestimentoWeb from "../../components/AddInvestimentoWeb";
+import { regraDaEmpresa } from "../../lib/pj/regrasImportacao";
 
 const moeda = (v: number) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const pct = (v: number) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
@@ -66,6 +69,13 @@ export default function EmpresaPage() {
 	// Dados públicos: salário mínimo vigente (DAS do MEI) e multa/juros de imposto atrasado
 	const [salarioMinimo, setSalarioMinimo] = useState<number | undefined>(undefined);
 	const [atraso, setAtraso] = useState<Acrescimos | null>(null);
+	// Caixinha da empresa aberta para editar (tipo/rentabilidade e saldo do banco)
+	const [investimentoEmEdicao, setInvestimentoEmEdicao] = useState<any | null>(null);
+	const editarInvestimento = async (id: string) => {
+		const { data, error } = await supabase.from("investimentos").select("*").eq("id", id).single();
+		if (error || !data) return toast.error("Não foi possível abrir o investimento.");
+		setInvestimentoEmEdicao(data);
+	};
 	useEffect(() => {
 		salarioMinimoVigente().then(setSalarioMinimo).catch(() => {});
 	}, []);
@@ -210,7 +220,10 @@ export default function EmpresaPage() {
 			for (const l of lista) mapa.set(chave(l), (mapa.get(chave(l)) || 0) + Number(l.valor || 0));
 			return [...mapa.entries()].map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }));
 		};
-		const despesasPorCategoria = agrupar(painel.despesas.filter(doAno), (d) => d.categoria || "Sem categoria");
+		// Impostos ficam juntos numa categoria só; o que veio sem categoria é deduzido pela descrição (mesmas regras do importador)
+		const categoriaDaDespesa = (d: { descricao: string; categoria?: string | null }) =>
+			ehImposto(d.descricao, d.categoria) ? "Impostos (DAS/ISS)" : d.categoria || regraDaEmpresa(d.descricao, 0, "Gasto")?.categoria || "Sem categoria";
+		const despesasPorCategoria = agrupar(painel.despesas.filter(doAno), categoriaDaDespesa);
 		const retiradasDoAno = painel.retiradas.filter(doAno);
 		const destinoDoDinheiro = [
 			...despesasPorCategoria,
@@ -632,7 +645,17 @@ export default function EmpresaPage() {
 									<div key={i.id} className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-4 space-y-1">
 										<div className="flex items-baseline justify-between gap-2">
 											<span className="text-sm font-bold text-slate-700 dark:text-slate-200">{i.titulo}</span>
-											<span className="text-lg font-black text-slate-800 dark:text-slate-100">{moeda(i.valor)}</span>
+											<span className="flex items-center gap-1">
+												<span className="text-lg font-black text-slate-800 dark:text-slate-100">{moeda(i.valor)}</span>
+												<button
+													onClick={() => editarInvestimento(i.id)}
+													title="Editar (tipo, rentabilidade e saldo do banco)"
+													aria-label={`Editar ${i.titulo}`}
+													className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+												>
+													<Pencil size={14} />
+												</button>
+											</span>
 										</div>
 										<p className="text-xs text-slate-500 dark:text-slate-400">
 											Aplicado {moeda(i.aplicado)} · <b className="text-emerald-600 dark:text-emerald-400">rendeu {moeda(i.rendimento)}</b>
@@ -643,7 +666,7 @@ export default function EmpresaPage() {
 											</p>
 										) : (
 											<p className="text-xs text-amber-700 dark:text-amber-400">
-												Informe o tipo (ex.: CDB 100% do CDI) em Investimentos para calcular quanto rende.
+												Clique no lápis e informe o tipo (ex.: CDB 100% do CDI) para calcular quanto rende.
 											</p>
 										)}
 									</div>
@@ -765,6 +788,10 @@ export default function EmpresaPage() {
 						apurado no PGDAS/pelo contador.
 					</p>
 				</>
+			)}
+
+			{investimentoEmEdicao && (
+				<AddInvestimentoWeb investimento={investimentoEmEdicao} onClose={() => setInvestimentoEmEdicao(null)} onSuccess={carregar} />
 			)}
 		</div>
 	);

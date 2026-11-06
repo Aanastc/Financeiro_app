@@ -18,6 +18,8 @@ interface AddInvestimentoProps {
 	onSuccess: () => void;
 	/** Quando informado, o formulário edita este investimento */
 	investimento?: any | null;
+	/** Conta à qual um investimento NOVO fica ligado (ex.: conta da empresa na visão PJ) */
+	contaId?: string | null;
 }
 
 const CAMPO =
@@ -28,7 +30,7 @@ const moedaParaNumero = (v: string) => parseFloat(String(v).replace(/\./g, "").r
 const numeroParaMoeda = (v: any) =>
 	v === null || v === undefined || v === "" ? "" : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export default function AddInvestimentoWeb({ onClose, onSuccess, investimento }: AddInvestimentoProps) {
+export default function AddInvestimentoWeb({ onClose, onSuccess, investimento, contaId }: AddInvestimentoProps) {
 	const editando = Boolean(investimento?.id);
 	const [loading, setLoading] = useState(false);
 	const [metas, setMetas] = useState<any[]>([]);
@@ -102,7 +104,7 @@ export default function AddInvestimentoWeb({ onClose, onSuccess, investimento }:
 				await financeService.updateInvestimento(user.id, investimento.id, dados);
 				toast.success("Investimento atualizado!");
 			} else {
-				await financeService.addInvestimento(user.id, dados);
+				await financeService.addInvestimento(user.id, contaId ? { ...dados, conta_id: contaId } : dados);
 				toast.success("Investimento adicionado!");
 			}
 			onSuccess();
