@@ -180,7 +180,11 @@ export const conviteService = {
  * Avisa por e-mail os contatos envolvidos nas despesas informadas
  * (Edge Function notificar-divisao). Falhas não interrompem o fluxo do usuário.
  */
+/** Envio de e-mail desligado por enquanto (sem provedor configurado). Os avisos continuam no app. */
+export const EMAIL_DIVISAO_ATIVO = false;
+
 export async function notificarDivisaoPorEmail(transacaoIds: string[]): Promise<{ enviados: number } | null> {
+  if (!EMAIL_DIVISAO_ATIVO) return null;
   const ids = transacaoIds.filter(Boolean);
   if (ids.length === 0) return null;
   const { data, error } = await supabase.functions.invoke("notificar-divisao", { body: { transacao_ids: ids } });

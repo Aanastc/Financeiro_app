@@ -21,7 +21,7 @@ import { financeService } from "../../../../packages/services/finance.service";
 import { despesasCompartilhadasService } from "../../../../packages/services/despesas-compartilhadas.service";
 import type { Grupo } from "../../../../packages/services/despesas-compartilhadas.service";
 import toast from "react-hot-toast";
-import { notificarDivisaoPorEmail } from "../../../../packages/services/convite.service";
+import { notificarDivisaoPorEmail, EMAIL_DIVISAO_ATIVO } from "../../../../packages/services/convite.service";
 
 interface AddSplitDespesaModalProps {
 	isOpen: boolean;
@@ -1302,6 +1302,7 @@ export default function AddSplitDespesaModal({
 						)}
 					</div>
 
+					{EMAIL_DIVISAO_ATIVO && (
 					<label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 cursor-pointer">
 						<input
 							type="checkbox"
@@ -1316,6 +1317,7 @@ export default function AddSplitDespesaModal({
 							</span>
 						</span>
 					</label>
+					)}
 
 					{/* OPÇÃO DE RECORRÊNCIA (MENSAL TODO DIA X) */}
 					<div className="p-4 rounded-2xl border border-purple-200 dark:border-purple-900/60 bg-purple-50/40 dark:bg-purple-950/20 space-y-3">

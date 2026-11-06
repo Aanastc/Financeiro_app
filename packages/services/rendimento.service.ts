@@ -133,3 +133,45 @@ export async function estimarSaldo(params: {
   const centavos = (v: number) => Math.round(v * 100) / 100;
   return { saldo: centavos(saldo), aplicado: centavos(aplicado), rendimento: centavos(saldo - aplicado) };
 }
+
+/**
+ * Quanto o investimento rende HOJE, ao ano (%), pelas taxas mais recentes do Banco Central.
+ * Ex.: 100% do CDI → ~13,6. IPCA usa o acumulado de 12 meses. null se não der para calcular.
+ */
+export async function taxaAnualAtual(indexador?: string | null, taxa?: number | null): Promise<number | null> {
+  const ix = String(indexador || "").toUpperCase();
+  const t = taxa != null && Number.isFinite(Number(taxa)) ? Number(taxa) : null;
+  const hoje = hojeIso();
+  const d = new Date();
+  d.setDate(d.getDate() - 15);
+  const de = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const ultimo = async (codigo: number, inicio = de) => {
+    const s = await serie(codigo, inicio, hoje);
+    return s && s.length ? s[s.length - 1].valor : null;
+  };
+  switch (ix) {
+    case "CDI": {
+      const cdi = await ultimo(SERIES.CDI);
+      return cdi === null ? null : (Math.pow(1 + (cdi / 100) * ((t ?? 100) / 100), 252) - 1) * 100;
+    }
+    case "SELIC": {
+      const selic = await ultimo(SERIES.SELIC);
+      return selic === null ? null : (Math.pow(1 + selic / 100, 252) * (1 + (t ?? 0) / 100) - 1) * 100;
+    }
+    case "PREFIXADO":
+      return t;
+    case "IPCA": {
+      const umAno = new Date();
+      umAno.setMonth(umAno.getMonth() - 13);
+      const ini = `${umAno.getFullYear()}-${String(umAno.getMonth() + 1).padStart(2, "0")}-01`;
+      const s = await serie(SERIES.IPCA, ini, hoje);
+      if (!s || s.length === 0) return null;
+      const ipca12 = s.slice(-12).reduce((acc, x) => acc * (1 + x.valor / 100), 1);
+      return (ipca12 * (1 + (t ?? 0) / 100) - 1) * 100;
+    }
+    case "POUPANCA":
+      return (Math.pow(1.005, 12) - 1) * 100;
+    default:
+      return null;
+  }
+}

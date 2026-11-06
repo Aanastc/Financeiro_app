@@ -1,5 +1,5 @@
 import { buscarTodasPaginas } from "../../../../packages/services/paginacao";
-import { contaNoTotal, ehParteDeOutraPessoa, textoObservacao } from "../lib/lancamentos";
+import { contaNoTotal, ehParteDeOutraPessoa, textoObservacao, situacaoPagamento } from "../lib/lancamentos";
 import CategoryBreakdown from "../components/CategoryBreakdown";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../../../../packages/services/supabase";
@@ -122,9 +122,9 @@ export default function GastosWeb() {
 
 			// Filtro por Status
 			if (filtroStatus === 'PAGOS') {
-				if (item.status && item.status !== 'confirmada') return false;
+				if (!situacaoPagamento(item).quitado) return false;
 			} else if (filtroStatus === 'PENDENTES') {
-				if (item.status !== 'pendente' && item.status !== 'atrasada') return false;
+				if (situacaoPagamento(item).quitado) return false;
 			}
 
 			// Filtro por Busca de Texto (insensível a acentos e maiúsculas)
@@ -174,9 +174,10 @@ export default function GastosWeb() {
 
 	const totalPendente = useMemo(() => {
 		return filtrados
-			.filter(d => (d.status === 'pendente' || d.status === 'atrasada') && contaNoTotal(d))
+			.filter(d => !situacaoPagamento(d).quitado && contaNoTotal(d))
 			.reduce((acc, curr) => {
-				const val = Number(curr.valor || 0);
+				// Só o que falta (o que já foi pago/abatido na divisão de contas não está pendente)
+				const val = situacaoPagamento(curr).falta;
 				return curr.tipo === "ESTORNO" ? acc - val : acc + val;
 			}, 0);
 	}, [filtrados]);
@@ -475,7 +476,8 @@ export default function GastosWeb() {
 								<tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
 									{itensExibidos.map((item) => {
 										const isEstorno = item.tipo === "ESTORNO";
-										const isPago = item.status === "confirmada" || !item.status;
+										const situacao = situacaoPagamento(item);
+										const isPago = situacao.quitado;
 										const nomeCat = item.categorias?.nome || (isEstorno ? "Estorno / Crédito" : item.categoria || "Outros");
 										const corCat = item.categorias?.cor_hex || (isEstorno ? "#0284c7" : "#64748b");
 										const formattedDate = item.data ? item.data.split('T')[0].split('-').reverse().join('/') : '-';
@@ -556,8 +558,13 @@ export default function GastosWeb() {
 															? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40' 
 															: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/40'
 													}`}>
-														{isPago ? '✓ Pago' : '⏳ Pendente'}
+														{isPago ? (situacao.abatido ? '✓ Abatido' : '✓ Pago') : situacao.parcial ? '◐ Parcial' : '⏳ Pendente'}
 													</span>
+													{situacao.parcial && (
+														<span className="block mt-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+															{situacao.abatido ? 'abatido' : 'pago'} {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(situacao.pago)} · falta {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(situacao.falta)}
+														</span>
+													)}
 												</td>
 
 												{/* VALOR */}

@@ -770,18 +770,27 @@ export const financeService = {
 
     // Se não achou por data exata, mas for parcelamento, busca se já existia pré-criada para esta mesma parcela
     if (!existingTx && numParcelas > 1) {
-      const { data: pendingParcTx } = await supabase
+      // Tolerância de centavos: a fatura real pode diferir da parcela estimada (ex.: 63,60 × 63,63)
+      const tolerancia = Math.max(0.1, valorDestaParcela * 0.02);
+      const { data: pendingParcTxs } = await supabase
         .from("transacoes")
         .select("*")
         .eq("usuario_id", usuario_id)
         .eq("cartao_id", isCredito ? form.cartao_id : null)
-        .eq("valor", valorDestaParcela)
+        .gte("valor", Math.round((valorDestaParcela - tolerancia) * 100) / 100)
+        .lte("valor", Math.round((valorDestaParcela + tolerancia) * 100) / 100)
         .ilike("descricao", `%${descricaoLimpa}%`)
         .ilike("descricao", `%${currentParcelaInput}/${numParcelas}%`)
-        .maybeSingle();
+        .limit(1);
+      const pendingParcTx = (pendingParcTxs || [])[0];
 
       if (pendingParcTx) {
         existingTx = pendingParcTx;
+        // Vale o valor da fatura real
+        if (Math.abs(Number(pendingParcTx.valor) - valorDestaParcela) > 0.004) {
+          await supabase.from("transacoes").update({ valor: valorDestaParcela }).eq("id", pendingParcTx.id).eq("usuario_id", usuario_id);
+          existingTx.valor = valorDestaParcela;
+        }
       }
     }
 
@@ -1765,7 +1774,7 @@ export const financeService = {
 
   /**
    * Apaga a meta (ação explícita do usuário). Os investimentos/caixinhas ligados a ela
-   * continuam existindo, só perdem o vínculo; os depósitos da meta saem junto (cascade).
+   * continuam existindo, só perdem o vínculo; os depósitos da meta são apagados junto.
    */
   async deleteMeta(usuario_id: string, id: string) {
     const { data: invs } = await supabase.from("investimentos").select("id, corretora").eq("usuario_id", usuario_id);
@@ -1774,6 +1783,9 @@ export const financeService = {
         await supabase.from("investimentos").update({ corretora: corretoraComMeta(inv.corretora, null) }).eq("id", inv.id).eq("usuario_id", usuario_id);
       }
     }
+    // metas_depositos não tem ON DELETE CASCADE: remove os depósitos da meta antes (usuário confirmou)
+    const { error: errDep } = await supabase.from("metas_depositos").delete().eq("meta_id", id).eq("usuario_id", usuario_id);
+    if (errDep) throw errDep;
     const { error } = await supabase.from("metas").delete().eq("id", id).eq("usuario_id", usuario_id);
     if (error) throw error;
   },

@@ -374,6 +374,55 @@ export function isTransferenciaPropria(
 	return false;
 }
 
+/** "Shopee *Loja - Parcela 4/6" → { base: "shopee loja", n: 4, total: 6 } */
+export function lerParcela(descricao?: string | null): { base: string; n: number; total: number } | null {
+	const texto = String(descricao || "");
+	const m = texto.match(/(?:parcela|parc\.?)\s*(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})/i) || texto.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})\b/);
+	if (!m) return null;
+	const n = Number(m[1]);
+	const total = Number(m[2]);
+	if (!n || !total || n > total) return null;
+	const base = normalizeText(texto.replace(m[0], " ").replace(/\s+-\s*$/, ""))
+		.replace(/[^a-z0-9 ]/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+	return { base, n, total };
+}
+
+/** Mesma loja/compra? (descrições de fatura variam: "Amazonmktplc*Czcomerci" × "Amazonmktplc Czcomerci") */
+function mesmaCompra(a: string, b: string): boolean {
+	if (!a || !b) return false;
+	const juntoA = a.replace(/\s/g, "");
+	const juntoB = b.replace(/\s/g, "");
+	if (juntoA === juntoB || juntoA.includes(juntoB) || juntoB.includes(juntoA)) return true;
+	const pa = a.split(" ").filter((w) => w.length >= 4);
+	return pa.length > 0 && pa.filter((w) => b.includes(w)).length >= Math.min(2, pa.length);
+}
+
+/**
+ * Conta sua do outro lado de uma transferência, pelo que o próprio extrato informa:
+ * número da conta ("Conta: 55525276-0") ou o banco ("BCO SANTANDER", "BANCO INTER", "WISE").
+ * Só responde quando não há dúvida (um único candidato). Transferência para/de CNPJ
+ * (empresa) só casa com conta cujo número bate.
+ */
+export function contaDoOutroLado(texto: string, contasList: any[], contaAtualId?: string | null): string | undefined {
+	const t = String(texto || "");
+	const outras = (contasList || []).filter((c) => c.id && c.id !== contaAtualId);
+	if (outras.length === 0) return undefined;
+	const digitos = (s: any) => String(s || "").replace(/\D/g, "");
+	const numeros = [...t.matchAll(/conta:?\s*([\d.\-]{4,})/gi)].map((m) => digitos(m[1])).filter((n) => n.length >= 4);
+	const porNumero = outras.filter((c) => {
+		const nc = digitos(c.numero_conta);
+		return nc.length >= 4 && numeros.some((n) => n.includes(nc) || nc.includes(n));
+	});
+	if (porNumero.length === 1) return porNumero[0].id;
+	if (/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/.test(t)) return undefined; // empresa (CNPJ): só pelo número
+	const banco = detectarInstituicao(t);
+	if (!banco) return undefined;
+	const doBanco = outras.filter((c) => detectarInstituicao(`${c.instituicao || ""} ${c.nome || ""}`)?.nome === banco.nome);
+	return doBanco.length === 1 ? doBanco[0].id : undefined;
+}
+
 /**
  * Detecta se uma transação de um arquivo novo já foi lançada anteriormente no sistema
  * pelo usuário (evita duplicidades e avisa sobre registros já importados).
@@ -393,6 +442,31 @@ export function encontrarTransacaoRepetida(
 
 	const itemIsEntrada = item.tipo_transacao === "Entrada" || item.tipo_transacao === "RECEITA";
 	const itemIsGasto = item.tipo_transacao === "Gasto" || item.tipo_transacao === "Fatura" || item.tipo_transacao === "DESPESA" || item.tipo_transacao === "PagamentoFatura";
+
+	// Parcela de compra ("Loja X - Parcela 4/6"): a mesma parcela da mesma compra já existe
+	// (inclusive as parcelas futuras que o app cria ao importar a 1ª fatura), mesmo com data
+	// estimada diferente ou centavos de diferença.
+	const parcelaItem = lerParcela(item.descricao);
+	if (parcelaItem && itemIsGasto) {
+		for (const ex of existentes) {
+			const parcelaEx = lerParcela(ex.descricao);
+			if (!parcelaEx || parcelaEx.n !== parcelaItem.n || parcelaEx.total !== parcelaItem.total) continue;
+			if (!(ex.tipo === "DESPESA" || ex.tipo === "ESTORNO")) continue;
+			const exValor = Math.abs(Number(ex.valor) || 0);
+			if (Math.abs(itemValor - exValor) > Math.max(0.1, itemValor * 0.02)) continue;
+			if (!mesmaCompra(parcelaItem.base, parcelaEx.base)) continue;
+			const d1 = new Date(item.data.split("T")[0] + "T12:00:00").getTime();
+			const d2 = new Date(String(ex.data).split("T")[0] + "T12:00:00").getTime();
+			if (Math.abs(d1 - d2) / 86400000 > 45) continue;
+			const dataFormatada = ex.data ? String(ex.data).split("T")[0].split("-").reverse().join("/") : "";
+			const c = ex.cartao_id ? cartoesList.find((card) => card.id === ex.cartao_id) : null;
+			return {
+				repetida: true,
+				motivo: `⚠️ Parcela ${parcelaItem.n}/${parcelaItem.total} já lançada em ${dataFormatada}${c ? ` (Cartão ${c.nome})` : ""} - R$ ${exValor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+				transacaoOriginal: ex,
+			};
+		}
+	}
 
 	for (const ex of existentes) {
 		const exIsEntrada = ex.tipo === "RECEITA";
@@ -1221,6 +1295,9 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					tipo_transacao: tipoFinal,
 					sentido: tipoFinal === "Transferencia" ? sentidoDaTransferencia(t, cleanDesc) : undefined,
 					...(tipoFinal === "Transferencia" ? conversaoDeMoeda(t, cleanDesc, String(ext?.dados?.moeda || "").toUpperCase() || undefined) || {} : {}),
+					...(tipoFinal === "Transferencia" && !conversaoDeMoeda(t, cleanDesc, String(ext?.dados?.moeda || "").toUpperCase() || undefined)
+						? { conta_destino_id: contaDoOutroLado(`${t.descricao || ""} ${t.favorecido || ""} ${cleanDesc}`, contas, contaIdFinal) }
+						: {}),
 					categoria: categoriaFinal,
 					meta_id: metaIdFinal,
 					parcela_atual: detectedParcelaAtual || 1,
@@ -1631,6 +1708,36 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					if (errMov) throw errMov;
 					importados++;
 					continue;
+				}
+
+				// Sem conta do outro lado escolhida: se UMA outra conta sua tem a perna contrária
+				// (mesmo valor, ±3 dias) ainda sem par, é essa transferência — só completa.
+				if (contaDoc && !outra) {
+					const candidatas: any[] = [];
+					for (const c of contas) {
+						if (c.id === contaDoc) continue;
+						const pernas = await pernasDeTransferencia(c.id, entrou ? "SAIDA" : "ENTRADA", item.data);
+						for (const m of pernas) {
+							if (Math.abs(Number(m.valor) - Number(item.valor)) > 0.01) continue;
+							const { data: todas } = await supabase.from("movimentacoes").select("conta_id").eq("transacao_id", m.transacao_id);
+							if ((todas || []).length === 1) candidatas.push(m);
+						}
+					}
+					if (candidatas.length === 1) {
+						await inserirMovimentacoes([{
+							usuario_id: user.id,
+							transacao_id: candidatas[0].transacao_id,
+							conta_id: contaDoc,
+							tipo: entrou ? "ENTRADA" : "SAIDA",
+							valor: item.valor,
+							valor_na_conta: item.valor_original,
+							moeda: item.moeda_mov,
+							data: item.data,
+						}]);
+						completadas++;
+						importados++;
+						continue;
+					}
 				}
 
 				if (contaDoc && outra) {
