@@ -462,7 +462,7 @@ export function encontrarTransacaoRepetida(
 			const c = ex.cartao_id ? cartoesList.find((card) => card.id === ex.cartao_id) : null;
 			return {
 				repetida: true,
-				motivo: `⚠️ Parcela ${parcelaItem.n}/${parcelaItem.total} já lançada em ${dataFormatada}${c ? ` (Cartão ${c.nome})` : ""} - R$ ${exValor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+				motivo: `⚠️ Parcela ${parcelaItem.n}/${parcelaItem.total} já lançada em ${dataFormatada}${c ? ` (${/^cart/i.test(c.nome || "") ? c.nome : `Cartão ${c.nome}`})` : ""} - R$ ${exValor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
 				transacaoOriginal: ex,
 			};
 		}
