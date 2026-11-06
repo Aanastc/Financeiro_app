@@ -1,3 +1,5 @@
+import LancamentosSemContaModal from "./components/LancamentosSemContaModal";
+import { ehLancamentoSemConta, lancamentosSemContaService } from "../../../packages/services/lancamentos-sem-conta.service";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../../../packages/services/supabase";
 import {
@@ -92,6 +94,16 @@ export default function HomeWeb() {
 	const [showOnboarding, setShowOnboarding] = useState(false);
 	const [showMeiModal, setShowMeiModal] = useState(false);
 	const [showOrphanAlert, setShowOrphanAlert] = useState(false);
+	const [qtdSemConta, setQtdSemConta] = useState(0);
+	const [listaSemContaAberta, setListaSemContaAberta] = useState(false);
+	const adiarAvisoSemConta = () => {
+		setShowOrphanAlert(false);
+		try {
+			sessionStorage.setItem("finance_aviso_sem_conta", "1");
+		} catch {
+			/* sem armazenamento */
+		}
+	};
 	const [mostrarItensPrevistos, setMostrarItensPrevistos] = useState(false);
 
 	const hoje = new Date();
@@ -283,9 +295,18 @@ export default function HomeWeb() {
 				setShowOnboarding(true);
 			} else {
 				// Verifica se tem lançamentos órfãos
-				const hasOrphanEntradas = entradas.some((e: any) => !e.conta_id);
-				const hasOrphanGastos = gastos.some((g: any) => !g.conta_id && !g.cartao_id);
-				if (hasOrphanEntradas || hasOrphanGastos) {
+				// Só o que deveria estar numa conta (divisão de contas, acordos e parcelas futuras ficam de fora)
+				const orfaos = [...entradas, ...gastos].filter((t: any) => ehLancamentoSemConta(t));
+				setQtdSemConta(orfaos.length);
+				// Conta de todos os anos (a lista também mostra todos)
+				lancamentosSemContaService.listar(user.id).then((l) => setQtdSemConta(l.length)).catch(() => {});
+				let jaAvisou = false;
+				try {
+					jaAvisou = sessionStorage.getItem("finance_aviso_sem_conta") === "1";
+				} catch {
+					/* sem armazenamento */
+				}
+				if (orfaos.length > 0 && !jaAvisou) {
 					setShowOrphanAlert(true);
 				}
 			}
@@ -842,7 +863,18 @@ export default function HomeWeb() {
 
 	return (
 		<motion.div className="space-y-6 sm:space-y-8 pb-20" initial={{ opacity: 0 }} animate={{ opacity: 1, transition: { staggerChildren: 0.05 } }}>
-			
+			{qtdSemConta > 0 && (
+				<button
+					onClick={() => setListaSemContaAberta(true)}
+					className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 text-left cursor-pointer hover:bg-amber-100/70 dark:hover:bg-amber-950/50 transition-colors">
+					<span className="flex items-center gap-2.5 text-sm font-bold text-amber-900 dark:text-amber-200">
+						<AlertCircle size={17} className="shrink-0" />
+						{qtdSemConta} {qtdSemConta === 1 ? "lançamento está" : "lançamentos estão"} sem conta — o saldo pode estar diferente do banco.
+					</span>
+					<span className="text-xs font-black text-amber-800 dark:text-amber-300 whitespace-nowrap">Corrigir →</span>
+				</button>
+			)}
+
 			{/* 1. SAUDAÇÃO */}
 			<div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
 				<h2 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
@@ -1707,18 +1739,34 @@ export default function HomeWeb() {
 							<div className="w-16 h-16 bg-rose-50 dark:bg-rose-900/20 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-5">
 								<AlertCircle size={32} />
 							</div>
-							<h3 className="text-xl font-black text-slate-800 dark:text-slate-100 mb-3">Lançamentos Sem Conta</h3>
+							<h3 className="text-xl font-black text-slate-800 dark:text-slate-100 mb-3">
+								{qtdSemConta} {qtdSemConta === 1 ? "lançamento sem conta" : "lançamentos sem conta"}
+							</h3>
 							<p className="text-slate-500 dark:text-slate-400 text-sm mb-6 leading-relaxed">
-								Detectamos que existem lançamentos antigos que não estão vinculados a nenhuma conta bancária. Para que o seu saldo funcione corretamente, por favor, edite esses lançamentos adicionando a conta de origem/destino.
+								Para o saldo das suas contas ficar certo, diga de qual conta saiu (ou em qual entrou) cada um desses valores. Leva poucos cliques.
 							</p>
-							<button onClick={() => setShowOrphanAlert(false)} className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all shadow-md">
-								Entendi
+							<button
+								onClick={() => {
+									adiarAvisoSemConta();
+									setListaSemContaAberta(true);
+								}}
+								className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all shadow-md cursor-pointer">
+								Ver e corrigir agora
+							</button>
+							<button onClick={adiarAvisoSemConta} className="w-full mt-2 py-2.5 px-4 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 rounded-xl font-bold text-sm cursor-pointer">
+								Depois
 							</button>
 						</motion.div>
 					</motion.div>
 				)}
 			</AnimatePresence>
 
+			<LancamentosSemContaModal
+				isOpen={listaSemContaAberta}
+				userId={userId}
+				onClose={() => setListaSemContaAberta(false)}
+				onAlterado={() => loadDashboardData()}
+			/>
 		</motion.div>
 	);
 }

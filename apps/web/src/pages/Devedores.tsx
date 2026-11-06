@@ -38,6 +38,7 @@ import ListaPorData from "../components/ListaPorData";
 import ResumoDivisao from "../components/divisao/ResumoDivisao";
 import PessoasDivisao from "../components/divisao/PessoasDivisao";
 import DetalhePessoa from "../components/divisao/DetalhePessoa";
+import HistoricoDivisao from "../components/divisao/HistoricoDivisao";
 import { montarPessoas } from "../lib/divisaoPessoas";
 import EditarLancamentoModal from "../components/EditarLancamentoModal";
 import PedirTelefoneModal from "../components/PedirTelefoneModal";
@@ -1361,100 +1362,12 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 			) : activeTab === "amigos" ? (
 				<PessoasDivisao pessoas={pessoasFiltradas} onAbrir={(p) => setPessoaAbertaId(p.contato.id)} />
 			) : activeTab === "atividades" ? (
-				/* ========================================================
-           ABA 3: ATIVIDADES & LANÇAMENTOS
-           ======================================================== */
-				<div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
-					<h3 className="font-black text-lg text-slate-800 dark:text-slate-100">
-						Feed de Atividades
-					</h3>
-
-					{todasDespesasSplit.length === 0 ? (
-						<div className="p-8 text-center text-slate-400 text-xs font-medium bg-slate-50 dark:bg-slate-800/40 rounded-2xl">
-							Nenhuma despesa dividida registrada ainda.
-						</div>
-					) : (
-						<div className="space-y-3">
-							<ListaPorData
-								ordem="desc"
-								itens={todasDespesasSplit}
-								dataDe={(d: any) => d.data}
-								resumo={(lista: any[]) => ({
-									total: lista.reduce((soma, d) => soma + Number(d.valor || 0), 0),
-									quitado: lista.every((d) => d.terceiro_pago),
-									detalhe: [...new Set(lista.map((d) => getPaymentInfo(d.observacao)?.grupo_nome || ""))].map((g) => (g ? `Grupo ${g}` : "Sem grupo")).join(" · "),
-								})}
-								renderItem={(d: any) => {
-								const meta = getPaymentInfo(d.observacao);
-								return (
-									<div
-										key={d.id}
-										className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/30 flex items-center justify-between gap-4">
-										<div className="flex items-center gap-3">
-											<div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 flex items-center justify-center shrink-0">
-												<Split size={18} />
-											</div>
-											<div>
-												<h4 className="font-black text-xs text-slate-800 dark:text-slate-100">
-													{d.descricao}
-												</h4>
-												<p className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5 flex-wrap">
-													<span>
-														{new Date(d.data + "T12:00:00").toLocaleDateString("pt-BR")}
-													</span>
-													{meta?.grupo_nome && <span>• Grupo: {meta.grupo_nome}</span>}
-													{d.cartoes?.nome ? (
-														<span className="text-purple-600 dark:text-purple-400 font-bold">• Crédito ({d.cartoes.nome})</span>
-													) : d.contas_bancarias?.nome ? (
-														<span className="text-emerald-600 dark:text-emerald-400 font-bold">• Débito ({d.contas_bancarias.nome})</span>
-													) : (
-														<span className="text-slate-400 font-medium">• Débito / Pix</span>
-													)}
-												</p>
-											</div>
-										</div>
-
-										<div className="flex items-center gap-3">
-											<span className="font-black text-sm text-slate-900 dark:text-slate-100">
-												R${" "}
-												{Number(d.valor).toLocaleString("pt-BR", {
-													minimumFractionDigits: 2,
-												})}
-											</span>
-											<button
-												onClick={() => setEditandoId(d.id)}
-												title="Editar lançamento"
-												aria-label="Editar lançamento"
-												className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:text-indigo-300 dark:hover:bg-indigo-950/40 cursor-pointer transition-colors">
-												<Pencil size={14} />
-											</button>
-											{d.terceiro_pago ? (
-												<span className="flex items-center gap-2">
-													<span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">
-													Quitado
-												</span>
-													<button
-														onClick={() => handleDesfazerPagamento(d.id)}
-														title="Reabrir esta despesa"
-														className="text-[10px] font-bold text-slate-400 hover:text-rose-600 underline cursor-pointer">
-														Desfazer
-													</button>
-												</span>
-											) : (
-												<button
-													onClick={() => handleOpenPaymentModal(d)}
-													className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer">
-													Quitar
-												</button>
-											)}
-										</div>
-									</div>
-								);
-								}}
-							/>
-						</div>
-					)}
-				</div>
+				<HistoricoDivisao
+					transacoes={todasDespesasSplit}
+					contatos={contatos}
+					onEditar={(id) => setEditandoId(id)}
+					onAbrirPessoa={(id) => setPessoaAbertaId(id)}
+				/>
 			) : (
 				/* ========================================================
            ABA 4: CONVITES E AMIGOS CADASTRADOS
