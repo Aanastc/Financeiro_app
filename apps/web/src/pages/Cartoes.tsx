@@ -120,6 +120,22 @@ export default function Cartoes() {
 	const [cartaoParaGasto, setCartaoParaGasto] = useState<string | null>(null);
 	const [cartaoParaEditar, setCartaoParaEditar] = useState<any>(null);
 	
+	const marcarAntigasComoPagas = async (cartao: any) => {
+		const ids: string[] = cartao.faturasAnterioresIds || [];
+		if (ids.length === 0) return;
+		const total = Number(cartao.saldoFaturasAnteriores || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+		if (!window.confirm(`Marcar ${ids.length} fatura(s) antiga(s) do ${cartao.nome} como pagas (R$ ${total})?`)) return;
+		try {
+			const user = await authService.getCurrentUser();
+			if (!user) return;
+			const n = await financeService.marcarFaturasComoPagas(user.id, ids);
+			toast.success(`${n} fatura(s) marcada(s) como paga(s).`);
+			await loadCartoes();
+		} catch (e: any) {
+			toast.error(e?.message || "Não foi possível marcar as faturas.");
+		}
+	};
+
 	const loadCartoes = async () => {
 		setLoading(true);
 		try {
@@ -229,6 +245,9 @@ export default function Cartoes() {
 						isRenegociado: true,
 						limiteTotal,
 						faturaAtualValor,
+						totalComprasComprometidas,
+						saldoFaturasAnteriores,
+						faturasAnterioresIds: faturasAnterioresPendentes.map((f: any) => f.id),
 						totalComprometido,
 						disponivel,
 						parcelasFuturas,
@@ -248,6 +267,9 @@ export default function Cartoes() {
 					isRenegociado: false,
 					limiteTotal,
 					faturaAtualValor,
+					totalComprasComprometidas,
+					saldoFaturasAnteriores,
+					faturasAnterioresIds: faturasAnterioresPendentes.map((f: any) => f.id),
 					totalComprometido,
 					saldoGasto: faturaAtualValor,
 					disponivel,
@@ -440,6 +462,42 @@ export default function Cartoes() {
 											{cartao.disponivel < 0 ? "-" : ""}R$ {Math.abs(Number(cartao.disponivel || 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 										</span>
 									</div>
+
+									{/* De onde vem o "comprometido": compras x faturas antigas sem pagamento registrado */}
+									{Number(cartao.saldoFaturasAnteriores || 0) > 0.009 && (
+										<div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 p-3.5 rounded-2xl text-xs space-y-2">
+											<p className="flex items-center gap-1.5 font-bold text-amber-700 dark:text-amber-300">
+												<AlertTriangle size={14} /> O limite está descontando faturas antigas
+											</p>
+											<div className="space-y-0.5 text-slate-600 dark:text-slate-300">
+												<div className="flex justify-between gap-2">
+													<span>Compras desta fatura e das próximas</span>
+													<span className="font-bold whitespace-nowrap">R$ {Number(cartao.totalComprasComprometidas || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+												</div>
+												<div className="flex justify-between gap-2">
+													<span>{cartao.faturasAnterioresIds?.length || 0} fatura(s) antiga(s) sem pagamento registrado</span>
+													<span className="font-bold whitespace-nowrap">R$ {Number(cartao.saldoFaturasAnteriores || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+												</div>
+											</div>
+											<p className="text-slate-500 dark:text-slate-400 leading-tight">
+												Se você já pagou essas faturas no banco, marque como pagas e o limite disponível volta ao normal.
+											</p>
+											<div className="flex flex-wrap gap-2">
+												<button
+													onClick={() => marcarAntigasComoPagas(cartao)}
+													className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black cursor-pointer"
+												>
+													Já paguei, marcar como pagas
+												</button>
+												<button
+													onClick={() => navigate(`/faturas?cartao=${cartao.id}`)}
+													className="px-3 py-1.5 rounded-xl text-amber-700 dark:text-amber-300 font-bold hover:underline cursor-pointer"
+												>
+													Ver faturas
+												</button>
+											</div>
+										</div>
+									)}
 
 									{cartao.isRenegociado && (
 										<div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 p-3.5 rounded-2xl text-xs space-y-1.5">

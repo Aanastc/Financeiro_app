@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import { getFaturaCycle, getFaturaMesReferencia } from "../utils/cartao.utils";
 import { encontrarPorInstituicao } from "../utils/instituicoes";
 import { buscarTodasPaginas } from "./paginacao";
+import { sincronizarCaixinhas } from "./caixinhas.service";
 import {
   detectarProdutoInvestimento,
   ehAplicacaoInvestimento,
@@ -12,7 +13,7 @@ import {
 } from "../utils/investimentos";
 
 /** Colunas da migration 007; se ainda não existirem no banco, salva sem elas. */
-const CAMPOS_RENTABILIDADE = ["indexador", "taxa", "vencimento", "liquidez_diaria"];
+const CAMPOS_RENTABILIDADE = ["indexador", "taxa", "vencimento", "liquidez_diaria", "conta_id", "ajuste_valor", "ajuste_data"];
 
 async function salvarInvestimento(
   tabela: () => any,
@@ -68,19 +69,26 @@ export async function moedasDasContas(ids: string[]): Promise<Record<string, str
 }
 
 /**
- * Grava movimentações na moeda da conta. Cada linha traz `valor` em reais e,
- * opcionalmente, `valor_na_conta` (já na moeda da conta, ex.: digitado em CAD).
- * Contas em real: grava exatamente como antes.
+ * Grava movimentações. Cada linha traz `valor` em reais e, opcionalmente:
+ *  - `moeda`: em qual saldo da conta o dinheiro entra/sai (ex.: Wise tem BRL e CAD).
+ *    Sem `moeda`, é a moeda principal da conta (como sempre foi).
+ *  - `valor_na_conta`: o valor já nessa moeda (ex.: 2.50 CAD). Sem ele, converte pela cotação do dia.
+ * Contas em real sem outra moeda: grava exatamente como antes.
  */
 export async function inserirMovimentacoes(linhas: any[]) {
   const moedas = await moedasDasContas(linhas.map((l) => l.conta_id));
   const prontas: any[] = [];
+  let usaOutraMoeda = false;
   for (const l of linhas) {
-    const { valor_na_conta, ...resto } = l;
-    const moeda = moedas[l.conta_id] || "BRL";
+    const { valor_na_conta, moeda: moedaLinha, ...resto } = l;
+    const moedaConta = moedas[l.conta_id] || "BRL";
+    const moeda = String(moedaLinha || moedaConta).toUpperCase();
+    // Saldo em moeda diferente da principal da conta (SQL seção 11): marca a moeda na movimentação
+    const extra = moeda !== moedaConta ? { moeda } : {};
+    if (moeda !== moedaConta) usaOutraMoeda = true;
     if (ehReal(moeda)) {
-      // Conta em real: valor em reais (ou o valor que efetivamente chegou, numa transferência entre moedas)
-      prontas.push(valor_na_conta !== undefined && valor_na_conta !== null ? { ...resto, valor: valor_na_conta } : resto);
+      // Em real: valor em reais (ou o valor que efetivamente chegou, numa conversão)
+      prontas.push({ ...resto, ...extra, valor: valor_na_conta ?? resto.valor });
       continue;
     }
     let valor = valor_na_conta;
@@ -89,9 +97,13 @@ export async function inserirMovimentacoes(linhas: any[]) {
       if (!cot) return { data: null, error: new Error(`Não foi possível obter a cotação de ${moeda} em ${l.data}.`) };
       valor = Math.round((Number(l.valor) / cot) * 100) / 100;
     }
-    prontas.push({ ...resto, valor });
+    prontas.push({ ...resto, ...extra, valor });
   }
-  return supabase.from("movimentacoes").insert(prontas);
+  const res = await supabase.from("movimentacoes").insert(prontas);
+  if (res.error && usaOutraMoeda && /moeda/i.test(String((res.error as any).message || ""))) {
+    return { ...res, error: new Error("Para guardar saldo em outra moeda na mesma conta, rode a seção 11 do supabase/migrations/ajustes_supabase.sql.") };
+  }
+  return res;
 }
 
 /** Campos de moeda para gravar na transação (só quando não é real). */
@@ -406,34 +418,143 @@ export const financeService = {
     }
   },
 
+  /**
+   * Faturas antigas que a pessoa já pagou no banco, mas o pagamento não foi registrado no app
+   * (ex.: extrato do banco não importado). Marca como paga pelo valor total; nada é apagado.
+   */
+  async marcarFaturasComoPagas(usuario_id: string, faturaIds: string[]) {
+    const { data: faturas, error } = await supabase
+      .from("faturas")
+      .select("id, valor_total")
+      .eq("usuario_id", usuario_id)
+      .in("id", faturaIds);
+    if (error) throw error;
+    for (const f of faturas || []) {
+      const { error: errUp } = await supabase
+        .from("faturas")
+        .update({ status: "paga", valor_pago: Number(f.valor_total || 0) })
+        .eq("id", f.id)
+        .eq("usuario_id", usuario_id);
+      if (errUp) throw errUp;
+    }
+    return (faturas || []).length;
+  },
+
+  /**
+   * Transferência lançada por engano que na verdade foi uma ENTRADA (ex.: pró-labore/salário
+   * vindo da conta do CNPJ). Só muda o tipo e a categoria da transação; as movimentações
+   * (o dinheiro que entrou na conta) continuam iguais, então o saldo não muda.
+   */
+  async reclassificarTransferenciaComoEntrada(usuario_id: string, transacao_id: string, categoriaNome: string) {
+    const nome = (categoriaNome || "Salário").trim();
+    let { data: cat } = await supabase
+      .from("categorias")
+      .select("id")
+      .eq("usuario_id", usuario_id)
+      .eq("tipo", "RECEITA")
+      .ilike("nome", nome)
+      .limit(1)
+      .maybeSingle();
+    if (!cat) {
+      const { data: nova, error: errCat } = await supabase
+        .from("categorias")
+        .insert([{ usuario_id, nome, tipo: "RECEITA", ativa: true }])
+        .select("id")
+        .single();
+      if (errCat) throw errCat;
+      cat = nova;
+    }
+    const { data, error } = await supabase
+      .from("transacoes")
+      .update({ tipo: "RECEITA", categoria_id: cat!.id, considerar_soma: true })
+      .eq("id", transacao_id)
+      .eq("usuario_id", usuario_id)
+      .eq("tipo", "TRANSFERENCIA")
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error("Essa transferência não foi encontrada (talvez já tenha sido alterada).");
+    return data;
+  },
+
+  /**
+   * Ajusta o saldo da conta para bater com o banco: muda só o saldo inicial
+   * (diferença entre o saldo real e o calculado). Nenhuma movimentação é alterada.
+   */
+  async ajustarSaldoConta(usuario_id: string, conta_id: string, saldoReal: number) {
+    const contas = await this.getContasBancarias(usuario_id);
+    const conta = contas.find((c: any) => c.id === conta_id);
+    if (!conta) throw new Error("Conta não encontrada.");
+    const diferenca = Math.round((Number(saldoReal) - Number(conta.saldo_atual || 0)) * 100) / 100;
+    if (Math.abs(diferenca) < 0.005) return conta;
+    const novoInicial = Math.round((Number(conta.saldo_inicial || 0) + diferenca) * 100) / 100;
+    const { error } = await supabase
+      .from("contas_bancarias")
+      .update({ saldo_inicial: novoInicial })
+      .eq("id", conta_id)
+      .eq("usuario_id", usuario_id);
+    if (error) throw error;
+    return { ...conta, saldo_inicial: novoInicial, saldo_atual: Number(saldoReal) };
+  },
+
   async getContasBancarias(usuario_id: string) {
     const { data: contas, error } = await supabase.from("contas_bancarias").select("*").eq("usuario_id", usuario_id).order("nome");
     if (error) throw error;
 
-    // Todas as movimentações (paginado: o Supabase limita 1000 linhas por consulta)
-    const movimentacoes = await buscarTodasPaginas<{ conta_id: string; valor: number; tipo: string }>((de, ate) =>
-      supabase.from("movimentacoes").select("conta_id, valor, tipo").eq("usuario_id", usuario_id).order("id").range(de, ate)
-    );
+    // Todas as movimentações (paginado: o Supabase limita 1000 linhas por consulta).
+    // `moeda` (SQL seção 11) diz em qual saldo da conta ela caiu; sem a coluna, tudo é da moeda principal.
+    type Mov = { conta_id: string; valor: number; tipo: string; moeda?: string | null };
+    const carregar = (colunas: string) =>
+      buscarTodasPaginas<Mov>((de, ate) =>
+        supabase.from("movimentacoes").select(colunas).eq("usuario_id", usuario_id).order("id").range(de, ate) as any
+      );
+    let movimentacoes: Mov[];
+    try {
+      movimentacoes = await carregar("conta_id, valor, tipo, moeda");
+    } catch {
+      movimentacoes = await carregar("conta_id, valor, tipo");
+    }
 
-    // Calcula saldo em runtime: saldo_inicial + entradas - saidas
     const contasList = contas || [];
     const movs = movimentacoes || [];
+    const centavos = (v: number) => Math.round(v * 100) / 100;
 
-    // Cotação de hoje para as moedas estrangeiras (uma busca por moeda)
-    const moedas = [...new Set(contasList.map((c: any) => String(c.moeda || "BRL").toUpperCase()).filter((m) => !ehReal(m)))];
+    // Saldo por moeda: saldo_inicial (moeda principal) + entradas - saídas de cada moeda
+    const saldosPorConta = new Map<string, Record<string, number>>();
+    for (const conta of contasList) {
+      const principal = String(conta.moeda || "BRL").toUpperCase();
+      saldosPorConta.set(conta.id, { [principal]: Number(conta.saldo_inicial || 0) });
+    }
+    const principalDe = new Map(contasList.map((c: any) => [c.id, String(c.moeda || "BRL").toUpperCase()]));
+    for (const m of movs) {
+      const saldos = saldosPorConta.get(m.conta_id);
+      if (!saldos) continue;
+      const moeda = String(m.moeda || principalDe.get(m.conta_id) || "BRL").toUpperCase();
+      const v = Number(m.valor) || 0;
+      saldos[moeda] = (saldos[moeda] || 0) + (m.tipo === "ENTRADA" ? v : m.tipo === "SAIDA" ? -v : 0);
+    }
+
+    // Cotação de hoje para cada moeda estrangeira em uso (uma busca por moeda)
+    const moedas = [...new Set([...saldosPorConta.values()].flatMap((s) => Object.keys(s)).filter((m) => !ehReal(m)))];
     const cotacoes: Record<string, number | null> = {};
     await Promise.all(moedas.map(async (m) => (cotacoes[m] = await moedaService.cotacao(m).catch(() => null))));
+    const cotacaoDe = (m: string) => (ehReal(m) ? 1 : cotacoes[m] ?? null);
 
     return contasList.map(conta => {
-      let saldo = Number(conta.saldo_inicial || 0);
-      movs.filter(m => m.conta_id === conta.id).forEach(m => {
-        if (m.tipo === "ENTRADA") saldo += Number(m.valor);
-        else if (m.tipo === "SAIDA") saldo -= Number(m.valor);
-      });
       const moeda = String(conta.moeda || "BRL").toUpperCase();
-      const cot = ehReal(moeda) ? 1 : cotacoes[moeda];
-      // saldo_atual: na moeda da conta · saldo_reais: convertido (null se não houver cotação)
-      return { ...conta, moeda, saldo_atual: saldo, cotacao_hoje: cot ?? null, saldo_reais: cot ? Math.round(saldo * cot * 100) / 100 : null };
+      const saldos = saldosPorConta.get(conta.id) || { [moeda]: 0 };
+      const saldo = centavos(saldos[moeda] || 0);
+      // Outras moedas guardadas na mesma conta (ex.: Wise em reais com saldo em CAD)
+      const outras_moedas = Object.entries(saldos)
+        .filter(([m, v]) => m !== moeda && Math.abs(v) >= 0.005)
+        .map(([m, v]) => {
+          const cot = cotacaoDe(m);
+          return { moeda: m, valor: centavos(v), cotacao_hoje: cot, reais: cot ? centavos(v * cot) : null };
+        });
+      const cot = cotacaoDe(moeda);
+      // saldo_atual: só a moeda principal · saldo_reais: a conta inteira (todas as moedas) em reais
+      const saldo_reais = cot ? centavos(saldo * cot + outras_moedas.reduce((s, o) => s + (o.reais ?? 0), 0)) : null;
+      return { ...conta, moeda, saldo_atual: saldo, cotacao_hoje: cot, outras_moedas, saldo_reais };
     });
   },
 
@@ -695,6 +816,7 @@ export const financeService = {
           status: "confirmada",
           considerar_soma: form.considerar_soma !== undefined ? form.considerar_soma : true,
           observacao: `Classificação: ${form.classificacao || 'Variável'} | Tipo: ${form.tipo || 'Essencial'} | Parcela: ${currentParcelaInput}/${numParcelas} | Terceiro: ${form.terceiro || false}`,
+          ...(isCredito ? {} : camposMoeda(form)),
         },
       ]).select().single();
 
@@ -830,6 +952,9 @@ export const financeService = {
         conta_id: form.conta_id,
         tipo: 'SAIDA',
         valor: valorDestaParcela,
+        // extrato em outra moeda: sai do saldo daquela moeda, no valor exato do extrato
+        moeda: form.moeda_mov || undefined,
+        valor_na_conta: Number(form.valor_original) > 0 ? Number(form.valor_original) : undefined,
         data: form.data
       }]);
       if (errMov) throw errMov;
@@ -1135,6 +1260,12 @@ export const financeService = {
       }]);
     }
 
+    // 3. Caixinha do banco: o saldo é montado pelas aplicações/resgates da conta (caixinhas.service)
+    if (params.titulo_investimento && !params.meta_id) {
+      this.syncMetasInvestimentos(usuario_id).catch(() => {});
+      return tx;
+    }
+
     // 3. Atualizar ou criar Investimento correspondente
     const produto = detectarProdutoInvestimento(params.descricao || "");
     const titulo = params.titulo_investimento ||
@@ -1145,8 +1276,14 @@ export const financeService = {
       .select("*")
       .eq("usuario_id", usuario_id);
 
-    // 1º investimento vinculado à mesma meta; 2º mesmo produto (ex.: CDB) sem vínculo conflitante
-    let targetInv = encontrarInvestimento(invs || [], params.meta_id, produto, params.instituicao);
+    // Caixinha do banco (ex.: "Caixinha Inter"): uma por banco, achada pelo nome.
+    // Senão: 1º investimento vinculado à mesma meta; 2º mesmo produto (ex.: CDB) sem vínculo conflitante
+    const caixinhaDoBanco = params.titulo_investimento && !params.meta_id
+      ? (invs || []).find((inv: any) => (inv.titulo || "").trim().toLowerCase() === params.titulo_investimento!.trim().toLowerCase())
+      : undefined;
+    let targetInv = params.titulo_investimento && !params.meta_id
+      ? caixinhaDoBanco
+      : encontrarInvestimento(invs || [], params.meta_id, produto, params.instituicao);
 
     if (targetInv) {
       const novoInvestido = Number(targetInv.valor_investido || 0) + valor;
@@ -1217,6 +1354,7 @@ export const financeService = {
     rendimento?: number | null;
     instituicao?: string | null;
     meta_id?: string | null;
+    titulo_investimento?: string | null;
   }) {
     const valor = Math.abs(Number(params.valor));
     if (valor <= 0) return null;
@@ -1251,6 +1389,12 @@ export const financeService = {
       }]);
     }
 
+    // 3. Caixinha do banco: recalculada pelas aplicações/resgates da conta (caixinhas.service)
+    if (params.titulo_investimento && !params.meta_id) {
+      this.syncMetasInvestimentos(usuario_id).catch(() => {});
+      return tx;
+    }
+
     // 3. Atualizar Investimento reduzindo o saldo
     const { data: invs } = await supabase
       .from("investimentos")
@@ -1259,7 +1403,11 @@ export const financeService = {
 
     // Mesma regra do aporte. Com vários investimentos e nenhum correspondente, não abate de um aleatório.
     const produtoResgate = detectarProdutoInvestimento(params.descricao || "");
-    let targetInv = encontrarInvestimento(invs || [], params.meta_id, produtoResgate, params.instituicao)
+    const caixinhaDoBanco = params.titulo_investimento && !params.meta_id
+      ? (invs || []).find((inv: any) => (inv.titulo || "").trim().toLowerCase() === params.titulo_investimento!.trim().toLowerCase())
+      : undefined;
+    let targetInv = caixinhaDoBanco
+      || encontrarInvestimento(invs || [], params.meta_id, produtoResgate, params.instituicao)
       || ((invs || []).length === 1 ? invs![0] : undefined);
 
     if (targetInv) {
@@ -1301,6 +1449,8 @@ export const financeService = {
    * 2. O saldo acumulado da meta reflita as transações de APORTE e RESGATE existentes na tabela transacoes.
    */
   async syncMetasInvestimentos(usuario_id: string) {
+    // Caixinhas por banco e rendimento calculado (antes de olhar as metas)
+    await sincronizarCaixinhas(usuario_id).catch((e) => console.warn("Caixinhas:", e));
     try {
       const [metasRes, invsRes, txRes] = await Promise.all([
         supabase.from("metas").select("*").eq("usuario_id", usuario_id),
@@ -1331,8 +1481,11 @@ export const financeService = {
 
       // Localiza investimento de RDB
       // Vínculo escolhido pelo usuário tem prioridade; só sugere vínculo para investimento SEM meta
+      // Caixinhas por banco ("Caixinha Inter", "Caixinha Nubank") são independentes: nunca entram aqui
+      const ehCaixinhaDeBanco = (inv: any) => /^caixinha\s+\S/i.test((inv.titulo || "").trim());
+      if (invs.some(ehCaixinhaDeBanco) && !invs.some((inv: any) => metaIdDoInvestimento(inv.corretora) === metaReserva.id)) return;
       let targetInv = invs.find((inv: any) => metaIdDoInvestimento(inv.corretora) === metaReserva.id)
-        || invs.find((inv: any) => !metaIdDoInvestimento(inv.corretora) && /rdb|reserva|caixinha/i.test(inv.titulo || ""));
+        || invs.find((inv: any) => !metaIdDoInvestimento(inv.corretora) && !ehCaixinhaDeBanco(inv) && /rdb|reserva|caixinha/i.test(inv.titulo || ""));
 
       // Preserva a instituição já registrada no investimento (sem assumir banco)
       const baseCorretora = targetInv?.corretora?.replace(/\[Meta:\s*[^\]]+\]/, '').trim() || "";
@@ -1340,7 +1493,8 @@ export const financeService = {
 
       if (targetInv) {
         const needsCorretoraFix = !metaIdDoInvestimento(targetInv.corretora);
-        const needsValorFix = Number(targetInv.valor_atual || 0) === 0 && saldoCalculado > 0;
+        // (com caixinhas por banco, o total de aplicações não é desta reserva: não sobrescreve o valor)
+        const needsValorFix = Number(targetInv.valor_atual || 0) === 0 && saldoCalculado > 0 && !invs.some(ehCaixinhaDeBanco);
         if (needsCorretoraFix || needsValorFix) {
           await supabase.from("investimentos").update({
             corretora: corretoraTag,

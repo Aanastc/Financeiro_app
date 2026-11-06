@@ -1,4 +1,5 @@
 import InputMoeda from "../components/InputMoeda";
+import { MOEDAS } from "../../../../packages/services/moeda.service";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { 
@@ -913,8 +914,7 @@ export default function ImportadorWeb() {
 																		if (!item.conta_id && contas.length > 0) updateItem(item.id, "conta_id", contas[0].id);
 																		if (nextType === "Transferencia") {
 																			updateItem(item.id, "categoria", "Transferência Interna");
-																			updateItem(item.id, "ignorar", true);
-																			updateItem(item.id, "ignoredReason", "Transferência entre contas próprias (não altera patrimônio)");
+																			if (!item.sentido) updateItem(item.id, "sentido", "SAIDA");
 																		}
 																	}
 																}}
@@ -1032,14 +1032,77 @@ export default function ImportadorWeb() {
 
 													{/* CATEGORIA / DESTINO */}
 													<td className="p-3 min-w-[150px]">
-														{item.tipo_transacao === "Meta" ? (
+														{item.tipo_transacao === "Transferencia" ? (
+															<div className="flex flex-col gap-1.5">
+																<button
+																	type="button"
+																	onClick={() => updateItem(item.id, "sentido", item.sentido === "ENTRADA" ? "SAIDA" : "ENTRADA")}
+																	title="Clique para inverter"
+																	className={`w-full flex items-center justify-center gap-1 text-[11px] font-black p-1.5 rounded-lg border cursor-pointer ${
+																		item.sentido === "ENTRADA"
+																			? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
+																			: "bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800"
+																	}`}
+																>
+																	{item.sentido === "ENTRADA" ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+																	{item.sentido === "ENTRADA" ? "Entrou nesta conta" : "Saiu desta conta"}
+																</button>
+																<select
+																	className="w-full bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/30 outline-none font-bold text-xs text-indigo-700 dark:text-indigo-300 p-1.5 rounded-lg cursor-pointer"
+																	value={item.moeda_destino ? `moeda:${item.moeda_destino}` : item.conta_destino_id || ""}
+																	onChange={(e) => {
+																		const v = e.target.value;
+																		if (v.startsWith("moeda:")) {
+																			updateItem(item.id, "moeda_destino", v.slice(6));
+																			updateItem(item.id, "conta_destino_id", "");
+																		} else {
+																			updateItem(item.id, "moeda_destino", "");
+																			updateItem(item.id, "valor_destino", undefined);
+																			updateItem(item.id, "conta_destino_id", v);
+																		}
+																	}}
+																	title={item.sentido === "ENTRADA" ? "De qual conta sua veio?" : "Para qual conta sua foi?"}
+																>
+																	<option value="" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-slate-100">{item.sentido === "ENTRADA" ? "Veio de: conta fora do app" : "Foi para: conta fora do app"}</option>
+																	{contas
+																		.filter((c) => c.id !== (item.conta_id || globalConta))
+																		.map((c) => (
+																			<option key={c.id} value={c.id} className="bg-white text-slate-800 dark:bg-slate-900 dark:text-slate-100">
+																				{item.sentido === "ENTRADA" ? "Veio de: " : "Foi para: "}🏦 {c.nome}
+																			</option>
+																		))}
+																	<optgroup label="Conversão de moeda nesta mesma conta" className="bg-white text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+																		{MOEDAS.filter((m) => m.codigo !== (contas.find((c) => c.id === (item.conta_id || globalConta))?.moeda || "BRL")).map((m) => (
+																			<option key={m.codigo} value={`moeda:${m.codigo}`} className="bg-white text-slate-800 dark:bg-slate-900 dark:text-slate-100">
+																				{item.sentido === "ENTRADA" ? `Veio do saldo em ${m.codigo}` : `Virou ${m.codigo} (mesma conta)`}
+																			</option>
+																		))}
+																	</optgroup>
+																</select>
+																{item.moeda_destino && (
+																	<label className="flex items-center gap-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+																		{item.sentido === "ENTRADA" ? "Saiu" : "Virou"}
+																		<input
+																			type="number"
+																			step="0.01"
+																			min="0"
+																			placeholder="pela cotação"
+																			className="w-20 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-1.5 py-1 text-xs font-bold text-slate-800 dark:text-slate-100 outline-none"
+																			value={item.valor_destino ?? ""}
+																			onChange={(e) => updateItem(item.id, "valor_destino", e.target.value ? Number(e.target.value) : undefined)}
+																		/>
+																		{item.moeda_destino}
+																	</label>
+																)}
+															</div>
+														) : item.tipo_transacao === "Meta" ? (
 															<select 
 																className="w-full bg-pink-50 dark:bg-pink-950/20 border border-pink-100 dark:border-pink-900/30 outline-none font-bold text-xs text-pink-700 dark:text-pink-400 p-2 rounded-lg cursor-pointer animate-in fade-in duration-200"
 																value={item.meta_id || ""}
 																onChange={(e) => updateItem(item.id, "meta_id", e.target.value)}
 															>
-																<option value="">🎯 Selecionar Meta</option>
-																{metas.map(m => <option key={m.id} value={m.id}>🎯 {m.titulo}</option>)}
+																<option value="" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-slate-100">🐷 Caixinha do banco</option>
+																{metas.map(m => <option key={m.id} value={m.id} className="bg-white text-slate-800 dark:bg-slate-900 dark:text-slate-100">🎯 Meta: {m.titulo}</option>)}
 															</select>
 														) : (
 															<CategoryCreatableSelect 

@@ -24,3 +24,4 @@ supabase/.temp/
 
 # SQL do banco (rodado à mão no SQL Editor do Supabase)
 supabase/migrations/
+supabase/historico/

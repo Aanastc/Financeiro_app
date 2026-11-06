@@ -161,7 +161,7 @@ supabase functions deploy ai-generate
 ```
 > ⚠️ Não use variáveis `VITE_*` para chaves secretas: tudo que começa com `VITE_` é embutido no JavaScript publicado.
 
-O SQL do banco (tabelas extras, funções, regras de acesso) fica em `supabase/migrations/ajustes_supabase.sql`, fora do git. Rode o arquivo inteiro no **SQL Editor** do Supabase: ele é idempotente e não altera dados existentes.
+O SQL do banco fica fora do git: `supabase/migrations/ajustes_supabase.sql` traz **somente o que ainda falta rodar** no **SQL Editor** do Supabase (sempre aditivo e idempotente); o que já foi aplicado fica guardado em `supabase/historico/sql_ja_aplicado.sql`.
 
 No painel do Supabase, em **Authentication → URL Configuration**, inclua `https://<seu-dominio>/reset-password` (e `http://localhost:5173/reset-password`) em **Redirect URLs** para a recuperação de senha.
 

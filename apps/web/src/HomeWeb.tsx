@@ -1,4 +1,5 @@
 import LancamentosSemContaModal from "./components/LancamentosSemContaModal";
+import CompartilhadoComigo from "./components/CompartilhadoComigo";
 import { ehLancamentoSemConta, lancamentosSemContaService } from "../../../packages/services/lancamentos-sem-conta.service";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../../../packages/services/supabase";
@@ -1396,6 +1397,9 @@ export default function HomeWeb() {
 							</div>
 						</div>
 					</div>
+
+					{/* O que outras pessoas dividiram com você (some sozinho se não houver nada) */}
+					<CompartilhadoComigo />
 
 					{/* KPIS COMPARTILHADAS */}
 					<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

@@ -209,9 +209,22 @@ export default function Contas() {
                                         </h4>
                                         {!ehReal(conta.moeda) && (
                                             <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
-                                                {conta.saldo_reais !== null && conta.saldo_reais !== undefined
-                                                    ? `≈ ${formatarMoeda(conta.saldo_reais, "BRL")} · 1 ${conta.moeda} = ${formatarMoeda(conta.cotacao_hoje || 0, "BRL")}`
+                                                {conta.cotacao_hoje
+                                                    ? `1 ${conta.moeda} = ${formatarMoeda(conta.cotacao_hoje, "BRL")}`
                                                     : "cotação indisponível agora"}
+                                            </p>
+                                        )}
+                                        {(conta.outras_moedas || []).map((o: any) => (
+                                            <p key={o.moeda} className="text-sm font-black text-slate-700 dark:text-slate-200 mt-1">
+                                                + {formatarMoeda(o.valor, o.moeda)}
+                                                <span className="ml-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                                    {o.reais !== null ? `≈ ${formatarMoeda(o.reais, "BRL")}` : "(sem cotação agora)"}
+                                                </span>
+                                            </p>
+                                        ))}
+                                        {(!ehReal(conta.moeda) || (conta.outras_moedas || []).length > 0) && conta.saldo_reais !== null && conta.saldo_reais !== undefined && (
+                                            <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-1">
+                                                Total da conta ≈ {formatarMoeda(conta.saldo_reais, "BRL")}
                                             </p>
                                         )}
                                     </div>
@@ -257,6 +270,7 @@ export default function Contas() {
                 isOpen={!!contaParaExtrato} 
                 onClose={() => setContaParaExtrato(null)} 
                 conta={contaParaExtrato} 
+                onSaldoAjustado={loadData}
             />
 
 			<AnimatePresence>

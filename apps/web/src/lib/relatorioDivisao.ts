@@ -231,15 +231,30 @@ function legendaOpcional(ws: ExcelJS.Worksheet, colunas: number) {
 const ordenarItens = <T extends { opcional: boolean; data: string; compra: string }>(lista: T[]) =>
 	[...lista].sort((a, b) => Number(a.opcional) - Number(b.opcional) || a.data.localeCompare(b.data) || a.compra.localeCompare(b.compra));
 
-export async function exportarExcelPessoa(params: { nome: string; itens: any[] }) {
+export async function exportarExcelPessoa(params: { nome: string; itens: any[]; itensPagar?: any[] }) {
 	const { nome } = params;
-	const itens = params.itens.map((i) => normalizar(i, [nome]));
 	const primeiro = nome.split(" ")[0];
 	const hoje = hojeISO();
-	const valorConta = (i: Item) => (i.recusado ? i.pago : i.valor); // recusado não conta (só o que já tinha sido pago)
-	const soma = (lista: Item[], f: (i: Item) => number) => centavos(lista.reduce((s, i) => s + f(i), 0));
-	const comOpc = (lista: Item[]) => soma(lista, valorConta);
-	const soObrig = (lista: Item[]) => soma(lista, (i) => (i.opcional ? 0 : valorConta(i)));
+	// Dois sentidos: o que a pessoa te deve (itens) e o que você deve a ela (itensPagar)
+	type ItemP = Item & { receber: boolean; compensado: boolean };
+	const marcar = (i: Item, receber: boolean): ItemP => ({
+		...i,
+		receber,
+		compensado: Array.isArray(i.meta?.pagamentos) && i.meta.pagamentos.some((p: any) => p.tipo === "compensacao"),
+	});
+	const itens: ItemP[] = [
+		...params.itens.map((i) => marcar(normalizar(i, [nome]), true)),
+		...(params.itensPagar || []).map((c) => {
+			const raw = { ...c, valor: c.valor ?? c.valor_parcela_usuario, terceiro_pago: Boolean(c.quitado) };
+			return marcar(normalizar(raw, [nome]), false);
+		}),
+	];
+	const valorConta = (i: ItemP) => (i.recusado ? i.pago : i.valor); // recusado não conta
+	const soma = (lista: ItemP[], f: (i: ItemP) => number) => centavos(lista.reduce((s, i) => s + f(i), 0));
+	const teDeve = (lista: ItemP[]) => soma(lista, (i) => (i.receber ? i.aberto : 0));
+	const voceDeve = (lista: ItemP[]) => soma(lista, (i) => (i.receber ? 0 : i.aberto));
+	const temOpcional = itens.some((i) => i.receber && i.opcional);
+	const saldoTexto = (v: number) => (v > 0.009 ? `${primeiro} te deve ${moeda(v)}` : v < -0.009 ? `você deve ${moeda(-v)}` : "tudo acertado");
 	const meses = porMes(itens);
 
 	const wb = new ExcelJS.Workbook();
@@ -247,77 +262,86 @@ export async function exportarExcelPessoa(params: { nome: string; itens: any[] }
 
 	// --- RESUMO
 	const resumo = wb.addWorksheet("Resumo");
-	resumo.columns = [{ width: 26 }, { width: 18 }, { width: 18 }, { width: 16 }, { width: 16 }, { width: 28 }];
-	tituloPlanilha(resumo, `Divisão de contas com ${nome}`, `Gerado em ${new Date().toLocaleString("pt-BR")}`, 6);
+	resumo.columns = [{ width: 26 }, { width: 18 }, { width: 18 }, { width: 26 }, { width: 22 }];
+	tituloPlanilha(resumo, `Divisão de contas com ${nome}`, `Gerado em ${new Date().toLocaleString("pt-BR")}`, 5);
+	const saldo = centavos(teDeve(itens) - voceDeve(itens));
 	destaques(resumo, [
-		{ rotulo: "TOTAL COM OPCIONAIS", valor: comOpc(itens) },
-		{ rotulo: "SÓ OBRIGATÓRIOS", valor: soObrig(itens) },
-		{ rotulo: "JÁ PAGOU", valor: soma(itens, (i) => i.pago), cor: CORES.receita.texto },
-		{ rotulo: "FALTA RECEBER", valor: soma(itens, (i) => i.aberto), cor: CORES.resultado.texto },
-		{ rotulo: "JÁ VENCIDO", valor: soma(itens, (i) => (i.data <= hoje ? i.aberto : 0)), cor: CORES.despesa.texto },
+		{ rotulo: `${primeiro.toUpperCase()} TE DEVE`, valor: teDeve(itens), cor: CORES.receita.texto },
+		{ rotulo: "VOCÊ DEVE", valor: voceDeve(itens), cor: CORES.despesa.texto },
+		{ rotulo: saldo >= 0 ? `SALDO · ${primeiro.toUpperCase()} TE DEVE` : "SALDO · VOCÊ DEVE", valor: Math.abs(saldo), cor: saldo >= 0 ? CORES.receita.texto : CORES.despesa.texto },
+		...(temOpcional ? [{ rotulo: "TE DEVE · SÓ OBRIGATÓRIOS", valor: soma(itens, (i) => (i.receber && !i.opcional ? i.aberto : 0)) }] : []),
 	]);
-	cabecalhoTabela(resumo, ["Mês (clique para abrir)", "Com opcionais", "Só obrigatórios", "Já pagou", "Falta", "Situação"]);
+	cabecalhoTabela(resumo, ["Mês (clique para abrir)", `${primeiro} te deve`, "Você deve", "Saldo do mês", "Situação"]);
 	for (const [ym, lista] of meses) {
 		const s = situacaoMes(lista, hoje);
+		const saldoMes = centavos(teDeve(lista) - voceDeve(lista));
 		const r = linhaMes(
 			resumo,
-			[linkAba(nomeMesLongo(ym), nomeAba(ym)), comOpc(lista), soObrig(lista), soma(lista, (i) => i.pago), soma(lista, (i) => i.aberto), s.texto],
-			[2, 3, 4, 5],
+			[linkAba(nomeMesLongo(ym), nomeAba(ym)), teDeve(lista), voceDeve(lista), saldoTexto(saldoMes), s.texto],
+			[2, 3],
 			s.cor,
 		);
 		r.getCell(1).font = { ...fonte(true, 10.5, CORES.resultado.texto), underline: true };
+		r.getCell(2).font = fonte(true, 10.5, CORES.receita.texto);
+		r.getCell(3).font = fonte(true, 10.5, CORES.despesa.texto);
 	}
-	linhaTotal(resumo, ["TOTAL", comOpc(itens), soObrig(itens), soma(itens, (i) => i.pago), soma(itens, (i) => i.aberto), ""], [2, 3, 4, 5]);
+	linhaTotal(resumo, ["TOTAL EM ABERTO", teDeve(itens), voceDeve(itens), saldoTexto(saldo), ""], [2, 3]);
 	resumo.addRow([]);
 	const recusado = soma(itens, (i) => (i.recusado ? i.valor - i.pago : 0));
+	const abatido = soma(itens, (i) => (i.compensado ? i.pago : 0)) / 2;
 	nota(
 		resumo,
-		`Cada mês tem a sua aba com os itens. "Com opcionais" soma tudo; "Só obrigatórios" deixa de fora o que ${primeiro} pode recusar. Itens recusados não entram em nenhum total.${recusado > 0 ? ` Total recusado: ${moeda(recusado)}.` : ""}`,
-		6,
+		[
+			"Cada mês tem a sua aba com os itens. Valores em aberto: o que já foi pago não entra.",
+			abatido > 0 ? `${moeda(abatido)} foram abatidos entre vocês (o que um devia descontou do que o outro devia).` : "",
+			temOpcional ? `"Opcional": ${primeiro} pode recusar.` : "",
+			recusado > 0 ? `Recusado: ${moeda(recusado)} (não entra nos totais).` : "",
+		]
+			.filter(Boolean)
+			.join(" "),
+		5,
 	);
 
 	// --- UMA ABA POR MÊS
 	for (const [ym, lista] of meses) {
 		const ws = wb.addWorksheet(nomeAba(ym));
-		ws.columns = [{ width: 13 }, { width: 50 }, { width: 10 }, { width: 15 }, { width: 24 }];
-		tituloPlanilha(ws, `${nomeMesLongo(ym)} — ${nome}`, `${lista.length} ${lista.length === 1 ? "item" : "itens"}`, 5);
-		voltarAoResumo(ws, 5);
+		ws.columns = [{ width: 13 }, { width: 48 }, { width: 9 }, { width: 18 }, { width: 15 }, { width: 28 }];
+		tituloPlanilha(ws, `${nomeMesLongo(ym)} — ${nome}`, `${lista.length} ${lista.length === 1 ? "item" : "itens"}`, 6);
+		voltarAoResumo(ws, 6);
 		ws.addRow([]);
+		const saldoMes = centavos(teDeve(lista) - voceDeve(lista));
 		destaques(ws, [
-			{ rotulo: "COM OPCIONAIS", valor: comOpc(lista) },
-			{ rotulo: "SÓ OBRIGATÓRIOS", valor: soObrig(lista) },
-			{ rotulo: "JÁ PAGOU", valor: soma(lista, (i) => i.pago), cor: CORES.receita.texto },
-			{ rotulo: "FALTA", valor: soma(lista, (i) => i.aberto), cor: CORES.resultado.texto },
+			{ rotulo: `${primeiro.toUpperCase()} TE DEVE`, valor: teDeve(lista), cor: CORES.receita.texto },
+			{ rotulo: "VOCÊ DEVE", valor: voceDeve(lista), cor: CORES.despesa.texto },
+			{ rotulo: saldoMes >= 0 ? "SALDO DO MÊS · TE DEVEM" : "SALDO DO MÊS · VOCÊ DEVE", valor: Math.abs(saldoMes) },
 		]);
-		if (lista.some((i) => i.opcional)) legendaOpcional(ws, 5);
-		cabecalhoTabela(ws, ["Vencimento", "Item", "Parcela", "Valor", "Situação"]);
-		for (const i of ordenarItens(lista)) {
+		if (lista.some((i) => i.opcional)) legendaOpcional(ws, 6);
+		cabecalhoTabela(ws, ["Vencimento", "Item", "Parcela", "Quem deve", "Valor", "Situação"]);
+		const ordenados = [...lista].sort((a, b) => Number(b.receber) - Number(a.receber) || Number(a.opcional) - Number(b.opcional) || a.data.localeCompare(b.data) || a.compra.localeCompare(b.compra));
+		for (const i of ordenados) {
 			const situacao = [
-				i.recusado ? "recusado" : i.quitado ? "pago" : i.pago > 0 ? `pagou ${moeda(i.pago)}` : i.data <= hoje ? "vencido" : "a vencer",
+				i.recusado
+					? "recusado"
+					: i.quitado
+						? i.compensado ? "abatido" : "pago"
+						: i.pago > 0
+							? `${i.compensado ? "abatido" : "pago"} ${moeda(i.pago)} · falta ${moeda(i.aberto)}`
+							: i.data <= hoje ? "vencido" : "a vencer",
 				i.opcional ? "opcional" : "",
 			]
 				.filter(Boolean)
 				.join(" · ");
-			const r = linhaItem(ws, [dataBR(i.data), i.compra, i.parcela, valorConta(i), situacao], [4], false);
+			const r = linhaItem(ws, [dataBR(i.data), i.compra, i.parcela, i.receber ? `${primeiro} te deve` : "você deve", valorConta(i), situacao], [5], false);
 			r.outlineLevel = 0;
 			r.getCell(1).alignment = { horizontal: "left", indent: 1 };
 			r.getCell(2).alignment = { horizontal: "left" };
 			r.getCell(2).font = { ...fonte(false, 10, i.recusado ? "9E9E9E" : i.opcional ? AMARELO.texto : "37474F"), strike: i.recusado };
-			if (i.opcional) pintarOpcional(r, 5);
-			if (i.quitado) r.getCell(5).font = fonte(true, 10, CORES.receita.texto);
-			else if (!i.recusado && i.data <= hoje) r.getCell(5).font = fonte(true, 10, CORES.despesa.texto);
+			r.getCell(4).font = fonte(true, 10, i.receber ? CORES.receita.texto : CORES.despesa.texto);
+			r.getCell(5).font = fonte(true, 10, i.receber ? CORES.receita.texto : CORES.despesa.texto);
+			if (i.opcional) pintarOpcional(r, 6);
+			if (!i.quitado && !i.recusado && i.data <= hoje) r.getCell(6).font = fonte(true, 10, CORES.despesa.texto);
 		}
-		linhaTotal(ws, ["TOTAL COM OPCIONAIS", "", "", comOpc(lista), `falta ${moeda(soma(lista, (i) => i.aberto))}`], [4]);
-		if (lista.some((i) => i.opcional)) {
-			const r = ws.addRow(["TOTAL SÓ OBRIGATÓRIOS", "", "", soObrig(lista), `falta ${moeda(soma(lista, (i) => (i.opcional ? 0 : i.aberto)))}`]);
-			r.height = 22;
-			r.eachCell({ includeEmpty: true }, (c, n) => {
-				c.font = fonte(true, 10.5, "263238");
-				preencher(c, "E0E0E0");
-				c.alignment = { vertical: "middle", horizontal: n === 4 ? "right" : n === 1 ? "left" : "center", indent: n === 1 ? 1 : 0 };
-				if (n === 4) c.numFmt = FMT_MOEDA;
-			});
-		}
+		linhaTotal(ws, ["EM ABERTO NO MÊS", "", "", saldoTexto(saldoMes), Math.abs(saldoMes), ""], [5]);
 		ws.views = [{ state: "frozen", ySplit: lista.some((i) => i.opcional) ? 10 : 9 }];
 	}
 

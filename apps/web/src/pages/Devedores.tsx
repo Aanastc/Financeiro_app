@@ -1520,7 +1520,11 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 				onCobrar={() => pessoaAberta?.devedor && handleCobrarWhatsApp(pessoaAberta.devedor)}
 				onExcel={() =>
 					pessoaAberta &&
-					exportarExcelPessoa({ nome: pessoaAberta.contato.nome, itens: pessoaAberta.devedor?.itens || [] }).catch(() =>
+					exportarExcelPessoa({
+						nome: pessoaAberta.contato.nome,
+						itens: pessoaAberta.devedor?.itens || [],
+						itensPagar: pessoaAberta.itens.filter((i) => i.direcao === "PAGAR").map((i) => i.raw),
+					}).catch(() =>
 						toast.error("Não foi possível gerar a planilha."),
 					)
 				}

@@ -65,6 +65,14 @@ export default function InvestimentosWeb() {
 		}
 	};
 
+	// Caixinhas por banco + rendimento do dia (Banco Central); recarrega quando termina
+	useEffect(() => {
+		supabase.auth.getUser().then(({ data: { user } }) => {
+			if (!user) return;
+			financeService.syncMetasInvestimentos(user.id).then(() => loadInvestimentos()).catch(() => {});
+		});
+	}, [loadInvestimentos]);
+
 	useEffect(() => {
 		loadInvestimentos();
 		

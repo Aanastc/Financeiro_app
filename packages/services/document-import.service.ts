@@ -4,7 +4,7 @@ import { notificacoesService } from "./notificacoes.service";
 import { detectarInstituicao, mesmaInstituicao, nomeArquivoIndicaExtrato } from "../utils/instituicoes";
 import { supabase } from "./supabase";
 import { financeService, inserirMovimentacoes, moedasDasContas } from "./finance.service";
-import { moedaService, ehReal } from "./moeda.service";
+import { moedaService, ehReal, MOEDAS } from "./moeda.service";
 import ExcelJS from "exceljs";
 import type {
   TipoDocumento,
@@ -336,6 +336,9 @@ REGRAS DE CLASSIFICAÇÃO E EXTRAÇÃO:
          "categoria_sugerida": "Transferência Interna"
          "descricao": "Pix Recebido: Maria Souza Lima"
          "favorecido": "Maria Souza Lima"
+       Conversão de moeda dentro do mesmo banco (Wise "To CAD", "Moved", "Converted BRL to CAD") também é
+       "TRANSFERENCIA"/"TRANSFERENCIA_PROPRIA", com "valor" na moeda DESTE extrato (ex.: 10 BRL, não 2.50 CAD) e "sentido": "SAIDA".
+       Nesse caso informe também "moeda_destino" (ex.: "CAD") e "valor_destino" (ex.: 2.50), quando aparecerem.
      * ATENÇÃO CRÍTICA COM PARENTES / MESMO SOBRENOME:
        Parentes ou familiares que apenas compartilham o sobrenome da família mas têm primeiro nome diferente (ex: "Jose Souza Lima") NÃO SÃO A MESMA PESSOA que a titular!
        Transações com esses parentes são transações com TERCEIROS normais:
@@ -360,6 +363,7 @@ REGRAS DE CLASSIFICAÇÃO E EXTRAÇÃO:
            "tipo": "RECEITA" | "DESPESA" | "TRANSFERENCIA" | "PAGAMENTO_DIVIDA" | "PAGAMENTO_FATURA" | "APORTE" | "RESGATE",
            "categoria_sugerida": "Salário" | "Pix Recebido" | "Transferência Interna" | "Alimentação" | "Transporte" | "Investimentos" | "Cartão de Crédito" | "Impostos e Tarifas" | "Juros e Encargos" | "Tarifas Bancárias" | "Assinaturas" | "Outros",
            "subtipo": "APLICACAO_RDB" | "RESGATE_RDB" | "TRANSFERENCIA_PROPRIA" | "CONVERSAO_LIMITE_CARTAO" | null,
+           "sentido": "ENTRADA" | "SAIDA" (o dinheiro entrou ou saiu desta conta? Obrigatório. "+", "received", "recebido" = ENTRADA; "-", "sent", "moved", "To CAD", "Return sent", "enviado", "conversão" = SAIDA),
            "principal": number,
            "rendimento": number,
            "documento_numero": "número do doc se houver",
@@ -1516,25 +1520,22 @@ ${fileContent.textContent}`];
           .single();
         if (!contaCheck) throw new Error("Conta bancária não pertence a este usuário.");
 
-        // Conta em outra moeda (SQL seção 10): o extrato vem na moeda da conta.
+        // Moeda do extrato (ex.: saldo em CAD da Wise): a que a IA leu ou a da conta.
         // Cada linha vira reais pela cotação do dia dela (é o que entra em gastos/entradas);
-        // a movimentação volta para a moeda da conta, então o saldo bate com o banco.
+        // a movimentação cai no saldo daquela moeda dentro da conta, no valor exato do extrato.
         const moedaConta = (await moedasDasContas([contaId]))[contaId] || "BRL";
-        const moedaExtrato = String((extrato as any).moeda || "").toUpperCase().trim();
-        if (moedaExtrato && /^[A-Z]{3}$/.test(moedaExtrato) && moedaExtrato !== moedaConta) {
-          throw new Error(
-            `Este extrato está em ${moedaExtrato}, mas a conta escolhida é em ${moedaConta}. Escolha (ou crie) uma conta em ${moedaExtrato}.`,
-          );
-        }
-        if (!ehReal(moedaConta)) {
-          for (const t of extrato.transacoes || []) {
-            const original = Number(t.valor);
-            const conv = await moedaService.paraReais(original, moedaConta, t.data);
-            if (!conv) throw new Error(`Não foi possível obter a cotação de ${moedaConta} em ${t.data}. Tente de novo em instantes.`);
-            (t as any).valor_original = original;
-            (t as any).cotacao = conv.cotacao;
-            t.valor = conv.reais;
-          }
+        const lida = String((extrato as any).moeda || "").toUpperCase().trim();
+        const moedaExtrato = MOEDAS.some((m) => m.codigo === lida) ? lida : moedaConta;
+        for (const t of extrato.transacoes || []) {
+          (t as any).moeda_mov = moedaExtrato;
+          if (ehReal(moedaExtrato)) continue;
+          const original = Number(t.valor);
+          const conv = await moedaService.paraReais(original, moedaExtrato, t.data);
+          if (!conv) throw new Error(`Não foi possível obter a cotação de ${moedaExtrato} em ${t.data}. Tente de novo em instantes.`);
+          (t as any).valor_original = original;
+          (t as any).moeda = moedaExtrato;
+          (t as any).cotacao = conv.cotacao;
+          t.valor = conv.reais;
         }
 
         // Meta de reserva usada como destino padrão de aplicações/resgates (RDB, caixinha)
@@ -1651,7 +1652,7 @@ ${fileContent.textContent}`];
                   conta_id: contaId,
                   tipo: "ENTRADA",
                   valor: t.valor,
-                  valor_na_conta: (t as any).valor_original,
+                  valor_na_conta: (t as any).valor_original, moeda: (t as any).moeda_mov,
                   data: t.data
                 }]);
               }
@@ -1708,7 +1709,7 @@ ${fileContent.textContent}`];
                 conta_id: contaId,
                 tipo: "SAIDA",
                 valor: t.valor,
-                  valor_na_conta: (t as any).valor_original,
+                  valor_na_conta: (t as any).valor_original, moeda: (t as any).moeda_mov,
                 data: t.data
               }]);
               total++;
@@ -1721,7 +1722,11 @@ ${fileContent.textContent}`];
               categoria: t.categoria_sugerida || "Outros",
               metodo_pagamento: "Débito",
               conta_id: contaId,
-              documento_importado_id: documento_importado_id || null
+              documento_importado_id: documento_importado_id || null,
+              moeda: (t as any).moeda,
+              valor_original: (t as any).valor_original,
+              cotacao: (t as any).cotacao,
+              moeda_mov: (t as any).moeda_mov,
             });
             total++;
           }

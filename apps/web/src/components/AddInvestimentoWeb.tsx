@@ -93,6 +93,12 @@ export default function AddInvestimentoWeb({ onClose, onSuccess, investimento }:
 			};
 
 			if (editando) {
+				// Saldo informado (o que o banco mostra): vira o ponto de partida do cálculo de rendimento
+				if (Math.abs(Number(dados.valor_atual) - Number(investimento.valor_atual || 0)) > 0.005) {
+					const d = new Date();
+					dados.ajuste_valor = dados.valor_atual;
+					dados.ajuste_data = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+				}
 				await financeService.updateInvestimento(user.id, investimento.id, dados);
 				toast.success("Investimento atualizado!");
 			} else {

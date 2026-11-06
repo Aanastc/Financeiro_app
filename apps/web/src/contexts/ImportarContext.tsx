@@ -1,3 +1,5 @@
+import { inserirMovimentacoes, moedasDasContas } from "../../../../packages/services/finance.service";
+import { moedaService, ehReal, MOEDAS, formatarMoeda } from "../../../../packages/services/moeda.service";
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { authService } from "../../../../packages/services/auth.service";
@@ -44,6 +46,42 @@ export interface TransacaoPreview {
 	manualOverride?: boolean;
 	principal?: number;
 	rendimento?: number;
+	/** Transferência: o dinheiro ENTROU ou SAIU da conta do extrato */
+	sentido?: "ENTRADA" | "SAIDA";
+	/** Conta em outra moeda: valor no extrato (moeda da conta) e cotação usada */
+	valor_original?: number;
+	moeda?: string;
+	cotacao?: number;
+	/** Em qual saldo da conta a linha cai (moeda do extrato; ex.: CAD dentro da Wise) */
+	moeda_mov?: string;
+	/** Conversão de moeda dentro da mesma conta (Wise "To CAD"): moeda e valor que entraram */
+	moeda_destino?: string;
+	valor_destino?: number;
+}
+
+const CODIGOS_MOEDA = new Set(MOEDAS.map((m) => m.codigo));
+
+/** Linha de conversão de moeda dentro da mesma conta? ("To CAD", "Convertido para USD", "BRL → CAD") */
+export function conversaoDeMoeda(t: any, descricao: string, moedaExtrato?: string): { moeda_destino: string; valor_destino?: number } | null {
+	const daIa = String(t?.moeda_destino || "").toUpperCase();
+	const valorIa = Number(t?.valor_destino) > 0 ? Number(t.valor_destino) : undefined;
+	if (CODIGOS_MOEDA.has(daIa) && daIa !== moedaExtrato) return { moeda_destino: daIa, valor_destino: valorIa };
+	const texto = `${t?.descricao || ""} ${descricao || ""}`;
+	const m = texto.match(/(?:^|\s)(?:[Tt]o|[Pp]ara|[Ee]m|[Ii]nto|→|->)\s+([A-Z]{3})\b/) || texto.match(/\bconver\w*\s+(?:de\s+|from\s+)?[A-Z]{3}\s+(?:para|to|em|→|->)\s+([A-Z]{3})\b/i);
+	const codigo = m ? m[1].toUpperCase() : "";
+	if (CODIGOS_MOEDA.has(codigo) && codigo !== moedaExtrato) return { moeda_destino: codigo, valor_destino: valorIa };
+	return null;
+}
+
+/** Entrou ou saiu? Usa o que a IA disser, o sinal do valor ou a descrição. */
+export function sentidoDaTransferencia(t: any, descricao: string): "ENTRADA" | "SAIDA" {
+	const s = String(t?.sentido || "").toUpperCase();
+	if (s === "ENTRADA" || s === "SAIDA") return s;
+	if (Number(t?.valor) < 0) return "SAIDA";
+	const d = (descricao || "").toLowerCase();
+	if (/receb|entrada|cr[eé]dito em conta|dep[oó]sito|received|added|from |deposit|top.?up/.test(d)) return "ENTRADA";
+	if (/envi|sa[ií]da|convers[aã]o|saque|pagamento|d[eé]bito|sent|moved|to [a-z]{3}\b|return|withdraw|convert/.test(d)) return "SAIDA";
+	return t?.tipo === "RECEITA" ? "ENTRADA" : "SAIDA";
 }
 
 export const CATEGORIAS_PADRAO = [
@@ -599,26 +637,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			setCategoriaMap(mapCat);
 
 			let metasCarregadas = dataMetas.data || [];
-			let reserva = metasCarregadas.find(m => /reserva(\s+de)?\s+emerg[eê]ncia|caixinha/i.test(m.titulo));
-			if (!reserva) {
-				try {
-					const hoje = new Date();
-					const prazo = new Date(hoje.setFullYear(hoje.getFullYear() + 1)).toISOString().split('T')[0];
-					await financeService.addMeta(user.id, {
-						titulo: "Reserva de Emergência",
-						valor: 10000,
-						prazo: prazo,
-						debito_automatico: false
-					});
-					const { data: recarregadas } = await supabase.from('metas').select('*').eq('usuario_id', user.id);
-					if (recarregadas && recarregadas.length > 0) {
-						metasCarregadas = recarregadas;
-					}
-				} catch (e) {
-					console.warn("Auto-criação de Reserva de Emergência falhou:", e);
-				}
-			}
-
+			// (aplicações vão para a caixinha do banco; nenhuma meta é criada sozinha)
 			setCartoes(dataCartoes || []);
 			setContatos(dataContatos.data || []);
 			setGastosExistentes(dataGastos.data || []);
@@ -635,7 +654,6 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 	// Auto-corrige em tempo real transferências próprias, lançamentos de Pix, RDB ou Caixinhas, e detecta duplicatas existentes
 	useEffect(() => {
 		if (preview.length === 0) return;
-		const reserva = metas.find(m => /reserva(\s+de)?\s+emerg[eê]ncia|caixinha/i.test(m.titulo)) || metas[0];
 
 		setPreview(prev => {
 			let alterado = false;
@@ -675,9 +693,18 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 						}
 					} else {
 						const isTransf = isTransferenciaPropria(desc, item.nome_terceiro, usuarioNome, usuarioCpf);
-						if (isTransf && (!ignorar || tipo !== "Transferencia" || cat !== "Transferência Interna" || item.cartao_id || item.metodo_pagamento === "Crédito")) {
-							ignorar = true;
-							ignoredReason = "Transferência entre contas próprias (Mesmo titular - não altera patrimônio)";
+						// Antigamente isso descartava a linha; agora a transferência entra no saldo da conta
+						// (a duplicidade com o extrato do outro banco é checada ao salvar).
+						if (ignorar && /contas pr[oó]prias/i.test(ignoredReason || "")) {
+							ignorar = false;
+							ignoredReason = "";
+							mudouItem = true;
+						}
+						if ((isTransf || tipo === "Transferencia") && !item.sentido) {
+							item.sentido = sentidoDaTransferencia({ valor: item.valor, tipo: tipo === "Entrada" ? "RECEITA" : undefined }, desc);
+							mudouItem = true;
+						}
+						if (isTransf && (tipo !== "Transferencia" || cat !== "Transferência Interna" || item.cartao_id || item.metodo_pagamento === "Crédito")) {
 							tipo = "Transferencia";
 							cat = "Transferência Interna";
 							item.cartao_id = null;
@@ -694,7 +721,6 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 				if (isAplicacao && (tipo !== "Meta" || !metaId)) {
 					tipo = "Meta";
 					cat = "Investimentos";
-					if (reserva) metaId = reserva.id;
 					mudouItem = true;
 				}
 
@@ -1047,41 +1073,6 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 				rawItems = [...faturaItens, ...faturaPagamentos];
 			}
 
-			// Localiza ou cria automaticamente a meta 'Reserva de Emergência' se houver aplicações RDB
-			let metaReserva = metas.find(m => /reserva(\s+de)?\s+emerg[eê]ncia|caixinha(\s+reserva)?/i.test(m.titulo));
-			const temAplicacaoRdb = rawItems.some(item => 
-				item.tipo_transacao === "Meta" || 
-				ehAplicacaoInvestimento(item.descricao || "")
-			);
-
-			if (temAplicacaoRdb && !metaReserva) {
-				try {
-					const { data: { user } } = await supabase.auth.getUser();
-					if (user) {
-						const hoje = new Date();
-						const prazo = new Date(hoje.setFullYear(hoje.getFullYear() + 1)).toISOString().split('T')[0];
-						const { data: novaMeta, error: errMeta } = await supabase
-							.from("metas")
-							.insert([{
-								usuario_id: user.id,
-								titulo: "Reserva de Emergência",
-								valor: 10000,
-								prazo: prazo,
-								debito_automatico: false
-							}])
-							.select()
-							.single();
-
-						if (!errMeta && novaMeta) {
-							metaReserva = novaMeta;
-							setMetas(prev => [...prev, novaMeta]);
-						}
-					}
-				} catch (e) {
-					console.warn("Não foi possível criar meta Reserva de Emergência automaticamente:", e);
-				}
-			}
-
 			let nomeUserAtual = usuarioNome;
 			let cpfUserAtual = usuarioCpf;
 			if (user && !nomeUserAtual) {
@@ -1185,7 +1176,8 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 									|| learnedCat 
 									|| (categorias.some(c => c.toLowerCase() === (t.categoria_sugerida || "").toLowerCase()) ? t.categoria_sugerida : (CATEGORIAS_PADRAO.includes(t.categoria_sugerida) ? t.categoria_sugerida : "Outros"))))));
 
-				const metaIdFinal = isAplicacao ? (t.meta_id || metaReserva?.id || (metas[0]?.id || "")) : (t.meta_id || "");
+				// Sem meta escolhida, a aplicação vai para a caixinha do próprio banco (ex.: "Caixinha Inter")
+				const metaIdFinal = t.meta_id || "";
 
 				// Deduplicação Inteligente: cruza com lançamentos já existentes no banco do usuário
 				const dup = encontrarTransacaoRepetida(
@@ -1195,12 +1187,10 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					contas
 				);
 
-				const deveIgnorar = isContatoTerceiro ? false : (isTransfPropria || dup.repetida);
-				const motivoIgnorar = isContatoTerceiro 
-					? "" 
-					: (isTransfPropria 
-						? "Transferência entre contas próprias (Mesmo titular - não altera patrimônio)" 
-						: (dup.repetida ? dup.motivo : ""));
+				// Transferência entre contas suas entra no saldo da conta do extrato (a duplicidade com o
+				// extrato do outro banco é checada ao salvar). Só repetição de verdade é descartada.
+				const deveIgnorar = isContatoTerceiro ? false : (!isTransfPropria && dup.repetida);
+				const motivoIgnorar = isContatoTerceiro ? "" : (!isTransfPropria && dup.repetida ? dup.motivo : "");
 
 				const cartaoIdFinal = (isFatura || tipoFinal === "Fatura") 
 					? (t.cartao_id || detectedCartaoId || cartoes[0]?.id || null) 
@@ -1227,8 +1217,10 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					id: Date.now() + index.toString(),
 					data: t.data || new Date().toISOString().split('T')[0],
 					descricao: cleanDesc || (tipoFinal === "Entrada" ? "Pix Recebido" : tipoFinal === "Meta" ? "Aplicação RDB" : tipoFinal === "Transferencia" ? "Transferência Própria" : tipoFinal === "Fatura" ? "Compra no Cartão" : "Pix Enviado"),
-					valor: parseFloat(t.valor) || 0,
+					valor: Math.abs(parseFloat(t.valor) || 0),
 					tipo_transacao: tipoFinal,
+					sentido: tipoFinal === "Transferencia" ? sentidoDaTransferencia(t, cleanDesc) : undefined,
+					...(tipoFinal === "Transferencia" ? conversaoDeMoeda(t, cleanDesc, String(ext?.dados?.moeda || "").toUpperCase() || undefined) || {} : {}),
 					categoria: categoriaFinal,
 					meta_id: metaIdFinal,
 					parcela_atual: detectedParcelaAtual || 1,
@@ -1274,10 +1266,6 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			const updated = prev.map(p => {
 				if (p.id !== id) return p;
 				const next = { ...p, [field]: value };
-				if (field === "tipo_transacao" && value === "Meta" && !next.meta_id) {
-					const reserva = metas.find(m => /reserva(\s+de)?\s+emerg[eê]ncia|caixinha/i.test(m.titulo)) || metas[0];
-					if (reserva) next.meta_id = reserva.id;
-				}
 				if (field === "ignorar" && value === false) {
 					next.manualOverride = true;
 					next.ignoredReason = "";
@@ -1353,8 +1341,14 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 		return detectarInstituicao(`${conta.instituicao || ""} ${conta.nome || ""}`)?.nome || conta.instituicao || conta.nome || null;
 	};
 
+	/** Nome da caixinha do banco da conta: "Caixinha Inter", "Caixinha Nubank"... */
+	const caixinhaDaConta = (contaId?: string | null): string | null => {
+		const banco = instituicaoDaConta(contaId);
+		return banco ? `Caixinha ${banco}` : null;
+	};
+
 	const handleSaveAll = async () => {
-		const itemsToSave = preview.filter(p => !p.ignorar);
+		let itemsToSave = preview.filter(p => !p.ignorar);
 		if (itemsToSave.length === 0) {
 			toast.error("Nenhum lançamento novo para salvar.");
 			return;
@@ -1366,6 +1360,36 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			if (!user) throw new Error("Usuário não autenticado");
 
 			let importados = 0;
+
+			// Moeda do extrato: a que a IA leu (ex.: extrato do saldo em CAD da Wise) ou a da conta.
+			// Cada linha vira reais pela cotação do dia dela (é o que entra em gastos/entradas);
+			// a movimentação cai no saldo daquela moeda dentro da conta, no valor exato do extrato.
+			const moedasContas = await moedasDasContas(
+				[...new Set(itemsToSave.map((i) => i.conta_id || globalConta).filter(Boolean))] as string[],
+			);
+			const lidaNoExtrato = String(dadosExtraidos?.moeda || "").toUpperCase().trim();
+			const moedaExtrato = CODIGOS_MOEDA.has(lidaNoExtrato) ? lidaNoExtrato : "";
+			const convertidos: TransacaoPreview[] = [];
+			for (const i of itemsToSave) {
+				const conta = i.conta_id || globalConta;
+				const moedaConta = (conta && moedasContas[conta]) || "BRL";
+				const moeda = moedaExtrato || moedaConta;
+				const noCartao = i.tipo_transacao === "Fatura" || i.metodo_pagamento === "Crédito" || Boolean(i.cartao_id);
+				if (noCartao) {
+					convertidos.push(i);
+					continue;
+				}
+				if (ehReal(moeda)) {
+					convertidos.push({ ...i, moeda_mov: moeda });
+					continue;
+				}
+				const conv = await moedaService.paraReais(i.valor, moeda, i.data);
+				if (!conv) throw new Error(`Não foi possível obter a cotação de ${moeda} em ${i.data}. Tente de novo em instantes.`);
+				convertidos.push({ ...i, valor: conv.reais, valor_original: i.valor, moeda, cotacao: conv.cotacao, moeda_mov: moeda });
+			}
+			itemsToSave = convertidos;
+			const extrasMoeda = (i: TransacaoPreview) =>
+				i.moeda && i.valor_original ? { moeda: i.moeda, valor_original: i.valor_original, cotacao: i.cotacao } : {};
 
 			// 1. Entradas (Receitas ou Ajustes)
 			const entradas = itemsToSave.filter(i => i.tipo_transacao === "Entrada");
@@ -1415,7 +1439,8 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 						conta_id: contaIdFinal,
 						documento_importado_id: documentoImportadoId || null,
 						status: "confirmada",
-						observacao: `Categoria: ${txCat}`
+						observacao: `Categoria: ${txCat}`,
+						...extrasMoeda(item),
 					}])
 					.select()
 					.single();
@@ -1428,12 +1453,14 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 				if (tx) {
 					importados++;
 					if (tx.conta_id) {
-						await supabase.from("movimentacoes").insert([{
+						await inserirMovimentacoes([{
 							usuario_id: user.id,
 							transacao_id: tx.id,
 							conta_id: tx.conta_id,
 							tipo: "ENTRADA",
 							valor: tx.valor,
+							valor_na_conta: item.valor_original,
+							moeda: item.moeda_mov,
 							data: tx.data
 						}]);
 					}
@@ -1467,7 +1494,11 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					observacao: item.observacao || null,
 					valor_ja_dividido: true,
 					considerar_soma: finalCat !== "Renegociação de Cartão" && !item.descricao.toLowerCase().includes("renegocia"),
-					documento_importado_id: documentoImportadoId || null
+					documento_importado_id: documentoImportadoId || null,
+					moeda: item.moeda,
+					valor_original: item.valor_original,
+					cotacao: item.cotacao,
+					moeda_mov: item.moeda_mov,
 				});
 				importados++;
 			}
@@ -1475,34 +1506,16 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			// 3. Metas / Aplicações em RDB / Caixinhas (Movimentação Patrimonial - NÃO é despesa)
 			const metasItems = itemsToSave.filter(i => i.tipo_transacao === "Meta");
 			for (const item of metasItems) {
-				let targetMetaId = item.meta_id;
-				if (!targetMetaId) {
-					let metaReserva = metas.find(m => /reserva(\s+de)?\s+emerg[eê]ncia|caixinha/i.test(m.titulo)) || metas[0];
-					if (!metaReserva) {
-						const hoje = new Date();
-						const prazo = new Date(hoje.setFullYear(hoje.getFullYear() + 1)).toISOString().split('T')[0];
-						const { data: novaMeta } = await supabase.from("metas").insert([{
-							usuario_id: user.id,
-							titulo: "Reserva de Emergência",
-							valor: 10000,
-							prazo: prazo,
-							debito_automatico: false
-						}]).select().single();
-						if (novaMeta) {
-							metaReserva = novaMeta;
-							setMetas(prev => [...prev, novaMeta]);
-						}
-					}
-					targetMetaId = metaReserva?.id;
-				}
-
+				// Sem meta escolhida: caixinha do banco da conta (uma por banco)
+				const targetMetaId = item.meta_id || null;
 				await financeService.processAporteInvestimento(user.id, {
 					conta_id: item.conta_id || globalConta || null,
 					valor: item.valor,
 					data: item.data,
 					descricao: item.descricao || "Aplicação RDB / Caixinha",
-					meta_id: targetMetaId || null,
+					meta_id: targetMetaId,
 					instituicao: instituicaoDaConta(item.conta_id || globalConta),
+					titulo_investimento: targetMetaId ? null : caixinhaDaConta(item.conta_id || globalConta),
 					documento_importado_id: documentoImportadoId || null
 				});
 				importados++;
@@ -1511,11 +1524,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			// 4. Resgates de RDB / Caixinhas (Retorno de Patrimônio - NÃO é receita operacional)
 			const resgatesItems = itemsToSave.filter(i => i.tipo_transacao === "Resgate");
 			for (const item of resgatesItems) {
-				let targetMetaId = item.meta_id;
-				if (!targetMetaId) {
-					let metaReserva = metas.find(m => /reserva(\s+de)?\s+emerg[eê]ncia|caixinha/i.test(m.titulo)) || metas[0];
-					targetMetaId = metaReserva?.id;
-				}
+				const targetMetaId = item.meta_id || null;
 
 				await financeService.processResgateInvestimento(user.id, {
 					conta_id: item.conta_id || globalConta || null,
@@ -1525,7 +1534,8 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					principal: (item as any).principal || null,
 					rendimento: (item as any).rendimento || null,
 					instituicao: instituicaoDaConta(item.conta_id || globalConta),
-					meta_id: targetMetaId || null,
+					meta_id: targetMetaId,
+					titulo_investimento: targetMetaId ? null : caixinhaDaConta(item.conta_id || globalConta),
 					documento_importado_id: documentoImportadoId || null
 				});
 				importados++;
@@ -1545,21 +1555,125 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 				importados++;
 			}
 
-			// 5. Transferências Internas (se não foram ignoradas pelo usuário)
+			// 6. Transferências entre contas suas
+			//    - já existe nesta conta (mesmo valor, sentido e data próxima)? pula;
+			//    - a outra conta já registrou a perna contrária (extrato do outro banco)? só completa;
+			//    - senão cria a transferência (conta do outro lado é opcional).
 			const transferencias = itemsToSave.filter(i => i.tipo_transacao === "Transferencia");
+			const somarDias = (iso: string, d: number) => {
+				const x = new Date(`${iso}T12:00:00`);
+				x.setDate(x.getDate() + d);
+				return x.toISOString().slice(0, 10);
+			};
+			const pernasDeTransferencia = async (contaId: string, tipo: "ENTRADA" | "SAIDA", data: string) => {
+				const { data: movs } = await supabase
+					.from("movimentacoes")
+					.select("id, valor, transacao_id, transacoes!movimentacoes_transacao_fkey(tipo)")
+					.eq("usuario_id", user.id)
+					.eq("conta_id", contaId)
+					.eq("tipo", tipo)
+					.gte("data", somarDias(data, -3))
+					.lte("data", somarDias(data, 3));
+				return (movs || []).filter((m: any) => (Array.isArray(m.transacoes) ? m.transacoes[0]?.tipo : m.transacoes?.tipo) === "TRANSFERENCIA");
+			};
+			let jaExistiam = 0;
+			let completadas = 0;
 			for (const item of transferencias) {
+				const contaDoc = item.conta_id || globalConta || null;
+				const outra = item.conta_destino_id && item.conta_destino_id !== contaDoc ? item.conta_destino_id : null;
+				const entrou = (item.sentido || "SAIDA") === "ENTRADA";
+				const valorNaConta = item.valor_original ?? item.valor;
+
+				if (contaDoc) {
+					const nestaConta = await pernasDeTransferencia(contaDoc, entrou ? "ENTRADA" : "SAIDA", item.data);
+					if (nestaConta.some((m: any) => Math.abs(Number(m.valor) - valorNaConta) < 0.01)) {
+						jaExistiam++;
+						continue;
+					}
+				}
+				// Conversão de moeda dentro da mesma conta (Wise: R$ 10 → 2.50 CAD).
+				// O dinheiro continua seu e na mesma conta: sai de um saldo e entra no outro.
+				if (contaDoc && item.moeda_destino && item.moeda_destino !== item.moeda_mov) {
+					const moedaLinha = item.moeda_mov || "BRL";
+					let valorDestino = Number(item.valor_destino) || 0;
+					if (!valorDestino) {
+						if (ehReal(item.moeda_destino)) valorDestino = item.valor;
+						else {
+							const cot = await moedaService.cotacao(item.moeda_destino, item.data);
+							if (!cot) throw new Error(`Não foi possível obter a cotação de ${item.moeda_destino} em ${item.data}.`);
+							valorDestino = Math.round((item.valor / cot) * 100) / 100;
+						}
+					}
+					const linha = { moeda: moedaLinha, valor: valorNaConta };
+					const outraMoeda = { moeda: item.moeda_destino, valor: valorDestino };
+					const [de, para] = entrou ? [outraMoeda, linha] : [linha, outraMoeda];
+					const { data: tx, error: errTx } = await supabase
+						.from("transacoes")
+						.insert([{
+							usuario_id: user.id,
+							tipo: "TRANSFERENCIA",
+							descricao: item.descricao || `Conversão ${de.moeda} → ${para.moeda}`,
+							valor: item.valor,
+							data: item.data,
+							conta_id: contaDoc,
+							status: "confirmada",
+							observacao: `Conversão de moeda: ${formatarMoeda(de.valor, de.moeda)} → ${formatarMoeda(para.valor, para.moeda)}`,
+							documento_importado_id: documentoImportadoId || null,
+							...extrasMoeda(item),
+						}])
+						.select()
+						.single();
+					if (errTx) throw errTx;
+					const { error: errMov } = await inserirMovimentacoes([
+						{ usuario_id: user.id, transacao_id: tx.id, conta_id: contaDoc, tipo: "SAIDA", valor: item.valor, valor_na_conta: de.valor, moeda: de.moeda, data: item.data },
+						{ usuario_id: user.id, transacao_id: tx.id, conta_id: contaDoc, tipo: "ENTRADA", valor: item.valor, valor_na_conta: para.valor, moeda: para.moeda, data: item.data },
+					]);
+					if (errMov) throw errMov;
+					importados++;
+					continue;
+				}
+
+				if (contaDoc && outra) {
+					const doOutroLado = await pernasDeTransferencia(outra, entrou ? "SAIDA" : "ENTRADA", item.data);
+					for (const m of doOutroLado) {
+						// a transação do outro lado ainda não tem a perna desta conta?
+						const { data: pernas } = await supabase.from("movimentacoes").select("conta_id").eq("transacao_id", m.transacao_id);
+						if ((pernas || []).some((x: any) => x.conta_id === contaDoc)) continue;
+						await inserirMovimentacoes([{
+							usuario_id: user.id,
+							transacao_id: m.transacao_id,
+							conta_id: contaDoc,
+							tipo: entrou ? "ENTRADA" : "SAIDA",
+							valor: item.valor,
+							valor_na_conta: item.valor_original,
+							data: item.data,
+						}]);
+						completadas++;
+						importados++;
+						break;
+					}
+					if (completadas && doOutroLado.length) continue;
+				}
+
 				await financeService.addTransacao(user.id, {
 					tipo: "TRANSFERENCIA",
 					descricao: item.descricao || "Transferência entre contas próprias",
 					valor: item.valor,
 					data: item.data,
-					conta_id: item.conta_id || globalConta || null,
-					conta_destino_id: item.conta_destino_id || null,
+					conta_id: entrou ? outra : contaDoc,
+					conta_destino_id: entrou ? contaDoc : outra,
 					observacao: item.categoria || "Transferência interna",
-					documento_importado_id: documentoImportadoId || null
+					documento_importado_id: documentoImportadoId || null,
+					...extrasMoeda(item),
+					...(item.valor_original
+						? entrou
+							? { valor_destino_na_conta: item.valor_original }
+							: { valor_origem_na_conta: item.valor_original }
+						: {}),
 				});
 				importados++;
 			}
+			if (jaExistiam) toast(`${jaExistiam} transferência(s) já estavam lançadas pelo extrato do outro banco — não dupliquei.`);
 
 			// Atualiza documento_importado se existir
 			if (documentoImportadoId) {
