@@ -37,7 +37,55 @@ export interface DespesaCompartilhadaComigo {
   resposta?: "aceita" | "recusada" | null;
 }
 
+const CHAVE_CONVITES_ENVIADOS = "finance_convites_enviados";
+
+const convitesLocais = (): Record<string, string> => {
+  try {
+    return JSON.parse(localStorage.getItem(CHAVE_CONVITES_ENVIADOS) || "{}");
+  } catch {
+    return {};
+  }
+};
+
+/** Situação do convite de um contato. */
+export type SituacaoConvite = "ativo" | "pendente" | "nao_convidado";
+
 export const conviteService = {
+  /** Guarda que o convite foi enviado (coluna convite_enviado_em — SQL seção 9; sem ela, fica no navegador). */
+  async marcarEnviado(contatoId: string): Promise<string> {
+    const agora = new Date().toISOString();
+    try {
+      const locais = convitesLocais();
+      locais[contatoId] = agora;
+      localStorage.setItem(CHAVE_CONVITES_ENVIADOS, JSON.stringify(locais));
+    } catch {
+      /* sem armazenamento local */
+    }
+    await supabase.from("contatos").update({ convite_enviado_em: agora }).eq("id", contatoId);
+    return agora;
+  },
+
+  /** Quando o convite foi enviado (banco ou navegador), ou null. */
+  enviadoEm(contato: { id: string; convite_enviado_em?: string | null } | null | undefined): string | null {
+    if (!contato) return null;
+    return contato.convite_enviado_em || convitesLocais()[contato.id] || null;
+  },
+
+  situacao(contato: any, temConta: boolean): SituacaoConvite {
+    if (temConta) return "ativo";
+    return this.enviadoEm(contato) ? "pendente" : "nao_convidado";
+  },
+
+  /** "convite enviado há 3 dias · aguardando aceitar" */
+  textoSituacao(contato: any, temConta: boolean): string {
+    const s = this.situacao(contato, temConta);
+    if (s === "ativo") return "conta ativa no app";
+    if (s === "nao_convidado") return "ainda não convidado";
+    const dias = Math.floor((Date.now() - new Date(this.enviadoEm(contato)!).getTime()) / 86_400_000);
+    const quando = dias <= 0 ? "hoje" : dias === 1 ? "ontem" : `há ${dias} dias`;
+    return `convite enviado ${quando} · aguardando aceitar`;
+  },
+
   /** Despesas que outras pessoas dividiram com você (somente leitura — migration 009). */
   async compartilhadasComigo(): Promise<DespesaCompartilhadaComigo[]> {
     const { data, error } = await supabase.rpc("despesas_compartilhadas_comigo");

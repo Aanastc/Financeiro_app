@@ -60,11 +60,13 @@ export default function HistoricoDivisao({ transacoes, contatos, onEditar, onAbr
 			const pago = t.terceiro_pago ? valor : Math.min(valor, Number(meta.valor_pago) || 0);
 			const aberto = t.terceiro_pago || recusado ? 0 : Math.round((valor - pago) * 100) / 100;
 			const chave = `${t.data}|${receber ? "r" : "p"}|${contatoId}|${meta.grupo_id || ""}`;
-			const l = mapa.get(chave) || { chave, data: t.data, receber, contatoId, nome, grupo: meta.grupo_nome, itens: [], total: 0, aberto: 0 };
-			const desc = String(meta.descricao_original || t.descricao || "")
+			const l: Linha = mapa.get(chave) || { chave, data: t.data, receber, contatoId, nome, grupo: meta.grupo_nome, itens: [], total: 0, aberto: 0 };
+			let desc = String(meta.descricao_original || t.descricao || "")
 				.replace(/\s*\(Parte [^)]*\)\s*$/i, "")
-				.replace(new RegExp(`\s*-\s*${nome.replace(/[.*+?^${}()|[\]\]/g, "\$&")}\s*$`, "i"), "")
 				.trim();
+			// "Acordo 1/6 — Celular - Claudiney" -> "Acordo 1/6 — Celular"
+			const sufixo = ` - ${nome}`.toLowerCase();
+			if (desc.toLowerCase().endsWith(sufixo)) desc = desc.slice(0, -sufixo.length).trim();
 			l.itens.push({
 				id: t.id,
 				descricao: `${desc}${meta.total_parcelas > 1 && !/\(\d+\/\d+\)/.test(desc) ? ` (${meta.parcela}/${meta.total_parcelas})` : ""}`,
@@ -191,11 +193,20 @@ export default function HistoricoDivisao({ transacoes, contatos, onEditar, onAbr
 						{MESES[Number(m) - 1]} {a !== String(new Date().getFullYear()) && a}
 						{ym === mesAtual && <span className="ml-2 text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400">este mês</span>}
 					</h4>
-					<p className="text-xs font-bold tabular-nums text-slate-500 dark:text-slate-400">
-						{entra > 0 && <span className="text-emerald-600 dark:text-emerald-400">entra {moeda(entra)}</span>}
-						{entra > 0 && sai > 0 && " · "}
-						{sai > 0 && <span className="text-rose-600 dark:text-rose-400">sai {moeda(sai)}</span>}
-					</p>
+					{/* Dois sentidos: "entra · sai". Um sentido só: o total. Uma linha só: nada (já está na linha). */}
+					{ls.length > 1 && (
+						<p className="text-xs font-bold tabular-nums text-slate-500 dark:text-slate-400">
+							{entra > 0 && sai > 0 ? (
+								<>
+									<span className="text-emerald-600 dark:text-emerald-400">entra {moeda(entra)}</span>
+									{" · "}
+									<span className="text-rose-600 dark:text-rose-400">sai {moeda(sai)}</span>
+								</>
+							) : (
+								<>total {moeda(entra + sai)}</>
+							)}
+						</p>
+					)}
 				</header>
 				<ul>{ls.map(linhaUI)}</ul>
 			</section>

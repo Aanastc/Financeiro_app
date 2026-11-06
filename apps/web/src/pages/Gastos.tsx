@@ -1,3 +1,6 @@
+import { buscarTodasPaginas } from "../../../../packages/services/paginacao";
+import { contaNoTotal, ehParteDeOutraPessoa, textoObservacao } from "../lib/lancamentos";
+import CategoryBreakdown from "../components/CategoryBreakdown";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../../../../packages/services/supabase";
 import { financeService } from "../../../../packages/services/finance.service";
@@ -52,16 +55,21 @@ export default function GastosWeb() {
 		setLoading(true);
 		const { data: { user } } = await supabase.auth.getUser();
 		if (user) {
-			const { data: list } = await supabase
-				.from("transacoes")
-				.select("*, categorias(nome, cor_hex), contas_bancarias(nome), cartoes(nome, cor_hex)")
-				.eq("usuario_id", user.id)
-				.in("tipo", ["DESPESA", "ESTORNO"])
-				.gte("data", `${year}-01-01`)
-				.lte("data", `${year}-12-31`)
-				.order("data", { ascending: false });
-			
-			setData(list || []);
+			// Todas as páginas do ano (o Supabase devolve no máximo 1000 por consulta)
+			const list = await buscarTodasPaginas<any>((de, ate) =>
+				supabase
+					.from("transacoes")
+					.select("*, categorias(nome, cor_hex), contas_bancarias(nome), cartoes(nome, cor_hex)")
+					.eq("usuario_id", user.id)
+					.in("tipo", ["DESPESA", "ESTORNO"])
+					.gte("data", `${year}-01-01`)
+					.lte("data", `${year}-12-31`)
+					.order("data", { ascending: false })
+					.order("id")
+					.range(de, ate),
+			).catch(() => [] as any[]);
+			// Parte de outra pessoa já no seu extrato não é lançamento seu (fica na Divisão de contas)
+			setData(list.filter((t: any) => !ehParteDeOutraPessoa(t)));
 		}
 		setLoading(false);
 	}, [year]);
@@ -157,7 +165,7 @@ export default function GastosWeb() {
 	// Totais calculados com base nos filtros atuais
 	const totalPago = useMemo(() => {
 		return filtrados
-			.filter(d => d.status === 'confirmada' || !d.status)
+			.filter(d => (d.status === 'confirmada' || !d.status) && contaNoTotal(d))
 			.reduce((acc, curr) => {
 				const val = Number(curr.valor || 0);
 				return curr.tipo === "ESTORNO" ? acc - val : acc + val;
@@ -166,11 +174,22 @@ export default function GastosWeb() {
 
 	const totalPendente = useMemo(() => {
 		return filtrados
-			.filter(d => d.status === 'pendente' || d.status === 'atrasada')
+			.filter(d => (d.status === 'pendente' || d.status === 'atrasada') && contaNoTotal(d))
 			.reduce((acc, curr) => {
 				const val = Number(curr.valor || 0);
 				return curr.tipo === "ESTORNO" ? acc - val : acc + val;
 			}, 0);
+	}, [filtrados]);
+
+	// Soma por categoria do que está filtrado na tela
+	const porCategoria = useMemo(() => {
+		const mapa = new Map<string, number>();
+		for (const item of filtrados.filter(contaNoTotal)) {
+			const nome = item.categorias?.nome || (item.tipo === "ESTORNO" ? "Estorno / Crédito" : item.categoria || "Outros");
+			const valor = Number(item.valor || 0) * (item.tipo === "ESTORNO" ? -1 : 1);
+			mapa.set(nome, (mapa.get(nome) || 0) + valor);
+		}
+		return [...mapa.entries()].filter(([, v]) => v > 0.009).map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }));
 	}, [filtrados]);
 
 	// Gráfico mensal baseado nos dados do ano carregado
@@ -178,7 +197,7 @@ export default function GastosWeb() {
 		return MESES.map((nome, idx) => {
 			const mesStr = String(idx + 1).padStart(2, '0');
 			const itensDoMes = data.filter(d => {
-				if (!d.data) return false;
+				if (!d.data || !contaNoTotal(d)) return false;
 				const parts = String(d.data).split('T')[0].split('-');
 				return parts[1] === mesStr;
 			});
@@ -489,9 +508,14 @@ export default function GastosWeb() {
 																</span>
 															)}
 														</div>
-														{item.observacao && (
+														{textoObservacao(item.observacao) && (
 															<span className="text-[10px] text-slate-400 truncate max-w-xs">
-																{item.observacao}
+																{textoObservacao(item.observacao)}
+																{!contaNoTotal(item) && (
+																	<span className="ml-1.5 px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 text-[9px] font-black uppercase">
+																		não soma
+																	</span>
+																)}
 															</span>
 														)}
 													</div>
@@ -519,7 +543,7 @@ export default function GastosWeb() {
 														) : (
 															<>
 																<Building size={14} className="text-indigo-500 shrink-0" />
-																<span>{item.contas_bancarias?.nome || 'Conta Corrente'}</span>
+																<span className={item.contas_bancarias?.nome ? "" : "text-slate-400 dark:text-slate-500"}>{item.contas_bancarias?.nome || 'Sem conta'}</span>
 															</>
 														)}
 													</div>
@@ -680,6 +704,16 @@ export default function GastosWeb() {
 					</ResponsiveContainer>
 				</div>
 			</div>
+
+			{/* RELATÓRIO POR CATEGORIA (segue os filtros de mês, categoria e busca) */}
+			<CategoryBreakdown
+				title={`Gastos por categoria · ${selectedMonth ? `${MESES_COMPLETOS[Number(selectedMonth) - 1]} de ${year}` : year}`}
+				icon={<Tag className="text-rose-500" size={18} />}
+				data={porCategoria}
+				barClassName="bg-rose-500"
+				maxVisiveis={8}
+				emptyText="Nenhum lançamento com esses filtros."
+			/>
 		</div>
 	);
 }

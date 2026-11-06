@@ -3,7 +3,8 @@ import { recebimentosDivisaoService } from "./recebimentos-divisao.service";
 import { notificacoesService } from "./notificacoes.service";
 import { detectarInstituicao, mesmaInstituicao, nomeArquivoIndicaExtrato } from "../utils/instituicoes";
 import { supabase } from "./supabase";
-import { financeService } from "./finance.service";
+import { financeService, inserirMovimentacoes, moedasDasContas } from "./finance.service";
+import { moedaService, ehReal } from "./moeda.service";
 import ExcelJS from "exceljs";
 import type {
   TipoDocumento,
@@ -312,6 +313,9 @@ REGRAS DE CLASSIFICAÇÃO E EXTRAÇÃO:
      }
 
 4. SE FOR "extrato_bancario":
+   - MOEDA: informe em "dados.moeda" o código ISO da moeda do extrato ("BRL", "CAD", "USD", "EUR"...).
+     Extratos do Wise e de bancos estrangeiros trazem a moeda numa coluna (ex.: "Currency") ou no cabeçalho.
+     Os valores de "transacoes" devem ficar NA MOEDA DO EXTRATO (não converta para reais).
    - REGRA DE OURO DE CLASSIFICAÇÃO:
      Documentos intitulados "EXTRATO CONSOLIDADO", "EXTRATO DE CONTA CORRENTE", extratos bancários com Agência e Conta (como extratos do Santander, Itaú, Nubank, Inter, Bradesco, BB, Caixa) contendo movimentações de conta (saldo, depósitos, Pix, salário, transferências) SÃO OBRIGATORIAMENTE "extrato_bancario" e NUNCA "fatura_cartao"!
      Mesmo que apareçam linhas como "PAGAMENTO CARTAO CREDITO BCE" ou "CARTAO VISA", isso é apenas o débito na conta para pagar a fatura do cartão ("tipo": "PAGAMENTO_FATURA"), e JAMAIS transforma o documento em uma fatura de cartão!
@@ -1512,6 +1516,27 @@ ${fileContent.textContent}`];
           .single();
         if (!contaCheck) throw new Error("Conta bancária não pertence a este usuário.");
 
+        // Conta em outra moeda (SQL seção 10): o extrato vem na moeda da conta.
+        // Cada linha vira reais pela cotação do dia dela (é o que entra em gastos/entradas);
+        // a movimentação volta para a moeda da conta, então o saldo bate com o banco.
+        const moedaConta = (await moedasDasContas([contaId]))[contaId] || "BRL";
+        const moedaExtrato = String((extrato as any).moeda || "").toUpperCase().trim();
+        if (moedaExtrato && /^[A-Z]{3}$/.test(moedaExtrato) && moedaExtrato !== moedaConta) {
+          throw new Error(
+            `Este extrato está em ${moedaExtrato}, mas a conta escolhida é em ${moedaConta}. Escolha (ou crie) uma conta em ${moedaExtrato}.`,
+          );
+        }
+        if (!ehReal(moedaConta)) {
+          for (const t of extrato.transacoes || []) {
+            const original = Number(t.valor);
+            const conv = await moedaService.paraReais(original, moedaConta, t.data);
+            if (!conv) throw new Error(`Não foi possível obter a cotação de ${moedaConta} em ${t.data}. Tente de novo em instantes.`);
+            (t as any).valor_original = original;
+            (t as any).cotacao = conv.cotacao;
+            t.valor = conv.reais;
+          }
+        }
+
         // Meta de reserva usada como destino padrão de aplicações/resgates (RDB, caixinha)
         const { data: metasUsuario } = await supabase
           .from("metas")
@@ -1620,7 +1645,7 @@ ${fileContent.textContent}`];
 
             if (!error && tx) {
               if (contaId) {
-                await supabase.from("movimentacoes").insert([{
+                await inserirMovimentacoes([{
                   usuario_id,
                   transacao_id: tx.id,
                   conta_id: contaId,
@@ -1676,7 +1701,7 @@ ${fileContent.textContent}`];
               }])
               .select().single();
             if (!error && tx) {
-              await supabase.from("movimentacoes").insert([{
+              await inserirMovimentacoes([{
                 usuario_id,
                 transacao_id: tx.id,
                 conta_id: contaId,

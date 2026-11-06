@@ -1,3 +1,4 @@
+import { MOEDAS } from "../../../../packages/services/moeda.service";
 import InputMoeda from "./InputMoeda";
 import React, { useState } from "react";
 import { financeService } from "../../../../packages/services/finance.service";
@@ -20,6 +21,8 @@ export default function OnboardingContasModal({ isOpen, userId, onComplete, init
   // Form State
   const [nome, setNome] = useState("");
   const [tipo, setTipo] = useState("Conta Corrente");
+  // Moeda da conta (ex.: Wise em dólar canadense). Só é escolhida na criação.
+  const [moeda, setMoeda] = useState("BRL");
   // Cor da marca detectada pelo nome da conta (ex.: "Nubank" → roxo)
   const corHex = detectarInstituicao(nome)?.cor || "#111827";
   const [temDebito, setTemDebito] = useState(true);
@@ -54,6 +57,8 @@ export default function OnboardingContasModal({ isOpen, userId, onComplete, init
         saldo_inicial: 0,
         cor_hex: corHex,
         tem_debito: temDebito,
+        // só envia quando não é real: sem a seção 10 do SQL, contas em BRL continuam funcionando
+        ...(moeda !== "BRL" ? { moeda } : {}),
       });
 
       const contaId = contaData[0].id;
@@ -94,6 +99,7 @@ export default function OnboardingContasModal({ isOpen, userId, onComplete, init
       // Resetar formulário
       setNome("");
       setTipo("Conta Corrente");
+      setMoeda("BRL");
       setTemDebito(true);
       setTemCredito(false);
       setLimite("");
@@ -215,6 +221,25 @@ export default function OnboardingContasModal({ isOpen, userId, onComplete, init
                         <option value="Carteira">Carteira (Dinheiro Físico)</option>
                         <option value="Outros">Outros</option>
                       </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 uppercase">Moeda</label>
+                      <select
+                        value={moeda}
+                        onChange={(e) => setMoeda(e.target.value)}
+                        className="w-full mt-1 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold"
+                      >
+                        {MOEDAS.map((m) => (
+                          <option key={m.codigo} value={m.codigo}>
+                            {m.codigo} · {m.nome}
+                          </option>
+                        ))}
+                      </select>
+                      {moeda !== "BRL" && (
+                        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          O saldo fica em {moeda}; nos totais o app converte para reais pela cotação do dia.
+                        </p>
+                      )}
                     </div>
                   </div>
 

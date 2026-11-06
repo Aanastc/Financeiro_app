@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { buscarTodasPaginas } from "./paginacao";
-import { financeService } from "./finance.service";
+import { financeService, inserirMovimentacoes } from "./finance.service";
 
 /**
  * Lançamentos que deveriam estar numa conta (ou cartão) e não estão.
@@ -73,7 +73,7 @@ export const lancamentosSemContaService = {
     if (existentes && existentes.length > 0) {
       await supabase.from("movimentacoes").update({ conta_id: destino.contaId }).eq("id", existentes[0].id);
     } else {
-      const { error: errMov } = await supabase.from("movimentacoes").insert([
+      const { error: errMov } = await inserirMovimentacoes([
         {
           usuario_id: usuarioId,
           transacao_id: t.id,

@@ -1,3 +1,4 @@
+import { formatarMoeda } from "../../../../packages/services/moeda.service";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { X, ArrowDownCircle, ArrowUpCircle, Building2, Calendar, FileText, Landmark } from "lucide-react";
@@ -76,7 +77,7 @@ export default function ContaExtratoModal({ isOpen, onClose, conta }: { isOpen: 
                         <div>
                             <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Saldo Atual</p>
                             <h3 className={`text-2xl font-black mt-1 ${saldoAtual < 0 ? 'text-rose-500' : 'text-slate-800 dark:text-slate-100'}`}>
-                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(saldoAtual)}
+                                {formatarMoeda(saldoAtual, conta.moeda)}
                             </h3>
                         </div>
                     </div>
@@ -120,7 +121,7 @@ export default function ContaExtratoModal({ isOpen, onClose, conta }: { isOpen: 
                                         </div>
                                         <div className="text-right">
                                             <p className={`font-black ${colorClass}`}>
-                                                {isEntrada ? "+" : "-"} {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor)}
+                                                {isEntrada ? "+" : "-"} {formatarMoeda(mov.valor, conta.moeda)}
                                             </p>
                                         </div>
                                     </div>

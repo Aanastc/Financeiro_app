@@ -1,3 +1,4 @@
+import { inserirMovimentacoes } from "./finance.service";
 import { supabase } from "./supabase";
 import { buscarTodasPaginas } from "./paginacao";
 
@@ -5,7 +6,7 @@ import { buscarTodasPaginas } from "./paginacao";
  * Recebimentos de despesas divididas ("a Julia me pagou R$ 89,79 por Pix").
  *
  * Um recebimento é UMA transação RECEITA na conta onde o dinheiro caiu
- * (considerar_soma = false: é reembolso, não renda) + a movimentação de entrada,
+ * (conta como entrada) + a movimentação de entrada,
  * e é distribuído nos itens em aberto da pessoa, dos mais antigos para os mais
  * novos. Cada item guarda no JSON de observação qual recebimento o pagou.
  *
@@ -164,7 +165,7 @@ export const recebimentosDivisaoService = {
           data: p.data,
           conta_id: p.contaId,
           contato_id: p.contatoId,
-          considerar_soma: false, // reembolso, não é renda
+          considerar_soma: true, // dinheiro que entrou na conta: conta como entrada
           status: "confirmada",
           documento_importado_id: p.documentoImportadoId || null,
           observacao: JSON.stringify({ [MARCA]: true, origem: p.origem, contato_id: p.contatoId, contato_nome: p.contatoNome }),
@@ -174,7 +175,7 @@ export const recebimentosDivisaoService = {
       .single();
     if (error) throw error;
 
-    const { error: errMov } = await supabase.from("movimentacoes").insert([
+    const { error: errMov } = await inserirMovimentacoes([
       { usuario_id: usuarioId, transacao_id: tx.id, conta_id: p.contaId, tipo: "ENTRADA", valor, data: p.data },
     ]);
     if (errMov) throw errMov;

@@ -260,7 +260,7 @@ export default function ConsultorInteligente() {
 			const totalDespesas = transacoes.filter(t => t.tipo === "DESPESA").reduce((acc, cur) => acc + Number(cur.valor || 0), 0);
 			const totalEstornos = transacoes.filter(t => t.tipo === "ESTORNO").reduce((acc, cur) => acc + Number(cur.valor || 0), 0);
 			const totalGastos = Math.max(0, totalDespesas - totalEstornos);
-			const saldoContas = (contas || []).reduce((acc: number, c: any) => acc + Number(c.saldo_atual || 0), 0);
+			const saldoContas = (contas || []).reduce((acc: number, c: any) => acc + Number(c.saldo_reais ?? (!c.moeda || c.moeda === "BRL" ? c.saldo_atual : 0) ?? 0), 0);
 			const totalInvestimentos = (investimentos || []).reduce((acc: number, i: any) => acc + Number(i.valor_investido || 0), 0);
 
 			const dividasAtivas = (dividas || []).filter((d: any) => d.status !== "quitada");

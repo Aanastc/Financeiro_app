@@ -10,6 +10,9 @@ const dataBR = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("
 interface Props {
 	pessoa: PessoaSaldo | null;
 	temConta: boolean;
+	/** "convite enviado há 2 dias · aguardando aceitar" */
+	situacaoConvite?: string;
+	convitePendente?: boolean;
 	onClose: () => void;
 	onReceber: (itemIds?: string[], valor?: number) => void;
 	onPagar: (item: ItemPessoa) => void;
@@ -30,6 +33,8 @@ interface Props {
 export default function DetalhePessoa({
 	pessoa,
 	temConta,
+	situacaoConvite,
+	convitePendente,
 	onClose,
 	onReceber,
 	onPagar,
@@ -129,7 +134,10 @@ export default function DetalhePessoa({
 							<div className="min-w-0">
 								<h2 id="titulo-pessoa" className="text-xl font-black text-slate-800 dark:text-slate-100 truncate">{nome}</h2>
 								<p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-									{pessoa.contato.telefone || pessoa.contato.email || "sem celular ou e-mail"} · {temConta ? "usa o app" : "ainda não está no app"}
+									{pessoa.contato.telefone || pessoa.contato.email || "sem celular ou e-mail"} ·{" "}
+									<span className={temConta ? "text-emerald-600 dark:text-emerald-400" : convitePendente ? "text-amber-600 dark:text-amber-400" : ""}>
+										{situacaoConvite || (temConta ? "usa o app" : "ainda não está no app")}
+									</span>
 								</p>
 							</div>
 						</div>
@@ -168,7 +176,7 @@ export default function DetalhePessoa({
 						</button>
 						{!temConta && (
 							<button onClick={onConvidar} className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer">
-								<Send size={14} /> Convidar para o app
+								<Send size={14} /> {convitePendente ? "Reenviar convite" : "Convidar para o app"}
 							</button>
 						)}
 					</div>

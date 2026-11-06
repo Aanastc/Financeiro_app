@@ -28,9 +28,18 @@ export default function ConviteAmigoModal({ isOpen, onClose, contato, userName, 
 
 	const linkConvite = conviteService.linkConvite(contato);
 
+	// Guarda que o convite saiu (mostra "aguardando aceitar" até a pessoa entrar)
+	const registrarEnvio = () => {
+		conviteService
+			.marcarEnviado(contato.id)
+			.then(() => onContatoAtualizado?.())
+			.catch(() => {});
+	};
+
 	const handleCopiarLink = async () => {
 		try {
 			await navigator.clipboard.writeText(linkConvite);
+			registrarEnvio();
 			setCopiado(true);
 			toast.success("Link de convite copiado para a área de transferência!");
 			setTimeout(() => setCopiado(false), 2500);
@@ -40,8 +49,10 @@ export default function ConviteAmigoModal({ isOpen, onClose, contato, userName, 
 	};
 
 	const telefone = telefoneSalvo || contato.telefone;
-	const abrirWhatsApp = (tel?: string | null) =>
+	const abrirWhatsApp = (tel?: string | null) => {
+		registrarEnvio();
 		window.open(conviteService.urlWhatsApp({ ...contato, telefone: tel || undefined }, userName), "_blank", "noopener");
+	};
 
 	// Sem celular no contato: pede, salva e abre a conversa certa
 	const handleEnviarWhatsApp = () => {
@@ -50,6 +61,7 @@ export default function ConviteAmigoModal({ isOpen, onClose, contato, userName, 
 	};
 
 	const handleEnviarEmail = () => {
+		registrarEnvio();
 		window.location.href = conviteService.urlEmail(contato, userName);
 	};
 

@@ -16,7 +16,6 @@ import {
 	CheckCircle2,
 	X,
 	Plus,
-	Split,
 	Sparkles,
 	Search,
 	UserCheck,
@@ -43,7 +42,7 @@ import { montarPessoas } from "../lib/divisaoPessoas";
 import EditarLancamentoModal from "../components/EditarLancamentoModal";
 import PedirTelefoneModal from "../components/PedirTelefoneModal";
 import CriarGrupoModal from "../components/CriarGrupoModal";
-import { telefoneWhatsApp } from "../../../../packages/services/convite.service";
+import { conviteService, telefoneWhatsApp } from "../../../../packages/services/convite.service";
 import { exportarExcelGrupo, exportarExcelPessoa } from "../lib/relatorioDivisao";
 
 export default function Devedores() {
@@ -1086,13 +1085,13 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 													{membro && !ehVoce && (
 														<div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/70 dark:border-slate-700/60">
 															<span className={`text-[11px] font-bold ${ativo ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"}`}>
-																{ativo ? "Conta ativa no app" : "Ainda não está no app"}
+																{conviteService.textoSituacao(contato, ativo)}
 															</span>
 															{!ativo && (
 																<button
 																	onClick={() => handleConvidarMembro(membro)}
 																	className="px-2.5 py-1 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 dark:text-indigo-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors">
-																	<Send size={12} /> Convidar
+																	<Send size={12} /> {conviteService.situacao(contato, ativo) === "pendente" ? "Reenviar" : "Convidar"}
 																</button>
 															)}
 														</div>
@@ -1405,16 +1404,22 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 											{contato.email || contato.telefone || "Sem contato"}
 										</p>
 										<div className="mt-1">
-											{temConta ? (
-												<span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600">
-													<span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />{" "}
-													Conta Ativa
-												</span>
-											) : (
-												<span className="text-[10px] text-slate-400">
-													Não cadastrado
-												</span>
-											)}
+											{(() => {
+												const situacao = conviteService.situacao(contato, Boolean(temConta));
+												const cor =
+													situacao === "ativo"
+														? "text-emerald-600 dark:text-emerald-400"
+														: situacao === "pendente"
+															? "text-amber-600 dark:text-amber-400"
+															: "text-slate-500 dark:text-slate-400";
+												const ponto = situacao === "ativo" ? "bg-emerald-500" : situacao === "pendente" ? "bg-amber-500" : "bg-slate-400";
+												return (
+													<span className={`inline-flex items-center gap-1.5 text-[10px] font-bold ${cor}`}>
+														<span className={`w-1.5 h-1.5 rounded-full ${ponto}`} />
+														{conviteService.textoSituacao(contato, Boolean(temConta))}
+													</span>
+												);
+											})()}
 										</div>
 									</div>
 
@@ -1502,6 +1507,8 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 			<DetalhePessoa
 				pessoa={pessoaAberta}
 				temConta={contatoTemConta(pessoaAberta?.contato)}
+				situacaoConvite={pessoaAberta ? conviteService.textoSituacao(pessoaAberta.contato, contatoTemConta(pessoaAberta.contato)) : ""}
+				convitePendente={Boolean(pessoaAberta && conviteService.situacao(pessoaAberta.contato, contatoTemConta(pessoaAberta.contato)) === "pendente")}
 				onClose={() => setPessoaAbertaId(null)}
 				onReceber={(itemIds, valor) =>
 					pessoaAberta && setReceberDe({ contato: { id: pessoaAberta.contato.id, nome: pessoaAberta.contato.nome }, itemIds, valorSugerido: valor })

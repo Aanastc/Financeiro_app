@@ -1,3 +1,4 @@
+import { formatarMoeda, ehReal } from "../../../../packages/services/moeda.service";
 import { useState, useEffect } from "react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { supabase } from "../../../../packages/services/supabase";
@@ -61,7 +62,8 @@ export default function Contas() {
         (c.instituicao && c.instituicao.toLowerCase().includes(searchQuery.toLowerCase()))
     );
 
-    const saldoTotal = contas.reduce((acc, c) => acc + (c.saldo_atual || 0), 0);
+    // Total em reais (contas em outra moeda convertidas pela cotação de hoje)
+    const saldoTotal = contas.reduce((acc, c) => acc + Number(c.saldo_reais ?? (ehReal(c.moeda) ? c.saldo_atual : 0) ?? 0), 0);
     const totalContasPositivas = contas.filter(c => (c.saldo_atual || 0) >= 0).length;
     const totalContasNegativas = contas.filter(c => (c.saldo_atual || 0) < 0).length;
 
@@ -203,8 +205,15 @@ export default function Contas() {
                                         <h4 className={`text-2xl font-black mt-1 ${
                                             (conta.saldo_atual || 0) < 0 ? 'text-rose-500' : 'text-slate-900 dark:text-white'
                                         }`}>
-                                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(conta.saldo_atual || 0)}
+                                            {formatarMoeda(conta.saldo_atual || 0, conta.moeda)}
                                         </h4>
+                                        {!ehReal(conta.moeda) && (
+                                            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
+                                                {conta.saldo_reais !== null && conta.saldo_reais !== undefined
+                                                    ? `≈ ${formatarMoeda(conta.saldo_reais, "BRL")} · 1 ${conta.moeda} = ${formatarMoeda(conta.cotacao_hoje || 0, "BRL")}`
+                                                    : "cotação indisponível agora"}
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                             </div>

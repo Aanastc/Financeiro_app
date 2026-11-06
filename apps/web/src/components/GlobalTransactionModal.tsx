@@ -6,6 +6,8 @@ import { X, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, Building2, CreditCar
 import { supabase } from "../../../../packages/services/supabase";
 import toast from "react-hot-toast";
 import { financeService } from "../../../../packages/services/finance.service";
+import { moedaService, ehReal, formatarMoeda, simboloMoeda } from "../../../../packages/services/moeda.service";
+import { lerMoeda } from "./InputMoeda";
 
 export default function GlobalTransactionModal({ isOpen, onClose, userId }: { isOpen: boolean, onClose: () => void, userId: string }) {
     const [tipo, setTipo] = useState<"GASTO" | "ENTRADA" | "TRANSFERENCIA">("GASTO");
@@ -24,6 +26,10 @@ export default function GlobalTransactionModal({ isOpen, onClose, userId }: { is
 
     // Transferência
     const [contaDestinoId, setContaDestinoId] = useState("");
+    // Contas em outra moeda: cotação (reais por 1 unidade) e, na transferência entre moedas, quanto chegou
+    const [cotacao, setCotacao] = useState("");
+    const [cotacaoCarregando, setCotacaoCarregando] = useState(false);
+    const [valorRecebido, setValorRecebido] = useState("");
 
     // Dados de suporte
     const [contas, setContas] = useState<any[]>([]);
@@ -44,7 +50,7 @@ export default function GlobalTransactionModal({ isOpen, onClose, userId }: { is
     const loadSupportData = async () => {
         try {
             const [resContas, resCartoes] = await Promise.all([
-                supabase.from("contas_bancarias").select("id, nome, cor_hex, instituicao").eq("usuario_id", userId),
+                supabase.from("contas_bancarias").select("*").eq("usuario_id", userId),
                 supabase.from("cartoes").select("id, nome, cor_hex").eq("usuario_id", userId)
             ]);
 
@@ -58,6 +64,53 @@ export default function GlobalTransactionModal({ isOpen, onClose, userId }: { is
         }
     };
 
+    const moedaDe = (id: string) => String(contas.find((c) => c.id === id)?.moeda || "BRL").toUpperCase();
+    const usaConta = tipo === "TRANSFERENCIA" || tipo === "ENTRADA" || formaPagamento === "CONTA";
+    const moedaOrigem = usaConta ? moedaDe(contaId) : "BRL";
+    const moedaDestino = tipo === "TRANSFERENCIA" ? moedaDe(contaDestinoId) : moedaOrigem;
+    const transferenciaEntreMoedas = tipo === "TRANSFERENCIA" && !!contaDestinoId && moedaOrigem !== moedaDestino;
+
+    // Cotação do dia da moeda da conta (quantos reais vale 1 unidade)
+    useEffect(() => {
+        if (!isOpen || ehReal(moedaOrigem)) {
+            setCotacao("");
+            return;
+        }
+        let ativo = true;
+        setCotacaoCarregando(true);
+        moedaService.cotacao(moedaOrigem, data).then((c) => {
+            if (!ativo) return;
+            setCotacao(c ? c.toFixed(4).replace(".", ",") : "");
+            setCotacaoCarregando(false);
+        });
+        return () => {
+            ativo = false;
+        };
+    }, [isOpen, moedaOrigem, data]);
+
+    // Transferência entre moedas: sugere quanto chega no destino (editável: o banco cobra taxa)
+    useEffect(() => {
+        if (!transferenciaEntreMoedas) {
+            setValorRecebido("");
+            return;
+        }
+        let ativo = true;
+        const origem = lerMoeda(valor);
+        if (!(origem > 0)) return;
+        Promise.all([moedaService.cotacao(moedaOrigem, data), moedaService.cotacao(moedaDestino, data)]).then(([co, cd]) => {
+            if (!ativo || !co || !cd) return;
+            const destino = Math.round(((origem * co) / cd) * 100) / 100;
+            setValorRecebido(destino.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+        });
+        return () => {
+            ativo = false;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [transferenciaEntreMoedas, moedaOrigem, moedaDestino, valor, data]);
+
+    const cotacaoNumero = Number(String(cotacao).replace(",", ".")) || 0;
+    const valorEmReais = ehReal(moedaOrigem) ? lerMoeda(valor) : Math.round(lerMoeda(valor) * cotacaoNumero * 100) / 100;
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
@@ -69,10 +122,28 @@ export default function GlobalTransactionModal({ isOpen, onClose, userId }: { is
                 return;
             }
 
+            // Conta em outra moeda: grava em reais e guarda o valor original + cotação
+            const estrangeira = !ehReal(moedaOrigem);
+            if (estrangeira && !(cotacaoNumero > 0)) {
+                toast.error(`Informe a cotação do ${moedaOrigem} (quantos reais vale 1 ${moedaOrigem}).`);
+                return;
+            }
+            const recebido = lerMoeda(valorRecebido);
+            if (transferenciaEntreMoedas && !(recebido > 0)) {
+                toast.error(`Informe quanto chegou em ${moedaDestino}.`);
+                return;
+            }
+            const extrasMoeda = estrangeira
+                ? { moeda: moedaOrigem, valor_original: numericValue, cotacao: cotacaoNumero, valor_origem_na_conta: numericValue }
+                : {};
+            const extrasDestino = transferenciaEntreMoedas ? { valor_destino_na_conta: recebido } : {};
+
             // Integração com financeService
             await financeService.addTransacao(userId, {
+                ...extrasMoeda,
+                ...extrasDestino,
                 tipo,
-                valor: numericValue,
+                valor: estrangeira ? valorEmReais : numericValue,
                 descricao,
                 data,
                 categoria_id: categoriaId,
@@ -147,19 +218,37 @@ export default function GlobalTransactionModal({ isOpen, onClose, userId }: { is
                     {/* Valor e Descrição */}
                     <div className="space-y-4">
                         <div className="relative">
-                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-black text-slate-400">R$</span>
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-black text-slate-400">{simboloMoeda(moedaOrigem)}</span>
                             <InputMoeda
                                 required
                                 value={valor}
                                 onChange={(v) => setValor(v)}
-                                className={`w-full bg-slate-50 dark:bg-slate-800 border-none outline-none text-4xl font-black rounded-3xl py-6 pl-14 pr-6 focus:ring-4 transition-all ${
+                                className={`w-full bg-slate-50 dark:bg-slate-800 border-none outline-none text-4xl font-black rounded-3xl py-6 ${simboloMoeda(moedaOrigem).length > 2 ? "pl-20" : "pl-14"} pr-6 focus:ring-4 transition-all ${
                                     tipo === "GASTO" ? "text-rose-500 focus:ring-rose-500/20" : 
                                     tipo === "ENTRADA" ? "text-emerald-500 focus:ring-emerald-500/20" : 
                                     "text-indigo-500 focus:ring-indigo-500/20"
                                 }`}
                             />
                         </div>
-                        <input 
+                        {!ehReal(moedaOrigem) && (
+                            <div className="flex flex-wrap items-center gap-2 px-1 text-xs text-slate-500 dark:text-slate-400">
+                                <span>
+                                    ≈ <strong className="text-slate-700 dark:text-slate-200">{formatarMoeda(valorEmReais, "BRL")}</strong> ·
+                                </span>
+                                <label className="flex items-center gap-1.5">
+                                    1 {moedaOrigem} = R$
+                                    <input
+                                        value={cotacao}
+                                        onChange={(e) => setCotacao(e.target.value.replace(/[^\d,.]/g, ""))}
+                                        inputMode="decimal"
+                                        placeholder={cotacaoCarregando ? "buscando…" : "0,0000"}
+                                        className="w-20 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:border-indigo-500"
+                                    />
+                                </label>
+                                <span className="text-[11px]">(cotação do dia; ajuste se o banco usou outra)</span>
+                            </div>
+                        )}
+                        <input
                             type="text"
                             required
                             value={descricao}
@@ -240,7 +329,7 @@ export default function GlobalTransactionModal({ isOpen, onClose, userId }: { is
                                         >
                                             <option value="" disabled>Selecione a conta</option>
                                             {contas.map(c => (
-                                                <option key={c.id} value={c.id}>{c.nome}</option>
+                                                <option key={c.id} value={c.id}>{c.nome}{!ehReal(c.moeda) ? ` (${c.moeda})` : ""}</option>
                                             ))}
                                         </select>
                                     </div>
@@ -305,7 +394,7 @@ export default function GlobalTransactionModal({ isOpen, onClose, userId }: { is
                                 >
                                     <option value="" disabled>Selecione...</option>
                                     {contas.map(c => (
-                                        <option key={c.id} value={c.id}>{c.nome}</option>
+                                        <option key={c.id} value={c.id}>{c.nome}{!ehReal(c.moeda) ? ` (${c.moeda})` : ""}</option>
                                     ))}
                                 </select>
                             </div>
@@ -319,10 +408,26 @@ export default function GlobalTransactionModal({ isOpen, onClose, userId }: { is
                                 >
                                     <option value="" disabled>Selecione...</option>
                                     {contas.filter(c => c.id !== contaId).map(c => (
-                                        <option key={c.id} value={c.id}>{c.nome}</option>
+                                        <option key={c.id} value={c.id}>{c.nome}{!ehReal(c.moeda) ? ` (${c.moeda})` : ""}</option>
                                     ))}
                                 </select>
                             </div>
+                            {transferenciaEntreMoedas && (
+                                <div className="sm:col-span-2 space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest block">
+                                        Quanto chegou em {moedaDestino}?
+                                    </label>
+                                    <div className="relative">
+                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-400">{simboloMoeda(moedaDestino)}</span>
+                                        <InputMoeda
+                                            value={valorRecebido}
+                                            onChange={(v) => setValorRecebido(v)}
+                                            className="w-full bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/50 rounded-xl pl-14 pr-4 py-3 text-slate-800 dark:text-slate-100 font-bold outline-none focus:border-emerald-500"
+                                        />
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Calculado pela cotação do dia. Ajuste para o valor exato que o banco creditou (com taxas).</p>
+                                </div>
+                            )}
                         </div>
                     )}
 

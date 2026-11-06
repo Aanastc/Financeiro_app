@@ -1,3 +1,4 @@
+import { moedaService, ehReal } from "./moeda.service";
 import { supabase } from "./supabase";
 import { getFaturaCycle, getFaturaMesReferencia } from "../utils/cartao.utils";
 import { encontrarPorInstituicao } from "../utils/instituicoes";
@@ -49,6 +50,58 @@ function encontrarInvestimento(invs: any[], metaId?: string | null, produto?: st
     return mesmoProduto && mesmaInst;
   });
 }
+
+
+// ============================================================================
+// MOEDAS (contas em outra moeda — SQL seção 10)
+// transacoes.valor é sempre em REAIS; movimentacoes.valor fica na MOEDA DA CONTA.
+// Sem a seção 10 aplicada, todas as contas são tratadas como BRL (nada muda).
+// ============================================================================
+
+/** Moeda de cada conta (BRL se a coluna ainda não existir). */
+export async function moedasDasContas(ids: string[]): Promise<Record<string, string>> {
+  const unicos = [...new Set(ids.filter(Boolean))];
+  if (unicos.length === 0) return {};
+  const { data, error } = await supabase.from("contas_bancarias").select("id, moeda").in("id", unicos);
+  if (error) return {};
+  return Object.fromEntries((data || []).map((c: any) => [c.id, String(c.moeda || "BRL").toUpperCase()]));
+}
+
+/**
+ * Grava movimentações na moeda da conta. Cada linha traz `valor` em reais e,
+ * opcionalmente, `valor_na_conta` (já na moeda da conta, ex.: digitado em CAD).
+ * Contas em real: grava exatamente como antes.
+ */
+export async function inserirMovimentacoes(linhas: any[]) {
+  const moedas = await moedasDasContas(linhas.map((l) => l.conta_id));
+  const prontas: any[] = [];
+  for (const l of linhas) {
+    const { valor_na_conta, ...resto } = l;
+    const moeda = moedas[l.conta_id] || "BRL";
+    if (ehReal(moeda)) {
+      // Conta em real: valor em reais (ou o valor que efetivamente chegou, numa transferência entre moedas)
+      prontas.push(valor_na_conta !== undefined && valor_na_conta !== null ? { ...resto, valor: valor_na_conta } : resto);
+      continue;
+    }
+    let valor = valor_na_conta;
+    if (valor === undefined || valor === null) {
+      const cot = await moedaService.cotacao(moeda, l.data);
+      if (!cot) return { data: null, error: new Error(`Não foi possível obter a cotação de ${moeda} em ${l.data}.`) };
+      valor = Math.round((Number(l.valor) / cot) * 100) / 100;
+    }
+    prontas.push({ ...resto, valor });
+  }
+  return supabase.from("movimentacoes").insert(prontas);
+}
+
+/** Campos de moeda para gravar na transação (só quando não é real). */
+const camposMoeda = (p: any) =>
+  p && p.moeda && !ehReal(p.moeda) && Number(p.valor_original) > 0
+    ? { moeda: String(p.moeda).toUpperCase(), valor_original: Number(p.valor_original), cotacao: Number(p.cotacao) || null }
+    : {};
+
+/** Saldo de uma conta convertido para reais (cotação de hoje). */
+const saldoEmReais = (c: any) => Number(c?.saldo_reais ?? (ehReal(c?.moeda) ? c?.saldo_atual : 0) ?? 0);
 
 export const financeService = {
   /**
@@ -186,6 +239,9 @@ export const financeService = {
       observacao,
       conta_destino_id
     } = payload;
+    // Conta em outra moeda: valor em reais + valor digitado na moeda da conta
+    const extrasMoeda = camposMoeda(payload);
+    const valorNaConta = Number(payload.valor_original) > 0 && payload.moeda && !ehReal(payload.moeda) ? Number(payload.valor_original) : undefined;
 
     const numericValue = parseFloat(valor);
 
@@ -202,6 +258,7 @@ export const financeService = {
             data,
             conta_id: conta_id || null,
             observacao,
+            ...extrasMoeda,
             status: "confirmada",
             documento_importado_id: payload.documento_importado_id || null
           }]).select().single();
@@ -209,24 +266,26 @@ export const financeService = {
 
         // Movimentação de Saída da Origem
         if (conta_id) {
-          await supabase.from("movimentacoes").insert([{
+          await inserirMovimentacoes([{
             usuario_id,
             transacao_id: tx.id,
             conta_id,
             tipo: "SAIDA",
             valor: numericValue,
+            valor_na_conta: payload.valor_origem_na_conta ?? valorNaConta,
             data
           }]);
         }
 
         // Movimentação de Entrada no Destino
         if (conta_destino_id) {
-          await supabase.from("movimentacoes").insert([{
+          await inserirMovimentacoes([{
             usuario_id,
             transacao_id: tx.id,
             conta_id: conta_destino_id,
             tipo: "ENTRADA",
             valor: numericValue,
+            valor_na_conta: payload.valor_destino_na_conta,
             data
           }]);
         }
@@ -259,16 +318,18 @@ export const financeService = {
             conta_id,
             categoria_id,
             observacao,
-            status: "confirmada"
+            status: "confirmada",
+            ...extrasMoeda
           }]).select().single();
         if (txError) throw txError;
 
-        await supabase.from("movimentacoes").insert([{
+        await inserirMovimentacoes([{
           usuario_id,
           transacao_id: tx.id,
           conta_id,
           tipo: "ENTRADA",
           valor: numericValue,
+          valor_na_conta: valorNaConta,
           data
         }]);
         return tx;
@@ -288,16 +349,18 @@ export const financeService = {
               conta_id,
               categoria_id,
               observacao,
-              status: "confirmada"
+              status: "confirmada",
+              ...extrasMoeda
             }]).select().single();
           if (txError) throw txError;
 
-          await supabase.from("movimentacoes").insert([{
+          await inserirMovimentacoes([{
             usuario_id,
             transacao_id: tx.id,
             conta_id,
             tipo: "SAIDA",
             valor: numericValue,
+            valor_na_conta: valorNaConta,
             data
           }]);
           return tx;
@@ -356,13 +419,21 @@ export const financeService = {
     const contasList = contas || [];
     const movs = movimentacoes || [];
 
+    // Cotação de hoje para as moedas estrangeiras (uma busca por moeda)
+    const moedas = [...new Set(contasList.map((c: any) => String(c.moeda || "BRL").toUpperCase()).filter((m) => !ehReal(m)))];
+    const cotacoes: Record<string, number | null> = {};
+    await Promise.all(moedas.map(async (m) => (cotacoes[m] = await moedaService.cotacao(m).catch(() => null))));
+
     return contasList.map(conta => {
       let saldo = Number(conta.saldo_inicial || 0);
       movs.filter(m => m.conta_id === conta.id).forEach(m => {
         if (m.tipo === "ENTRADA") saldo += Number(m.valor);
         else if (m.tipo === "SAIDA") saldo -= Number(m.valor);
       });
-      return { ...conta, saldo_atual: saldo };
+      const moeda = String(conta.moeda || "BRL").toUpperCase();
+      const cot = ehReal(moeda) ? 1 : cotacoes[moeda];
+      // saldo_atual: na moeda da conta · saldo_reais: convertido (null se não houver cotação)
+      return { ...conta, moeda, saldo_atual: saldo, cotacao_hoje: cot ?? null, saldo_reais: cot ? Math.round(saldo * cot * 100) / 100 : null };
     });
   },
 
@@ -528,7 +599,7 @@ export const financeService = {
       if (txError) throw txError;
 
       if (form.conta_id && tx) {
-        await supabase.from("movimentacoes").insert([{
+        await inserirMovimentacoes([{
           usuario_id,
           transacao_id: tx.id,
           conta_id: form.conta_id,
@@ -753,7 +824,7 @@ export const financeService = {
 
     // 3. 🏦 SE FOR DÉBITO/PIX, REGISTRA A MOVIMENTAÇÃO BANCÁRIA DE SAÍDA
     if (!isCredito && form.conta_id && !existingTx) {
-      const { error: errMov } = await supabase.from("movimentacoes").insert([{
+      const { error: errMov } = await inserirMovimentacoes([{
         usuario_id,
         transacao_id: transacao.id,
         conta_id: form.conta_id,
@@ -808,7 +879,7 @@ export const financeService = {
     if (errDetalhe) throw errDetalhe;
 
     // 3. Cria as Movimentações (Uma saída na origem e uma entrada no destino)
-    const { error: errMovs } = await supabase.from("movimentacoes").insert([
+    const { error: errMovs } = await inserirMovimentacoes([
       {
         usuario_id,
         transacao_id: transacao.id,
@@ -926,7 +997,7 @@ export const financeService = {
     if (error) throw error;
 
     if (conta_id && data?.[0]?.id) {
-      await supabase.from("movimentacoes").insert([{
+      await inserirMovimentacoes([{
         usuario_id,
         conta_id,
         transacao_id: data[0].id,
@@ -943,7 +1014,7 @@ export const financeService = {
     try {
       // Saldo bancário disponível real: soma dos saldos em todas as contas ativas (saldo_inicial + entradas - saidas)
       const contas = await this.getContasBancarias(usuario_id);
-      return (contas || []).reduce((acc: number, c: any) => acc + Number(c.saldo_atual || 0), 0);
+      return (contas || []).reduce((acc: number, c: any) => acc + saldoEmReais(c), 0);
     } catch (error) {
       console.error("Erro ao buscar saldo global de contas:", error);
       throw error;
@@ -966,7 +1037,7 @@ export const financeService = {
       ]);
 
       // 1. Saldo em contas bancárias (caixa líquido)
-      const totalContas = (contas || []).reduce((acc: number, c: any) => acc + Number(c.saldo_atual || 0), 0);
+      const totalContas = (contas || []).reduce((acc: number, c: any) => acc + saldoEmReais(c), 0);
 
       // 2. Total em investimentos (ativos sob custódia)
       const totalInvestimentos = (investimentos || []).reduce((acc: number, i: any) => acc + Number(i.valor_atual || 0), 0);
@@ -1054,7 +1125,7 @@ export const financeService = {
 
     // 2. Movimentação bancária de SAÍDA na conta de origem
     if (params.conta_id && tx) {
-      await supabase.from("movimentacoes").insert([{
+      await inserirMovimentacoes([{
         usuario_id,
         transacao_id: tx.id,
         conta_id: params.conta_id,
@@ -1170,7 +1241,7 @@ export const financeService = {
 
     // 2. Movimentação bancária de ENTRADA
     if (params.conta_id && tx) {
-      await supabase.from("movimentacoes").insert([{
+      await inserirMovimentacoes([{
         usuario_id,
         transacao_id: tx.id,
         conta_id: params.conta_id,
@@ -1357,7 +1428,7 @@ export const financeService = {
 
     // 2. Movimentação de SAÍDA na conta bancária (Fluxo de caixa real)
     if (params.conta_id && tx) {
-      await supabase.from("movimentacoes").insert([{
+      await inserirMovimentacoes([{
         usuario_id,
         transacao_id: tx.id,
         conta_id: params.conta_id,
@@ -1724,7 +1795,7 @@ export const financeService = {
     if (txError) throw txError;
 
     // 2. Criar a movimentação de SAÍDA para abater o dinheiro da conta no fluxo de caixa
-    await supabase.from("movimentacoes").insert([{
+    await inserirMovimentacoes([{
         usuario_id, transacao_id: tx.id, conta_id, tipo: "SAIDA", valor: valor_pago, data: data_pagamento
     }]);
 
@@ -1881,7 +1952,7 @@ export const financeService = {
       if (!txErr && tx) {
         // Inserir movimentação de SAÍDA de caixa
         if (finalContaId) {
-          await supabase.from("movimentacoes").insert([{
+          await inserirMovimentacoes([{
             usuario_id,
             transacao_id: tx.id,
             conta_id: finalContaId,
