@@ -1,5 +1,6 @@
 import { moedaService, ehReal } from "./moeda.service";
 import { supabase } from "./supabase";
+import { lerParcelaDaDescricao, descricaoSemParcela } from "../utils/parcelas";
 import { getFaturaCycle, getFaturaMesReferencia } from "../utils/cartao.utils";
 import { encontrarPorInstituicao } from "../utils/instituicoes";
 import { buscarTodasPaginas } from "./paginacao";
@@ -686,16 +687,12 @@ export const financeService = {
 
   async addGasto(usuario_id: string, form: any) {
     const rawDesc = String(form.descricao || "");
-    const matchParcelas = rawDesc.match(/(?:parcela\s*|parc\.?\s*)?(\d{1,2})\s*[/]\s*(\d{1,2})|\b(\d{1,2})\s+de\s+(\d{1,2})\b/i);
-    const parcelaDetectada = matchParcelas ? parseInt(matchParcelas[1] || matchParcelas[3], 10) : 1;
-    const totalDetectado = matchParcelas ? parseInt(matchParcelas[2] || matchParcelas[4], 10) : 1;
+    // Datas/períodos ("Período: 03/09 a 02/10") não contam como parcela — ver packages/utils/parcelas.ts
+    const parcelaLida = lerParcelaDaDescricao(rawDesc, { exigirPalavra: form.metodo_pagamento !== "Crédito" });
+    const parcelaDetectada = parcelaLida ? parcelaLida.atual : 1;
+    const totalDetectado = parcelaLida ? parcelaLida.total : 1;
 
-    const limparDescricao = (descricao: string) => {
-      return (descricao || "")
-        .replace(/\s*[-–—]?\s*(?:parcela|parc\.?)?\s*\(?\d{1,2}\s*[/]\s*\d{1,2}\)?/gi, "")
-        .replace(/\s*[-–—]?\s*\d{1,2}\s+de\s+\d{1,2}/gi, "")
-        .trim();
-    };
+    const limparDescricao = (descricao: string) => descricaoSemParcela(descricao);
 
     const valorNumerico =
       typeof form.valor === "string"

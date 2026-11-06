@@ -2,6 +2,7 @@ import { aiService, type ParteIA } from "./ai.service";
 import { recebimentosDivisaoService } from "./recebimentos-divisao.service";
 import { notificacoesService } from "./notificacoes.service";
 import { detectarInstituicao, mesmaInstituicao, nomeArquivoIndicaExtrato } from "../utils/instituicoes";
+import { lerParcelaDaDescricao } from "../utils/parcelas";
 import { supabase } from "./supabase";
 import { financeService, inserirMovimentacoes, moedasDasContas } from "./finance.service";
 import { moedaService, ehReal, MOEDAS } from "./moeda.service";
@@ -690,7 +691,9 @@ DIRETRIZES FUNDAMENTAIS:
       const isPagamento = /pagamento\s*recebido|pagamento\s*de\s*fatura|pagamento\s*cart[aã]o/i.test(titleRaw);
       const isEstorno = /estorno|cr[eé]dito\s*de\s*fatura|desconto\s*\(nufinanceira\)|reembolso/i.test(titleRaw) || (amountNum < 0 && !isPagamento);
       const isLimiteConvertido = /limite\s+convertido/i.test(titleRaw);
-      const matchParcelas = titleRaw.match(/(\d+)\s*[/]\s*(\d+)/) || titleRaw.match(/(\d+)\s+de\s+(\d+)/i);
+      // "n/N" que é data ou período não é parcela (packages/utils/parcelas.ts)
+      const parcelaLida = lerParcelaDaDescricao(titleRaw);
+      const matchParcelas = parcelaLida ? [parcelaLida.trecho, String(parcelaLida.atual), String(parcelaLida.total)] : null;
       const isParcela = !isPagamento && !isEstorno && Boolean(matchParcelas);
       const isJuros = /juros|multa|encargos|iof/i.test(titleRaw);
       const isTarifa = /tarifa|anuidade/i.test(titleRaw);

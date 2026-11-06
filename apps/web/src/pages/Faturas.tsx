@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { authService } from "../../../../packages/services/auth.service";
 import { financeService } from "../../../../packages/services/finance.service";
 import { getFaturaMesReferencia } from "../../../../packages/utils/cartao.utils";
+import { lerParcelaDaDescricao } from "../../../../packages/utils/parcelas";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
 	CreditCard, 
@@ -643,9 +644,9 @@ export default function Faturas() {
 									<tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-sm">
 										{lancamentosDoMes.map((t) => {
 											const cartaoAssociado = cartoes.find(c => c.id === t.cartao_id);
-											const matchParc = (t.descricao || "").match(/(?:parcela\s*|parc\.?\s*)?(\d{1,2})\s*[/]\s*(\d{1,2})|\b(\d{1,2})\s+de\s+(\d{1,2})\b/i);
-											const parcAtual = t.parcela_atual || (matchParc ? (matchParc[1] || matchParc[3]) : null);
-											const parcTotal = t.total_parcelas || (matchParc ? (matchParc[2] || matchParc[4]) : null);
+											const parcLida = lerParcelaDaDescricao(t.descricao);
+											const parcAtual = t.parcela_atual || (parcLida ? parcLida.atual : null);
+											const parcTotal = t.total_parcelas || (parcLida ? parcLida.total : null);
 											const parcelaInfo = parcTotal && Number(parcTotal) > 1 
 												? `${parcAtual || 1}/${parcTotal}` 
 												: (t.total_parcelas > 1 ? `${t.parcela_atual || 1}/${t.total_parcelas}` : "À vista");

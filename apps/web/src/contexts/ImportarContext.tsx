@@ -18,6 +18,7 @@ import {
 	nomeArquivoIndicaExtrato,
 } from "../../../../packages/utils/instituicoes";
 import { ehAplicacaoInvestimento, ehResgateInvestimento } from "../../../../packages/utils/investimentos";
+import { lerParcelaDaDescricao } from "../../../../packages/utils/parcelas";
 import {
 	lerTextoSePlano,
 	lerCabecalhoConta,
@@ -403,12 +404,11 @@ export function isTransferenciaPropria(
 /** "Shopee *Loja - Parcela 4/6" → { base: "shopee loja", n: 4, total: 6 } */
 export function lerParcela(descricao?: string | null): { base: string; n: number; total: number } | null {
 	const texto = String(descricao || "");
-	const m = texto.match(/(?:parcela|parc\.?)\s*(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})/i) || texto.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})\b/);
-	if (!m) return null;
-	const n = Number(m[1]);
-	const total = Number(m[2]);
-	if (!n || !total || n > total) return null;
-	const base = normalizeText(texto.replace(m[0], " ").replace(/\s+-\s*$/, ""))
+	const p = lerParcelaDaDescricao(texto);
+	if (!p) return null;
+	const n = p.atual;
+	const total = p.total;
+	const base = normalizeText(texto.replace(p.trecho, " ").replace(/\s+-\s*$/, ""))
 		.replace(/[^a-z0-9 ]/g, " ")
 		.replace(/\s+/g, " ")
 		.trim();
@@ -1359,13 +1359,19 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 					: (tipoFinal === "PagamentoFatura" ? (t.cartao_id || cartaoPadraoPagamento?.id || null) : null);
 				const contaIdFinal = (isFatura || tipoFinal === "Fatura") ? null : (t.conta_id || detectedContaId || null);
 
-				const matchParc = (cleanDesc || "").match(/(?:[-–—]?\s*(?:parcela|parc\.?)?\s*\(?(\d{1,2})\s*[/]\s*(\d{1,2})\)?)|(?:(\d{1,2})\s+de\s+(\d{1,2}))/i);
+				// Linha de conta (débito, Pix, juros, tarifa) só é parcela com a palavra "parcela":
+				// "10/10 supermercado" é data e "Período: 03/09 a 02/10" é período, não 3/9.
+				const ehLinhaDeConta = isExtratoBancario && tipoFinal !== "Fatura";
+				const parcLida = lerParcelaDaDescricao(cleanDesc, { exigirPalavra: ehLinhaDeConta || Boolean(contabil) });
 				let detectedParcelaAtual = t.parcela_atual;
 				let detectedTotalParcelas = t.total_parcelas;
-
-				if ((!detectedTotalParcelas || detectedTotalParcelas <= 1) && matchParc) {
-					detectedParcelaAtual = parseInt(matchParc[1] || matchParc[3]) || 1;
-					detectedTotalParcelas = parseInt(matchParc[2] || matchParc[4]) || 1;
+				if (parcLida) {
+					detectedParcelaAtual = parcLida.atual;
+					detectedTotalParcelas = parcLida.total;
+				} else if (ehLinhaDeConta || contabil) {
+					// a IA também confunde data com parcela: sem "parcela" escrito, é à vista
+					detectedParcelaAtual = 1;
+					detectedTotalParcelas = 1;
 				}
 
 				const isGastoFinal = tipoFinal === "Gasto";

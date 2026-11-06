@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { X, FileText, Calendar, CreditCard, ShoppingBag, ArrowDownCircle, ArrowUpCircle, CheckCircle2 } from "lucide-react";
 import { supabase } from "../../../../packages/services/supabase";
+import { lerParcelaDaDescricao } from "../../../../packages/utils/parcelas";
 
 export default function FaturaLancamentosModal({ isOpen, onClose, fatura }: { isOpen: boolean, onClose: () => void, fatura: any }) {
     const [transacoes, setTransacoes] = useState<any[]>([]);
@@ -167,10 +168,10 @@ export default function FaturaLancamentosModal({ isOpen, onClose, fatura }: { is
                                                         Parcela {parcelaAtiva.numero_parcela}
                                                     </p>
                                                 ) : (() => {
-                                                    const matchParc = (t.descricao || "").match(/(?:parcela\s*|parc\.?\s*)?(\d{1,2})\s*[/]\s*(\d{1,2})|\b(\d{1,2})\s+de\s+(\d{1,2})\b/i);
-                                                    if (matchParc) {
-                                                        const pNum = matchParc[1] || matchParc[3];
-                                                        const pTot = matchParc[2] || matchParc[4];
+                                                    const parcLida = lerParcelaDaDescricao(t.descricao);
+                                                    if (parcLida) {
+                                                        const pNum = parcLida.atual;
+                                                        const pTot = parcLida.total;
                                                         return (
                                                             <p className="text-xs font-bold text-indigo-500 dark:text-indigo-400 mt-0.5">
                                                                 Parcela {pNum}/{pTot}
