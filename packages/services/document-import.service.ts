@@ -1651,6 +1651,7 @@ ${fileContent.textContent}`];
                   conta_id: contaId,
                   tipo: "ENTRADA",
                   valor: t.valor,
+                  valor_na_conta: (t as any).valor_original,
                   data: t.data
                 }]);
               }
@@ -1707,6 +1708,7 @@ ${fileContent.textContent}`];
                 conta_id: contaId,
                 tipo: "SAIDA",
                 valor: t.valor,
+                  valor_na_conta: (t as any).valor_original,
                 data: t.data
               }]);
               total++;
