@@ -415,8 +415,9 @@ export default function HomeWeb() {
 			const gastosAVista = rawGastos
 				.filter(g => g.considerar_soma !== false && g.metodo_pagamento !== "Crédito" && isSameMonthYear(g.data, y, m))
 				.reduce((acc, cur) => acc + Number(cur.valor || 0), 0);
+			// Só estornos fora do cartão: os do cartão já abatem a fatura logo abaixo (antes contavam duas vezes)
 			const estornosMes = rawEstornos
-				.filter(e => isSameMonthYear(e.data, y, m))
+				.filter(e => !e.cartao_id && isSameMonthYear(e.data, y, m))
 				.reduce((acc, cur) => acc + Number(cur.valor || 0), 0);
 			const debitoLiquido = Math.max(0, gastosAVista - estornosMes);
 
