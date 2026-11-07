@@ -35,6 +35,24 @@ export interface DespesaCompartilhadaComigo {
   /** Cobrança opcional: você pode aceitar ou recusar (migration 011) */
   opcional?: boolean;
   resposta?: "aceita" | "recusada" | null;
+  /** Grupo em que o lançamento foi feito (SQL pendente de 07/11/2026; antes disso vem vazio) */
+  grupo_id?: string | null;
+  grupo_nome?: string | null;
+  parcela?: number | null;
+  total_parcelas?: number | null;
+  /** "Paguei" já avisado e aguardando quem recebeu confirmar */
+  pagamento_informado?: { valor: number; informado_em: string } | null;
+}
+
+/** Grupo criado por outra pessoa em que você é membro (convite aceito). */
+export interface GrupoQueParticipo {
+  id: string;
+  nome: string;
+  tipo?: string | null;
+  icone?: string | null;
+  cor_hex?: string | null;
+  criado_por: string;
+  membros: string[];
 }
 
 const CHAVE_CONVITES_ENVIADOS = "finance_convites_enviados";
@@ -96,8 +114,34 @@ export const conviteService = {
     return (data || []) as DespesaCompartilhadaComigo[];
   },
 
-  /** Aceita ou recusa uma cobrança opcional feita a você (migration 011). */
-  async responderCobranca(transacaoId: string, aceitar: boolean): Promise<{ ok: boolean; motivo?: string }> {
+  /** Grupos de outras pessoas em que você é membro (sem a função no banco, devolve lista vazia). */
+  async gruposQueParticipo(): Promise<GrupoQueParticipo[]> {
+    const { data, error } = await supabase.rpc("grupos_que_participo");
+    if (error) {
+      console.warn("Grupos compartilhados indisponíveis:", error.message);
+      return [];
+    }
+    return (data || []) as GrupoQueParticipo[];
+  },
+
+  /**
+   * Quem recebeu responde ao "Paguei" da outra pessoa.
+   * Confirmar: chame DEPOIS de registrar o recebimento (é ele que dá baixa no item).
+   */
+  async responderPagamentoInformado(transacaoId: string, confirmado: boolean): Promise<{ ok: boolean; motivo?: string }> {
+    const { data, error } = await supabase.rpc("responder_pagamento_informado", {
+      p_transacao_id: transacaoId,
+      p_confirmado: confirmado,
+    });
+    if (error) return { ok: false, motivo: error.message };
+    return (data as any) || { ok: false };
+  },
+
+  /**
+   * Aceita ou recusa uma cobrança opcional feita a você (migration 011).
+   * Ao aceitar uma parcela, o banco aceita também as parcelas seguintes ainda sem resposta.
+   */
+  async responderCobranca(transacaoId: string, aceitar: boolean): Promise<{ ok: boolean; motivo?: string; parcelas_seguintes?: number }> {
     const { data, error } = await supabase.rpc("responder_cobranca_opcional", {
       p_transacao_id: transacaoId,
       p_aceitar: aceitar,

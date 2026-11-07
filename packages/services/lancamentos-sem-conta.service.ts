@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { buscarTodasPaginas } from "./paginacao";
 import { financeService, inserirMovimentacoes } from "./finance.service";
+import { hojeISO } from "../utils/datas";
 
 /**
  * Lançamentos que deveriam estar numa conta (ou cartão) e não estão.
@@ -22,7 +23,7 @@ const lerMeta = (obs?: string | null): Record<string, any> => {
   }
 };
 
-export function ehLancamentoSemConta(t: any, hoje = new Date().toISOString().slice(0, 10)): boolean {
+export function ehLancamentoSemConta(t: any, hoje = hojeISO()): boolean {
   const tipo = String(t.tipo || "").toUpperCase();
   const receita = tipo === "RECEITA";
   const despesa = tipo === "DESPESA";

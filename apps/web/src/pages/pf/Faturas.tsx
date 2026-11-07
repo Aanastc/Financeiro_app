@@ -23,6 +23,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import FaturaLancamentosModal from "../../components/FaturaLancamentosModal";
 import { mesmaInstituicao } from "../../../../../packages/utils/instituicoes";
+import { cartaoDaDivida } from "../../../../../packages/utils/dividas";
 
 const NOMES_MESES = [
 	"Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -157,9 +158,9 @@ export default function Faturas() {
 	const faturasDoMes = useMemo(() => {
 		return faturas.filter(f => {
 			if (filtroCartaoId !== "TODOS" && f.cartao_id !== filtroCartaoId) return false;
-			const fVenc = (f.data_vencimento || "").substring(0, 7);
-			const fFech = (f.data_fechamento || "").substring(0, 7);
-			return fVenc === mesRefAnoMes || fFech === mesRefAnoMes;
+			// A fatura "do mês" é a que VENCE no mês (contar também pelo fechamento somava
+			// duas faturas do mesmo cartão quando o fechamento é depois do vencimento)
+			return (f.data_vencimento || f.data_fechamento || "").substring(0, 7) === mesRefAnoMes;
 		});
 	}, [faturas, filtroCartaoId, mesRefAnoMes]);
 
@@ -222,24 +223,24 @@ export default function Faturas() {
 		const mesAlvo = `${filtroAno}-${filtroMes}`;
 		const parcelasRenegDoMes: any[] = [];
 		renegociacoesVisiveis.forEach(reneg => {
-			const textoReneg = `${reneg.instituicao || ""} ${reneg.descricao || ""}`;
-			const cartaoAssociado = cartoes.find(c =>
-				c.id === reneg.cartao_id ||
-				(c.nome && textoReneg.toLowerCase().includes(c.nome.toLowerCase())) ||
-				mesmaInstituicao(textoReneg, c.nome)
-			);
+			const idCartao = cartaoDaDivida(reneg, cartoes);
+			const cartaoAssociado = cartoes.find(c => c.id === idCartao);
 
 			if (filtroCartaoId !== "TODOS" && cartaoAssociado && cartaoAssociado.id !== filtroCartaoId) {
 				return;
 			}
 
+			// Parcela sem valor informado usa o valor das outras parcelas do mesmo acordo
+			const comValor = (reneg.parcelas_divida || []).map((x: any) => Number(x.valor_esperado)).filter((v: number) => v > 0);
+			const valorTipico = comValor.length ? comValor.reduce((a: number, b: number) => a + b, 0) / comValor.length : 0;
 			(reneg.parcelas_divida || []).forEach((p: any) => {
 				const pMes = (p.data_vencimento || "").substring(0, 7);
-				if (pMes === mesAlvo) {
+				const valorParcela = Number(p.valor_esperado) > 0 ? Number(p.valor_esperado) : valorTipico;
+				if (pMes === mesAlvo && valorParcela > 0) {
 					// Evita duplicar se essa parcela já tiver sido importada na base de transações
 					const jaExisteNaBase = baseItens.some(t => 
 						(t.descricao || "").toLowerCase().includes("renegocia") &&
-						Math.abs(Number(t.valor) - Number(p.valor_esperado)) <= 5.0
+						Math.abs(Number(t.valor) - valorParcela) <= 5.0
 					);
 
 					if (!jaExisteNaBase) {
@@ -247,9 +248,9 @@ export default function Faturas() {
 							id: `reneg-${reneg.id}-${p.numero_parcela}`,
 							data: p.data_vencimento,
 							descricao: `${reneg.descricao || "Renegociação de Cartão"}`,
-							valor: Number(p.valor_esperado || 1054.45),
+							valor: Math.round(valorParcela * 100) / 100,
 							categoria: "Renegociação de Cartão",
-							cartao_id: cartaoAssociado?.id || reneg.cartao_id || (cartoes[0]?.id || null),
+							cartao_id: cartaoAssociado?.id || null,
 							parcela_atual: p.numero_parcela,
 							total_parcelas: (reneg.parcelas_divida || []).length || 12,
 							status: p.status === "paga" ? "confirmada" : "pendente",
@@ -375,7 +376,7 @@ export default function Faturas() {
 				<div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
 					{/* Cartão */}
 					<div className="space-y-1">
-						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Cartão</label>
+						<label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400">Cartão</label>
 						<select
 							value={filtroCartaoId}
 							onChange={(e) => setFiltroCartaoId(e.target.value)}
@@ -390,7 +391,7 @@ export default function Faturas() {
 
 					{/* Ano */}
 					<div className="space-y-1">
-						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Ano</label>
+						<label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400">Ano</label>
 						<select
 							value={filtroAno}
 							onChange={(e) => setFiltroAno(e.target.value)}
@@ -405,7 +406,7 @@ export default function Faturas() {
 
 					{/* Mês */}
 					<div className="space-y-1">
-						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Mês</label>
+						<label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400">Mês</label>
 						<select
 							value={filtroMes}
 							onChange={(e) => setFiltroMes(e.target.value)}
@@ -421,7 +422,7 @@ export default function Faturas() {
 
 					{/* Dia */}
 					<div className="space-y-1">
-						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Dia</label>
+						<label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400">Dia</label>
 						<select
 							value={filtroDia}
 							onChange={(e) => setFiltroDia(e.target.value)}
@@ -436,7 +437,7 @@ export default function Faturas() {
 
 					{/* Categoria */}
 					<div className="space-y-1">
-						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Categoria</label>
+						<label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400">Categoria</label>
 						<select
 							value={filtroCategoria}
 							onChange={(e) => setFiltroCategoria(e.target.value)}
@@ -451,7 +452,7 @@ export default function Faturas() {
 
 					{/* Status da Fatura */}
 					<div className="space-y-1">
-						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Status</label>
+						<label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400">Status</label>
 						<select
 							value={filtroStatus}
 							onChange={(e) => setFiltroStatus(e.target.value)}

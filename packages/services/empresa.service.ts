@@ -64,10 +64,12 @@ export function dasMeiSugerido(atividade?: string | null, salarioMinimo: number 
 export function aliquotaSimples(rbt12: number, anexo: Exclude<Anexo, "FATOR_R">): { efetiva: number; nominal: number; faixa: number } {
   const tabela = ANEXOS_SIMPLES[anexo];
   const base = Math.max(0, rbt12);
-  const i = Math.max(0, tabela.findIndex(([teto]) => base <= teto));
-  const [, nominal, deducao] = tabela[i === -1 ? tabela.length - 1 : i];
+  // Acima do teto da última faixa (4,8 mi) fica na última faixa, nunca na primeira
+  const achada = tabela.findIndex(([teto]) => base <= teto);
+  const i = achada === -1 ? tabela.length - 1 : achada;
+  const [, nominal, deducao] = tabela[i];
   const efetiva = base > 0 ? Math.max(0, (base * (nominal / 100) - deducao) / base) * 100 : nominal;
-  return { efetiva, nominal, faixa: (i === -1 ? tabela.length - 1 : i) + 1 };
+  return { efetiva, nominal, faixa: i + 1 };
 }
 
 // ------------------------------------------------------------------------------
@@ -240,11 +242,18 @@ export interface PainelEmpresa {
   investimentos: InvestimentoEmpresa[];
 }
 
-/** Pagamento de imposto (DAS, DARF, ISS, Receita Federal, prefeitura…), pela descrição ou categoria. */
-export const ehImposto = (desc: string, cat?: string | null) =>
-  /\b(das|pgdas|simples nacional|darf|inss|iss|irpj|csll|pis|cofins|gps|receita federal|prefeitura|impostos?|tributos?)\b/i.test(
-    `${desc || ""} ${cat || ""}`.normalize("NFD").replace(/[̀-ͯ]/g, ""),
+/**
+ * Pagamento de imposto (DAS, DARF, ISS, Receita Federal, prefeitura…), pela descrição ou categoria.
+ * "das" sozinho só vale como sigla (início/fim do texto, "DAS-MEI", "pagamento do DAS"):
+ * "Loja das Tintas" não é imposto.
+ */
+export const ehImposto = (desc: string, cat?: string | null) => {
+  const texto = `${desc || ""} ${cat || ""}`.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  return (
+    /\b(pgdas|simples nacional|darf|inss|iss|irpj|csll|pis|cofins|gps|receita federal|prefeitura|impostos?|tributos?)\b/.test(texto) ||
+    /^das\b|\bdas$|\bdas[\s-]*(mei|simples)\b|\b(pagamento|pgto|pag|guia)\s+(do\s+|de\s+)?das\b|\(das\)/.test(texto)
   );
+};
 const somaMes = (lista: { data: string; valor: number }[], ym: string) => lista.filter((l) => l.data.startsWith(ym)).reduce((s, l) => s + l.valor, 0);
 const ymAnterior = (ym: string, n: number) => {
   const [a, m] = ym.split("-").map(Number);

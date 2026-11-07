@@ -12,6 +12,7 @@ import {
 	type Indexador,
 } from "../../../../packages/utils/investimentos";
 import { toast } from "react-hot-toast";
+import { hojeISO } from "../../../../packages/utils/datas";
 
 interface AddInvestimentoProps {
 	onClose: () => void;
@@ -39,7 +40,7 @@ export default function AddInvestimentoWeb({ onClose, onSuccess, investimento, c
 		tipo: investimento?.tipo || "CDB",
 		valor_investido: numeroParaMoeda(investimento?.valor_investido),
 		valor_atual: numeroParaMoeda(investimento?.valor_atual),
-		data_inicio: investimento?.data_inicio || new Date().toISOString().split("T")[0],
+		data_inicio: investimento?.data_inicio || hojeISO(),
 		corretora: instituicaoDoInvestimento(investimento?.corretora),
 		meta_id: metaIdDoInvestimento(investimento?.corretora) || "",
 		indexador: (investimento?.indexador || "") as Indexador | "",
@@ -134,7 +135,7 @@ export default function AddInvestimentoWeb({ onClose, onSuccess, investimento, c
 					</div>
 					<div>
 						<h2 className="text-xl font-black text-slate-800 dark:text-slate-100">{editando ? "Editar Investimento" : "Novo Investimento"}</h2>
-						<p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Onde está o dinheiro e quanto rende</p>
+						<p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Onde está o dinheiro e quanto rende</p>
 					</div>
 				</div>
 

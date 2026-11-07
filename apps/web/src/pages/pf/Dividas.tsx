@@ -324,7 +324,7 @@ export default function DividasWeb() {
 											<p className={`font-black text-2xl ${isQuitada ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>
 												{isQuitada ? "Quitada" : `R$ ${valorRestante.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
 											</p>
-											<p className="text-xs font-bold text-slate-400 dark:text-slate-500 mt-0.5">
+											<p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-0.5">
 												Original: R$ {Number(d.valor_original).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
 											</p>
 										</div>
@@ -352,7 +352,7 @@ export default function DividasWeb() {
 											style={{ width: `${Math.min(100, Math.max(0, progresso))}%` }}
 										/>
 									</div>
-									<div className="flex justify-between items-center text-xs font-bold text-slate-400 dark:text-slate-500 pt-1">
+									<div className="flex justify-between items-center text-xs font-bold text-slate-500 dark:text-slate-400 pt-1">
 										<span>{pagas} de {parcelas.length || d.parcelas_totais || 1} parcelas pagas</span>
 										<span className="text-purple-600 dark:text-purple-400 font-black">{progresso.toFixed(0)}%</span>
 									</div>

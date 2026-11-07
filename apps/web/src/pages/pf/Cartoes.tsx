@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { authService } from "../../../../../packages/services/auth.service";
 import { financeService } from "../../../../../packages/services/finance.service";
-import { getFaturaMesReferencia } from "../../../../../packages/utils/cartao.utils";
+import { getFaturaMesReferencia, getVencimentoDiaDoMes } from "../../../../../packages/utils/cartao.utils";
+import { diaNoMes } from "../../../../../packages/utils/datas";
 import { motion } from "framer-motion";
 import { CreditCard as CreditCardIcon, Plus, Eye, ChevronRight, ShoppingBag, Edit3, AlertTriangle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -9,7 +10,8 @@ import toast from "react-hot-toast";
 import AddCartaoModal from "../../components/AddCartaoModal";
 import EditCartaoModal from "../../components/EditCartaoModal";
 import { AddGastoWeb } from "../../components/AddGastoWeb";
-import { mesmaInstituicao } from "../../../../../packages/utils/instituicoes";
+import { cartaoDaDivida } from "../../../../../packages/utils/dividas";
+import { hojeISO } from "../../../../../packages/utils/datas";
 
 const getCardBranding = (name: string) => {
 	const lower = name.toLowerCase();
@@ -157,42 +159,31 @@ export default function Cartoes() {
 				const cardFaturas = (faturasData || []).filter((f: any) => f.cartao_id === c.id);
 
 				// 1. Procura EXCLUSIVAMENTE renegociação de cartão (NUNCA empréstimo consignado ou pessoal!)
-				const matchingDivida = (dividasData || []).find((d: any) => {
-					if (d.status === "quitada") return false;
-					
-					const dDesc = (d.descricao || "").toLowerCase();
-					const dInst = (d.instituicao || "").toLowerCase();
-					const tipo = (d.tipo || "").toLowerCase();
+				const matchingDivida = (dividasData || []).find(
+					(d: any) => d.status !== "quitada" && cartaoDaDivida(d, cardsData || [], faturasData || []) === c.id,
+				);
 
-					// Se for consignado ou empréstimo comum, NÃO pertence ao cartão!
-					if (tipo === "consignado" || tipo === "emprestimo" || dDesc.includes("consignado") || dDesc.includes("empréstimo") || dDesc.includes("emprestimo")) {
-						return false;
-					}
-
-					const isTipoReneg = tipo === "renegociacao_cartao";
-					const isNomeReneg = (dDesc.includes("renegocia") || dDesc.includes("acordo")) && (dDesc.includes("cartão") || dDesc.includes("cartao") || dDesc.includes("fatura"));
-
-					if (!isTipoReneg && !isNomeReneg) {
-						return false;
-					}
-
-					if (d.cartao_id && d.cartao_id === c.id) return true;
-					if (d.fatura_origem_id && cardFaturas.some((f: any) => f.id === d.fatura_origem_id)) return true;
-					
-					// Mesma instituição do cartão (ex.: dívida "Itaú" ↔ cartão "Itaú Platinum")
-					return mesmaInstituicao(`${dInst} ${dDesc}`, c.nome);
-				});
-
-				const todayStr = new Date().toISOString().split("T")[0];
+				const todayStr = hojeISO();
 				const fechamentoDia = Number(c.fechamento_dia || 1);
 				const vencimentoDia = Number(c.vencimento_dia || 1);
 				const currentMesRef = getFaturaMesReferencia(todayStr, fechamentoDia, vencimentoDia, c);
 
-				// Fatura atual aberta
-				const faturaAbertaAtual = cardFaturas.find((f: any) => {
-					const fVenc = f.data_vencimento ? f.data_vencimento.substring(0, 7) : "";
-					return fVenc === currentMesRef || f.status === "aberta";
-				});
+				// Fatura atual: a do ciclo de hoje. Só se ela não existir, a aberta mais próxima
+				// (as faturas futuras de parcelas também estão "aberta" e vêm primeiro na lista).
+				// No mesmo mês pode haver faturas ZERADAS pela sincronização (repetidas de um bug
+				// antigo ou do ciclo anterior a uma troca de vencimento): elas mostravam R$ 0,00.
+				// Por isso vale primeiro a do vencimento exato do ciclo, depois uma não zerada.
+				const vencDe = (f: any) => String(f.data_vencimento || "").substring(0, 7);
+				const vencimentoAtual = diaNoMes(currentMesRef, getVencimentoDiaDoMes(currentMesRef, fechamentoDia, vencimentoDia, c));
+				const zerada = (f: any) => f.status === "paga" && Number(f.valor_total || 0) <= 0.004;
+				const doMesAtual = cardFaturas.filter((f: any) => vencDe(f) === currentMesRef);
+				const faturaAbertaAtual =
+					doMesAtual.find((f: any) => String(f.data_vencimento).slice(0, 10) === vencimentoAtual && !zerada(f)) ||
+					doMesAtual.find((f: any) => !zerada(f)) ||
+					doMesAtual[0] ||
+					cardFaturas
+						.filter((f: any) => f.status === "aberta" && vencDe(f) >= currentMesRef)
+						.sort((a: any, b: any) => vencDe(a).localeCompare(vencDe(b)))[0];
 
 				// Compras da fatura do mês atual
 				const comprasMesAtual = cardGastos.filter((g: any) => {
@@ -343,7 +334,7 @@ export default function Cartoes() {
 			{/* KPI METRICS BAR */}
 			<motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 				<div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100 dark:border-slate-800 shadow-sm">
-					<p className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Limite Total Concedido</p>
+					<p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Limite Total Concedido</p>
 					<h3 className="text-2xl font-black text-slate-800 dark:text-slate-100 mt-1">
 						R$ {totalLimiteGeral.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 					</h3>
@@ -555,7 +546,7 @@ export default function Cartoes() {
 										className="w-full flex items-center justify-between bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-slate-700 dark:text-slate-300 hover:text-indigo-700 dark:hover:text-indigo-400 p-3.5 sm:p-4 rounded-2xl font-bold text-sm sm:text-base transition-colors group cursor-pointer"
 									>
 										<div className="flex items-center gap-2.5 sm:gap-3 truncate">
-											<Eye size={18} className="text-slate-400 dark:text-slate-500 group-hover:text-indigo-500 shrink-0" />
+											<Eye size={18} className="text-slate-500 dark:text-slate-400 group-hover:text-indigo-500 shrink-0" />
 											<span className="truncate">Ver Faturas Mensais</span>
 										</div>
 										<ChevronRight size={18} className="text-slate-300 dark:text-slate-500 group-hover:text-indigo-500 shrink-0 ml-1" />

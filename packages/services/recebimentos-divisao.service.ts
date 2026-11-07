@@ -1,6 +1,7 @@
 import { inserirMovimentacoes } from "./finance.service";
 import { supabase } from "./supabase";
 import { buscarTodasPaginas } from "./paginacao";
+import { dataLocalISO } from "../utils/datas";
 
 /**
  * Recebimentos de despesas divididas ("a Julia me pagou R$ 89,79 por Pix").
@@ -42,7 +43,7 @@ const normalizar = (t?: string | null) =>
 const somarDias = (iso: string, dias: number) => {
   const d = new Date(`${iso}T12:00:00`);
   d.setDate(d.getDate() + dias);
-  return d.toISOString().slice(0, 10);
+  return dataLocalISO(d);
 };
 
 const PALAVRAS_IGNORADAS = new Set(["de", "da", "do", "das", "dos", "e"]);

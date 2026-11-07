@@ -10,6 +10,10 @@ consolidado/
 *.log
 .DS_Store
 
+# Scripts de teste/inspeção locais (acessam o banco direto; não vão para o repositório)
+scratch_*.ts
+scratch_*.js
+
 # Environment variables
 .env
 .env.local

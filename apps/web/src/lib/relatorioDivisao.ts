@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { CORES, FMT_MOEDA, FONTE } from "./relatorioExcel";
+import { hojeISO } from "../../../../packages/utils/datas";
 
 /**
  * Planilhas da divisão de contas:
@@ -25,10 +26,6 @@ async function baixar(wb: ExcelJS.Workbook, nomeArquivo: string) {
 
 const slug = (t: string) =>
 	(t || "planilha").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w]+/g, "_").replace(/^_|_$/g, "").toLowerCase();
-const hojeISO = () => {
-	const d = new Date();
-	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
 const centavos = (v: number) => Math.round(v * 100) / 100;
 const dataBR = (iso: string) => {
 	const [a, m, d] = iso.split("-");
@@ -78,7 +75,6 @@ function normalizar(i: any, nomes: string[]): Item {
 		meta,
 	};
 }
-
 
 /** Situação de um mês, em português direto */
 const situacaoMes = (itens: Item[], hoje: string) => {
@@ -214,7 +210,7 @@ function voltarAoResumo(ws: ExcelJS.Worksheet, colunas: number) {
 // ============================================================================
 const AMARELO = { fundo: "FFF4CC", texto: "7A5A00" }; // linhas de itens opcionais
 
-/** Pinta a linha de um item opcional e escreve a legenda quando precisa. */
+/** Pinta de amarelo a linha de um item opcional. */
 function pintarOpcional(r: ExcelJS.Row, colunas: number) {
 	for (let n = 1; n <= colunas; n++) preencher(r.getCell(n), AMARELO.fundo);
 }

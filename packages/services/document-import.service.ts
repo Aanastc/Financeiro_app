@@ -4,7 +4,7 @@ import { notificacoesService } from "./notificacoes.service";
 import { detectarInstituicao, mesmaInstituicao, nomeArquivoIndicaExtrato } from "../utils/instituicoes";
 import { lerParcelaDaDescricao } from "../utils/parcelas";
 import { supabase } from "./supabase";
-import { financeService, inserirMovimentacoes, moedasDasContas } from "./finance.service";
+import { financeService, gravarMovimentacoes, moedasDasContas } from "./finance.service";
 import { moedaService, ehReal, MOEDAS } from "./moeda.service";
 import ExcelJS from "exceljs";
 import type {
@@ -23,6 +23,7 @@ import type {
   CausaDivergenciaFatura
 } from "./document-import.types";
 import { detectarProdutoInvestimento, ehAplicacaoInvestimento, ehResgateInvestimento } from "../utils/investimentos";
+import { dataLocalISO, hojeISO } from "../utils/datas";
 
 /**
  * SERVIÇO DE IMPORTAÇÃO DE DOCUMENTOS FINANCEIROS POR IA
@@ -1103,15 +1104,15 @@ ${fileContent.textContent}`];
     if (tipo === "contrato_emprestimo" || tipo === "contrato_financiamento" || tipo === "renegociacao_cartao") {
       const qtd = parseInt(dados.quantidade_parcelas) || 0;
       const vlr = parseFloat(dados.valor_parcela) || 0;
-      const hojeStr = new Date().toISOString().split("T")[0];
+      const hojeStr = hojeISO();
       
       if ((!dados.parcelas || !Array.isArray(dados.parcelas) || dados.parcelas.length === 0) && qtd > 0) {
-        const baseDateStr = dados.data_primeira_parcela || dados.data_contratacao || dados.data_acordo || new Date().toISOString().split("T")[0];
+        const baseDateStr = dados.data_primeira_parcela || dados.data_contratacao || dados.data_acordo || hojeISO();
         const baseDate = new Date(baseDateStr + "T12:00:00");
         dados.parcelas = Array.from({ length: qtd }).map((_, idx) => {
           const d = new Date(baseDate);
           d.setMonth(d.getMonth() + idx);
-          const vcto = d.toISOString().split("T")[0];
+          const vcto = dataLocalISO(d);
           return {
             numero_parcela: idx + 1,
             valor: vlr > 0 ? vlr : ((dados.valor_original || dados.valor_total_com_juros || 0) / qtd),
@@ -1162,14 +1163,14 @@ ${fileContent.textContent}`];
         }
         // Auto-gera se ainda estiver vazio mas houver quantidade
         if ((!d.parcelas || !Array.isArray(d.parcelas) || d.parcelas.length === 0) && d.quantidade_parcelas > 0) {
-          const baseDate = new Date((d.data_primeira_parcela || d.data_contratacao || new Date().toISOString().split("T")[0]) + "T12:00:00");
+          const baseDate = new Date((d.data_primeira_parcela || d.data_contratacao || hojeISO()) + "T12:00:00");
           d.parcelas = Array.from({ length: d.quantidade_parcelas }).map((_, idx) => {
             const date = new Date(baseDate);
             date.setMonth(date.getMonth() + idx);
             return {
               numero_parcela: idx + 1,
               valor: d.valor_parcela || ((d.valor_original || 0) / d.quantidade_parcelas),
-              data_vencimento: date.toISOString().split("T")[0]
+              data_vencimento: dataLocalISO(date)
             };
           });
         }
@@ -1181,14 +1182,14 @@ ${fileContent.textContent}`];
         if (!d.valor_original && !d.valor_total_com_juros) errors.push("Valor da renegociação ausente.");
         if (!d.quantidade_parcelas || d.quantidade_parcelas <= 0) errors.push("Quantidade de parcelas inválida.");
         if ((!d.parcelas || !Array.isArray(d.parcelas) || d.parcelas.length === 0) && d.quantidade_parcelas > 0) {
-          const baseDate = new Date((d.data_primeira_parcela || d.data_acordo || new Date().toISOString().split("T")[0]) + "T12:00:00");
+          const baseDate = new Date((d.data_primeira_parcela || d.data_acordo || hojeISO()) + "T12:00:00");
           d.parcelas = Array.from({ length: d.quantidade_parcelas }).map((_, idx) => {
             const date = new Date(baseDate);
             date.setMonth(date.getMonth() + idx);
             return {
               numero_parcela: idx + 1,
               valor: d.valor_parcela || ((d.valor_total_com_juros || d.valor_original || 0) / d.quantidade_parcelas),
-              data_vencimento: date.toISOString().split("T")[0]
+              data_vencimento: dataLocalISO(date)
             };
           });
         }
@@ -1276,7 +1277,7 @@ ${fileContent.textContent}`];
         const valorOriginal = emp.valor_original || (emp.valor_parcela * totalParcelas);
         const valorAtual = emp.valor_total_com_juros || (emp.valor_parcela * totalParcelas);
 
-        const hojeStr = new Date().toISOString().split("T")[0];
+        const hojeStr = hojeISO();
 
         const parcelasParaInserir = (emp.parcelas && emp.parcelas.length > 0)
           ? emp.parcelas.map(p => {
@@ -1289,9 +1290,9 @@ ${fileContent.textContent}`];
               };
             })
           : Array.from({ length: totalParcelas }).map((_, idx) => {
-              const baseDate = new Date((emp.data_primeira_parcela || emp.data_contratacao || new Date().toISOString().split("T")[0]) + "T12:00:00");
+              const baseDate = new Date((emp.data_primeira_parcela || emp.data_contratacao || hojeISO()) + "T12:00:00");
               baseDate.setMonth(baseDate.getMonth() + idx);
-              const vcto = baseDate.toISOString().split("T")[0];
+              const vcto = dataLocalISO(baseDate);
               const isPaga = vcto < hojeStr;
               return {
                 numero_parcela: idx + 1,
@@ -1310,7 +1311,7 @@ ${fileContent.textContent}`];
           instituicao: emp.instituicao || "Banco",
           valor_original: valorOriginal,
           valor_atual: valorAtual,
-          data_contratacao: emp.data_contratacao || new Date().toISOString().split("T")[0],
+          data_contratacao: emp.data_contratacao || hojeISO(),
           status: todasPagas ? "quitada" : "ativa",
           documento_importado_id: documento_importado_id || null
         };
@@ -1361,7 +1362,7 @@ ${fileContent.textContent}`];
           }
         }
 
-        const hojeStr = new Date().toISOString().split("T")[0];
+        const hojeStr = hojeISO();
 
         const parcelasParaInserir = (reneg.parcelas && reneg.parcelas.length > 0)
           ? reneg.parcelas.map(p => {
@@ -1374,9 +1375,9 @@ ${fileContent.textContent}`];
               };
             })
           : Array.from({ length: totalParcelas }).map((_, idx) => {
-              const baseDate = new Date((reneg.data_primeira_parcela || new Date().toISOString().split("T")[0]) + "T12:00:00");
+              const baseDate = new Date((reneg.data_primeira_parcela || hojeISO()) + "T12:00:00");
               baseDate.setMonth(baseDate.getMonth() + idx);
-              const vcto = baseDate.toISOString().split("T")[0];
+              const vcto = dataLocalISO(baseDate);
               const isPaga = vcto < hojeStr;
               return {
                 numero_parcela: idx + 1,
@@ -1395,7 +1396,7 @@ ${fileContent.textContent}`];
           instituicao: reneg.instituicao || "Cartão de Crédito",
           valor_original: valorOriginal,
           valor_atual: valorAtual,
-          data_contratacao: reneg.data_acordo || new Date().toISOString().split("T")[0],
+          data_contratacao: reneg.data_acordo || hojeISO(),
           fatura_origem_id: faturaOrigemValida,
           status: todasPagas ? "quitada" : "ativa",
           documento_importado_id: documento_importado_id || null
@@ -1486,7 +1487,7 @@ ${fileContent.textContent}`];
                 const parcelaAtual = Math.min(Math.max(1, item.parcela_atual || 1), totalParcelas);
                 const valorParcela = Number(item.valor) || 0;
                 const diaVenc = Math.min(Math.max(1, Number(cartaoCheck.vencimento_dia) || 10), 28);
-                const [anoItem, mesItem] = (item.data || new Date().toISOString().slice(0, 10)).split("-").map(Number);
+                const [anoItem, mesItem] = (item.data || hojeISO()).split("-").map(Number);
                 // mês (0-based) da 1ª parcela = mês da parcela atual - (parcelaAtual - 1)
                 const mesPrimeira = (mesItem - 1) - (parcelaAtual - 1);
                 const dataParcela = (idx: number) =>
@@ -1691,18 +1692,17 @@ ${fileContent.textContent}`];
             }
 
             if (!error && tx) {
-              if (contaId) {
-                await inserirMovimentacoes([{
-                  usuario_id,
-                  transacao_id: tx.id,
-                  conta_id: contaId,
-                  tipo: "ENTRADA",
-                  valor: t.valor,
-                  valor_na_conta: (t as any).valor_original, moeda: (t as any).moeda_mov,
-                  data: t.data
-                }]);
-              }
-              total++;
+              // Sem a movimentação, a receita é desfeita (não fica fora do saldo) e não conta
+              const gravou = !contaId || (await gravarMovimentacoes([{
+                usuario_id,
+                transacao_id: tx.id,
+                conta_id: contaId,
+                tipo: "ENTRADA",
+                valor: t.valor,
+                valor_na_conta: (t as any).valor_original, moeda: (t as any).moeda_mov,
+                data: t.data
+              }]).then(() => true, (e) => (console.error("Erro ao gravar a entrada na conta:", e), false)));
+              if (gravou) total++;
             }
           } else if (isPagamentoFatura) {
             await financeService.processPagamentoFatura(usuario_id, {
@@ -1749,16 +1749,16 @@ ${fileContent.textContent}`];
               }])
               .select().single();
             if (!error && tx) {
-              await inserirMovimentacoes([{
+              const gravou = await gravarMovimentacoes([{
                 usuario_id,
                 transacao_id: tx.id,
                 conta_id: contaId,
                 tipo: "SAIDA",
                 valor: t.valor,
-                  valor_na_conta: (t as any).valor_original, moeda: (t as any).moeda_mov,
+                valor_na_conta: (t as any).valor_original, moeda: (t as any).moeda_mov,
                 data: t.data
-              }]);
-              total++;
+              }]).then(() => true, (e) => (console.error("Erro ao gravar a transferência na conta:", e), false));
+              if (gravou) total++;
             }
           } else {
             await financeService.addGasto(usuario_id, {

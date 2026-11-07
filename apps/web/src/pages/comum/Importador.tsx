@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import AddContatoWeb from "../../components/AddContatoWeb";
 import { useImportar, CATEGORIAS_PADRAO } from "../../contexts/ImportarContext";
+import { hojeISO } from "../../../../../packages/utils/datas";
 
 function CurrencyTableInput({ 
 	value, 
@@ -660,7 +661,7 @@ export default function ImportadorWeb() {
 
 							{/* CRONOGRAMA DE PARCELAS DETECTADO COM CORES DISTINTAS PARA PAGAS E PENDENTES */}
 							{editPayload?.parcelas && editPayload.parcelas.length > 0 && (() => {
-								const hojeStr = new Date().toISOString().split("T")[0];
+								const hojeStr = hojeISO();
 								const totalPagas = editPayload.parcelas.filter((p: any) => p.status === "paga" || (!p.status && p.data_vencimento < hojeStr)).length;
 								const totalPendentes = editPayload.parcelas.length - totalPagas;
 

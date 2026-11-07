@@ -347,7 +347,7 @@ export default function InvestimentosWeb() {
 				</>
 			)}
 
-			<p className="text-[11px] text-slate-400 dark:text-slate-500">
+			<p className="text-[11px] text-slate-500 dark:text-slate-400">
 				Rendimento bruto (antes de IR/IOF), calculado com o CDI/Selic de cada dia útil divulgado pelo Banco Central, a partir do dia seguinte a cada
 				aplicação. Pequenas diferenças para o banco são normais; para acertar, edite e informe o saldo que o banco mostra.
 			</p>

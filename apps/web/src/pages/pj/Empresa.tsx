@@ -183,7 +183,7 @@ export default function EmpresaPage() {
 			(m) => m.faturamento || m.despesas || m.impostosPagos || m.proLabore || m.lucrosDistribuidos,
 		);
 		const ultimos = comMovimento.slice(-3);
-		const media = (f: (m: (typeof painel.meses)[number]) => number) => (ultimos.length ? ultimos.reduce((s, m) => s + f(m), 0) / ultimos.length : 0);
+		const media = (f: (m: PainelEmpresa["meses"][number]) => number) => (ultimos.length ? ultimos.reduce((s, m) => s + f(m), 0) / ultimos.length : 0);
 		const despesaMedia = media((m) => m.despesas);
 		// Imposto que ainda vai sair: o do mês atual e o do mês anterior (vence dia 20)
 		const hoje = new Date();

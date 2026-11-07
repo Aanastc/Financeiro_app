@@ -38,12 +38,14 @@ import ResumoDivisao from "../../components/divisao/ResumoDivisao";
 import PessoasDivisao from "../../components/divisao/PessoasDivisao";
 import DetalhePessoa from "../../components/divisao/DetalhePessoa";
 import HistoricoDivisao from "../../components/divisao/HistoricoDivisao";
+import PagamentosParaConfirmar from "../../components/divisao/PagamentosParaConfirmar";
 import { montarPessoas } from "../../lib/divisaoPessoas";
 import EditarLancamentoModal from "../../components/EditarLancamentoModal";
 import PedirTelefoneModal from "../../components/PedirTelefoneModal";
 import CriarGrupoModal from "../../components/CriarGrupoModal";
 import { conviteService, telefoneWhatsApp } from "../../../../../packages/services/convite.service";
 import { exportarExcelGrupo, exportarExcelPessoa } from "../../lib/relatorioDivisao";
+import { hojeISO } from "../../../../../packages/utils/datas";
 
 export default function Devedores() {
 	const [userId, setUserId] = useState<string>("");
@@ -89,7 +91,8 @@ export default function Devedores() {
 	const [pessoaAbertaId, setPessoaAbertaId] = useState<string | null>(null);
 	// Evita cruzar saldos duas vezes ao mesmo tempo (recarregamentos em sequência)
 	const compensandoRef = useRef(false);
-	const [receberDe, setReceberDe] = useState<{ contato: { id: string; nome: string }; itemIds?: string[]; valorSugerido?: number } | null>(null);
+	// confirmandoAvisoId: o recebimento confirma um "Paguei" avisado pela outra pessoa
+	const [receberDe, setReceberDe] = useState<{ contato: { id: string; nome: string }; itemIds?: string[]; valorSugerido?: number; confirmandoAvisoId?: string } | null>(null);
 	const [initialGrupoIdForSplit, setInitialGrupoIdForSplit] = useState<
 		string | null
 	>(null);
@@ -99,7 +102,7 @@ export default function Devedores() {
 	const [selectedItemForPayment, setSelectedItemForPayment] =
 		useState<any>(null);
 	const [paymentDate, setPaymentDate] = useState(
-		() => new Date().toISOString().split("T")[0],
+		() => hojeISO(),
 	);
 	const [paymentType, setPaymentType] = useState<"total" | "parcial">("total");
 	const [partialAmount, setPartialAmount] = useState("");
@@ -266,7 +269,7 @@ export default function Devedores() {
 			if (contatosNosDoisLados.length > 0 && !compensandoRef.current) {
 				compensandoRef.current = true;
 				try {
-					const hoje = new Date().toISOString().slice(0, 10);
+					const hoje = hojeISO();
 					const feitos: string[] = [];
 					for (const c of contatosNosDoisLados) {
 						const r = await recebimentosDivisaoService.compensarSaldos(user.id, c.id, hoje);
@@ -545,7 +548,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 			}
 		}
 		setSelectedItemForPayment(item);
-		setPaymentDate(new Date().toISOString().split("T")[0]);
+		setPaymentDate(hojeISO());
 		setPaymentType("total");
 		setPartialAmount("");
 		setPagamentoCompensado(false);
@@ -781,6 +784,21 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 			className="space-y-6 sm:space-y-8 pb-20">
 			{!grupoSelecionado && (
 			<>
+			<PagamentosParaConfirmar
+				devedores={devedores}
+				onConfirmar={(p) =>
+					setReceberDe({ contato: p.contato, itemIds: [p.item.id], valorSugerido: p.valor, confirmandoAvisoId: p.item.id })
+				}
+				onNaoRecebi={async (p) => {
+					const r = await conviteService.responderPagamentoInformado(p.item.id, false);
+					if (!r.ok) {
+						toast.error("Não foi possível responder agora.");
+						return;
+					}
+					toast.success(`${p.contato.nome.split(" ")[0]} foi avisada(o) que o pagamento não foi identificado.`);
+					loadAllData();
+				}}
+			/>
 			<CompartilhadoComigo />
 			{/* TOPO */}
 			<div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
@@ -1570,7 +1588,13 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 			<ReceberPagamentoModal
 				isOpen={Boolean(receberDe)}
 				onClose={() => setReceberDe(null)}
-				onSuccess={loadAllData}
+				onSuccess={async () => {
+					// Recebimento registrado a partir de um "Paguei": tira o aviso pendente e avisa a outra pessoa
+					if (receberDe?.confirmandoAvisoId) {
+						await conviteService.responderPagamentoInformado(receberDe.confirmandoAvisoId, true);
+					}
+					loadAllData();
+				}}
 				userId={userId}
 				contato={receberDe?.contato || null}
 				itemIds={receberDe?.itemIds}

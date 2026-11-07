@@ -4,6 +4,7 @@ import { X, Target, Save } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { supabase } from "../../../../packages/services/supabase";
 import { toast } from "react-hot-toast";
+import { hojeISO } from "../../../../packages/utils/datas";
 
 interface AddMetaProps {
 	onClose: () => void;
@@ -21,7 +22,7 @@ export default function AddMetaWeb({ onClose, onSuccess, meta }: AddMetaProps) {
 	const [form, setForm] = useState({
 		titulo: meta?.titulo || "",
 		valor: paraMoeda(meta?.valor),
-		prazo: meta?.prazo ? String(meta.prazo).slice(0, 10) : new Date().toISOString().split('T')[0],
+		prazo: meta?.prazo ? String(meta.prazo).slice(0, 10) : hojeISO(),
 		debito_automatico: Boolean(meta?.debito_automatico),
 		debito_dia: meta?.debito_dia ? String(meta.debito_dia) : "",
 		debito_valor: paraMoeda(meta?.debito_valor)
@@ -82,7 +83,7 @@ export default function AddMetaWeb({ onClose, onSuccess, meta }: AddMetaProps) {
 						</div>
 						<div>
 							<h2 className="text-lg sm:text-xl font-black text-slate-800 dark:text-slate-100">{editando ? "Editar Meta" : "Nova Meta"}</h2>
-							<p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Qual o seu próximo sonho?</p>
+							<p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Qual o seu próximo sonho?</p>
 						</div>
 					</div>
 					<button onClick={onClose} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-full transition-colors cursor-pointer">
@@ -92,7 +93,7 @@ export default function AddMetaWeb({ onClose, onSuccess, meta }: AddMetaProps) {
 
 				<form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-5 overflow-y-auto flex-1 scrollbar-thin">
 					<div className="space-y-1.5">
-						<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">O que você quer alcançar?</label>
+						<label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block ml-1">O que você quer alcançar?</label>
 						<input 
 							type="text" 
 							required
@@ -105,7 +106,7 @@ export default function AddMetaWeb({ onClose, onSuccess, meta }: AddMetaProps) {
 
 					<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 						<div className="space-y-1.5">
-							<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">Valor Objetivo (R$)</label>
+							<label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block ml-1">Valor Objetivo (R$)</label>
 							<InputMoeda 
 								required
 								className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-3.5 font-black text-pink-500 dark:text-pink-400 outline-none focus:ring-2 focus:ring-pink-500 text-sm transition-colors"
@@ -114,7 +115,7 @@ export default function AddMetaWeb({ onClose, onSuccess, meta }: AddMetaProps) {
 							/>
 						</div>
 						<div className="space-y-1.5">
-							<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">Data Limite</label>
+							<label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block ml-1">Data Limite</label>
 							<input 
 								type="date" 
 								required
@@ -142,7 +143,7 @@ export default function AddMetaWeb({ onClose, onSuccess, meta }: AddMetaProps) {
 						{form.debito_automatico && (
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
 								<div className="space-y-1.5">
-									<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">Dia do Débito (1-31)</label>
+									<label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block ml-1">Dia do Débito (1-31)</label>
 									<input 
 										type="number" 
 										min="1"
@@ -155,7 +156,7 @@ export default function AddMetaWeb({ onClose, onSuccess, meta }: AddMetaProps) {
 									/>
 								</div>
 								<div className="space-y-1.5">
-									<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">Valor do Débito (R$)</label>
+									<label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block ml-1">Valor do Débito (R$)</label>
 									<InputMoeda 
 										required
 										className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-3.5 font-black text-pink-500 dark:text-pink-400 outline-none focus:ring-2 focus:ring-pink-500 text-sm transition-colors"
@@ -168,7 +169,7 @@ export default function AddMetaWeb({ onClose, onSuccess, meta }: AddMetaProps) {
 					</div>
 
 					<div className="pt-4 flex flex-col sm:flex-row gap-3 shrink-0">
-						<button type="button" onClick={onClose} className="flex-1 py-3.5 font-bold text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-colors cursor-pointer text-sm order-2 sm:order-1">
+						<button type="button" onClick={onClose} className="flex-1 py-3.5 font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-colors cursor-pointer text-sm order-2 sm:order-1">
 							CANCELAR
 						</button>
 						<button type="submit" disabled={loading} className="flex-1 py-3.5 bg-pink-500 hover:bg-pink-600 dark:bg-pink-600 dark:hover:bg-pink-700 text-white rounded-2xl font-black flex items-center justify-center gap-2 transition-all shadow-xl shadow-pink-100 dark:shadow-none disabled:opacity-50 cursor-pointer uppercase text-sm order-1 sm:order-2">

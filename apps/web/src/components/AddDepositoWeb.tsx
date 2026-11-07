@@ -1,9 +1,10 @@
 import InputMoeda from "./InputMoeda";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { X, ArrowUpRight, Save } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { supabase } from "../../../../packages/services/supabase";
 import { toast } from "react-hot-toast";
+import { hojeISO } from "../../../../packages/utils/datas";
 
 interface AddDepositoProps {
 	metaId: string;
@@ -13,10 +14,11 @@ interface AddDepositoProps {
 }
 
 export default function AddDepositoWeb({ metaId, metaTitulo, onClose, onSuccess }: AddDepositoProps) {
+	const uid = useId();
 	const [loading, setLoading] = useState(false);
 	const [form, setForm] = useState({
 		valor: "",
-		data: new Date().toISOString().split('T')[0]
+		data: hojeISO()
 	});
 
 	const handleSubmit = async (e: React.FormEvent) => {
@@ -48,7 +50,7 @@ export default function AddDepositoWeb({ metaId, metaTitulo, onClose, onSuccess 
 	};
 
 	return (
-		<div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-2 sm:p-4 overflow-y-auto" role="dialog" aria-modal="true">
+		<div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-2 sm:p-4 overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby={`${uid}-titulo`} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}>
 			<div className="bg-white dark:bg-slate-900 rounded-[30px] sm:rounded-[40px] w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200 border border-slate-100 dark:border-slate-800 flex flex-col max-h-[95vh] sm:max-h-[90vh] transition-colors duration-200">
 				<div className="p-6 sm:p-8 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-950/20 shrink-0">
 					<div className="flex items-center gap-4">
@@ -56,19 +58,20 @@ export default function AddDepositoWeb({ metaId, metaTitulo, onClose, onSuccess 
 							<ArrowUpRight size={20} />
 						</div>
 						<div>
-							<h2 className="text-lg sm:text-xl font-black text-slate-800 dark:text-slate-100">Depositar</h2>
-							<p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{metaTitulo}</p>
+							<h2 id={`${uid}-titulo`} className="text-lg sm:text-xl font-black text-slate-800 dark:text-slate-100">Depositar</h2>
+							<p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{metaTitulo}</p>
 						</div>
 					</div>
-					<button onClick={onClose} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-full transition-colors cursor-pointer">
+					<button type="button" onClick={onClose} aria-label="Fechar" className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-full transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-500">
 						<X size={20} />
 					</button>
 				</div>
 
 				<form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-6 overflow-y-auto flex-1 scrollbar-thin">
 					<div className="space-y-2">
-						<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">Valor do Depósito (R$)</label>
-						<InputMoeda 
+						<label htmlFor={`${uid}-valor`} className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block ml-1">Valor do Depósito (R$)</label>
+						<InputMoeda
+							id={`${uid}-valor`}
 							required
 							className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-3.5 font-black text-pink-500 dark:text-pink-400 outline-none focus:ring-2 focus:ring-pink-500 text-center text-3xl"
 							value={form.valor}
@@ -78,8 +81,9 @@ export default function AddDepositoWeb({ metaId, metaTitulo, onClose, onSuccess 
 					</div>
 					
 					<div className="space-y-2">
-						<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">Data do Depósito</label>
-						<input 
+						<label htmlFor={`${uid}-data`} className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block ml-1">Data do Depósito</label>
+						<input
+							id={`${uid}-data`}
 							type="date" 
 							required
 							className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-3.5 font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-pink-500 text-sm transition-colors"
@@ -89,7 +93,7 @@ export default function AddDepositoWeb({ metaId, metaTitulo, onClose, onSuccess 
 					</div>
 
 					<div className="pt-4 shrink-0">
-						<button type="submit" disabled={loading} className="w-full py-4 bg-pink-500 hover:bg-pink-600 dark:bg-pink-600 dark:hover:bg-pink-700 text-white rounded-2xl font-black flex items-center justify-center gap-2 transition-all shadow-xl shadow-pink-100 dark:shadow-none disabled:opacity-50 cursor-pointer uppercase text-sm">
+						<button type="submit" disabled={loading} className="w-full py-4 bg-pink-500 hover:bg-pink-600 dark:bg-pink-600 dark:hover:bg-pink-700 text-white rounded-2xl font-black flex items-center justify-center gap-2 transition-all shadow-xl shadow-pink-100 dark:shadow-none disabled:opacity-50 cursor-pointer uppercase text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900">
 							<Save size={18} />
 							{loading ? "SALVANDO..." : "CONFIRMAR DEPÓSITO"}
 						</button>

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { ArrowDownLeft, ArrowUpRight, ChevronDown, Pencil } from "lucide-react";
+import { hojeISO } from "../../../../../packages/utils/datas";
 
 /**
  * Histórico da divisão de contas, como um extrato:
@@ -43,7 +44,7 @@ interface Props {
 export default function HistoricoDivisao({ transacoes, contatos, onEditar, onAbrirPessoa }: Props) {
 	const [filtro, setFiltro] = useState<Filtro>("tudo");
 	const [abertas, setAbertas] = useState<Set<string>>(new Set());
-	const hoje = new Date().toISOString().slice(0, 10);
+	const hoje = hojeISO();
 	const mesAtual = hoje.slice(0, 7);
 	const nomeContato = (id?: string | null) => contatos.find((c) => c.id === id)?.nome || "";
 

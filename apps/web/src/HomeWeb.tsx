@@ -29,17 +29,20 @@ import { getFaturaMesReferencia } from "../../../packages/utils/cartao.utils";
 import CategoryBreakdown from "./components/CategoryBreakdown";
 import EmpresaPage from "./pages/pj/Empresa";
 import { minhasEmpresas, idsDaEmpresa, ehDaEmpresa, type Empresa } from "../../../packages/services/empresa.service";
+import { dataLocalISO } from "../../../packages/utils/datas";
+import { cartaoDaDivida } from "../../../packages/utils/dividas";
 
 const NOME_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
 export default function HomeWeb() {
 	const navigate = useNavigate();
 	// visao: escolhida na barra do topo (PF = finanças pessoais; PJ = painel da empresa)
-	const { userProfile, visao = "PF" } = useOutletContext<any>() || {};
+	const { userProfile, visao = "PF", fetchUser } = useOutletContext<any>() || {};
 	const [stats, setStats] = useState({ entradasMes: 0, gastosMes: 0, saldoTotal: 0 });
 	const [nome, setNome] = useState("");
 	const [userId, setUserId] = useState("");
-	const [, setAcompanhaMei] = useState<boolean | null>(null);
+	// Escolha feita no cadastro (ou no perfil): só quem marcou MEI/ME vê o convite para o painel do CNPJ
+	const [acompanhaMei, setAcompanhaMei] = useState<boolean | null>(null);
 	const [isClient, setIsClient] = useState(false);
 	const [isFetchingData, setIsFetchingData] = useState(true);
 
@@ -66,6 +69,10 @@ export default function HomeWeb() {
 	// Empresa cadastrada (o que for dela fica fora da visão pessoal)
 	const [empresa, setEmpresa] = useState<Empresa | null>(null);
 
+	// Quem não quis a função de CNPJ e não tem empresa não fica preso no caminho PJ (ex.: link ?tab=pj)
+	useEffect(() => {
+		if (caminhoAtivo === "PJ" && !empresa && acompanhaMei === false) setCaminhoAtivo("PESSOAL");
+	}, [caminhoAtivo, empresa, acompanhaMei]);
 
 	// Modais e dados de despesas compartilhadas na Home
 	const [isAddSplitOpen, setIsAddSplitOpen] = useState(false);
@@ -97,7 +104,7 @@ export default function HomeWeb() {
 	const [devedores, setDevedores] = useState<any[]>([]);
 	const [cartoes, setCartoes] = useState<any[]>([]);
 	
-	const [contasBancarias, setContasBancarias] = useState<any[]>([]);
+	const [, setContasBancarias] = useState<any[]>([]);
 	const [showOnboarding, setShowOnboarding] = useState(false);
 	const [showMeiModal, setShowMeiModal] = useState(false);
 	const [showOrphanAlert, setShowOrphanAlert] = useState(false);
@@ -420,7 +427,6 @@ export default function HomeWeb() {
 			cartoes.forEach((c: any) => {
 				const fechamentoDia = c.fechamento_dia || 1;
 				const vencimentoDia = c.vencimento_dia || 10;
-				const cNome = (c.nome || "").toLowerCase();
 
 				// Gastos de compras com o cartão
 				const comprasCartao = rawGastos
@@ -434,11 +440,7 @@ export default function HomeWeb() {
 				// Parcela de acordo / renegociação associada a este cartão
 				let parcelaAcordo = 0;
 				rawDividas.forEach((d: any) => {
-					const dDesc = (d.descricao || "").toLowerCase();
-					const dInst = (d.instituicao || "").toLowerCase();
-					const isCardAgreement = d.cartao_id === c.id ||
-						(cNome.includes("8282") && (dDesc.includes("8282") || dDesc.includes("renegocia"))) ||
-						(cNome.includes("santander") && dDesc.includes("renegocia") && (dInst.includes("santander") || dDesc.includes("santander")));
+					const isCardAgreement = cartaoDaDivida(d, cartoes) === c.id;
 
 					if (isCardAgreement) {
 						dividasCartaoIds.add(d.id);
@@ -562,7 +564,6 @@ export default function HomeWeb() {
 		return cartoes.map((c: any) => {
 			const fechamentoDia = c.fechamento_dia || 1;
 			const vencimentoDia = c.vencimento_dia || 1;
-			const cNome = (c.nome || "").toLowerCase();
 			const gastosCartao = rawGastos.filter(g => g.cartao_id === c.id && (!g.data ? false : getFaturaMesReferencia(g.data, fechamentoDia, vencimentoDia, c) === activeMonthStr));
 			const estornosCartao = rawEstornos.filter(e => e.cartao_id === c.id && (!e.data ? false : getFaturaMesReferencia(e.data, fechamentoDia, vencimentoDia, c) === activeMonthStr));
 			const totalDespesasCartao = gastosCartao.reduce((sum, item) => sum + Number(item.valor || 0), 0);
@@ -571,10 +572,7 @@ export default function HomeWeb() {
 
 			// Projeção de renegociação vinculada ao cartão
 			rawDividas.forEach((d: any) => {
-				const dDesc = (d.descricao || "").toLowerCase();
-				const isCardAgreement = d.cartao_id === c.id ||
-					(cNome.includes("8282") && (dDesc.includes("8282") || dDesc.includes("renegocia"))) ||
-					(cNome.includes("santander") && dDesc.includes("renegocia"));
+				const isCardAgreement = cartaoDaDivida(d, cartoes) === c.id;
 
 				if (isCardAgreement) {
 					(d.parcelas_divida || []).forEach((p: any) => {
@@ -644,7 +642,6 @@ export default function HomeWeb() {
 		cartoes.forEach((c: any) => {
 			const fechamentoDia = c.fechamento_dia || 12;
 			const vencimentoDia = c.vencimento_dia || 19;
-			const cNome = (c.nome || "").toLowerCase();
 
 			// Compras no crédito deste ciclo
 			const comprasCartao = rawGastos
@@ -661,11 +658,7 @@ export default function HomeWeb() {
 			let totalAcordo = 0;
 			const acordosList: string[] = [];
 			rawDividas.forEach((d: any) => {
-				const dDesc = (d.descricao || "").toLowerCase();
-				const dInst = (d.instituicao || "").toLowerCase();
-				const isCardAgreement = d.cartao_id === c.id ||
-					(cNome.includes("8282") && (dDesc.includes("8282") || dDesc.includes("renegocia"))) ||
-					(cNome.includes("santander") && dDesc.includes("renegocia") && (dInst.includes("santander") || dDesc.includes("santander")));
+				const isCardAgreement = cartaoDaDivida(d, cartoes) === c.id;
 
 				if (isCardAgreement) {
 					dividasCartaoIds.add(d.id);
@@ -754,8 +747,8 @@ export default function HomeWeb() {
 		const today = new Date();
 		const in7Days = new Date(today);
 		in7Days.setDate(today.getDate() + 7);
-		const todayStr = today.toISOString().split("T")[0];
-		const limitStr = in7Days.toISOString().split("T")[0];
+		const todayStr = dataLocalISO(today);
+		const limitStr = dataLocalISO(in7Days);
 
 		rawDividas.filter(d => d.status !== "quitada" && d.vencimento_parcela >= todayStr && d.vencimento_parcela <= limitStr).forEach(d => {
 			reminders.push({ type: "divida", title: `Dívida: ${d.descricao}`, date: d.vencimento_parcela, amount: Number(d.valor_total) / Number(d.parcelas) });
@@ -781,30 +774,6 @@ export default function HomeWeb() {
 		window.open(`https://wa.me/${telefone}?text=${msg}`, "_blank");
 	};
 
-	const isPjEntrada = (e: any) => {
-		const cat = (e.categoria || "").toLowerCase();
-		const desc = (e.descricao || "").toLowerCase();
-		const conta = (e.contas_bancarias?.nome || "").toLowerCase();
-		const contaTipo = (e.contas_bancarias?.tipo || "").toLowerCase();
-		return (
-			contaTipo.includes("pj") || contaTipo.includes("juridica") || conta.includes("pj") || conta.includes("mei") || conta.includes("empresa") ||
-			cat.includes("pj") || cat.includes("mei") || cat.includes("serviço") || cat.includes("venda") || cat.includes("faturamento") || cat.includes("empresa") ||
-			desc.includes("nota fiscal") || desc.includes("nf-e") || desc.includes("cliente") || desc.includes("prestação")
-		);
-	};
-
-	const isPjGasto = (g: any) => {
-		const cat = (g.categoria || "").toLowerCase();
-		const desc = (g.descricao || "").toLowerCase();
-		const conta = (g.contas_bancarias?.nome || "").toLowerCase();
-		const contaTipo = (g.contas_bancarias?.tipo || "").toLowerCase();
-		return (
-			contaTipo.includes("pj") || contaTipo.includes("juridica") || conta.includes("pj") || conta.includes("mei") || conta.includes("empresa") ||
-			cat.includes("das") || cat.includes("imposto") || cat.includes("tributo") || cat.includes("fornecedor") || cat.includes("empresa") || cat.includes("pj") ||
-			desc.includes("das-mei") || desc.includes("das ") || desc.includes("simples nacional") || desc.includes("contador") || desc.includes("contabilidade")
-		);
-	};
-
 	const totalAReceberSplit = useMemo(() => {
 		return devedores.reduce((acc, d) => acc + (Number(d.total_devido) > 0 ? Number(d.total_devido) : 0), 0);
 	}, [devedores]);
@@ -814,60 +783,6 @@ export default function HomeWeb() {
 	}, [credores]);
 
 	const saldoLiquidoSplit = totalAReceberSplit - totalAPagarSplit;
-
-	const dadosPJ = useMemo(() => {
-		const LIMITE_MEI_ANUAL = 81000;
-		const TETO_MENSAL_MEI = 6750;
-
-		const entradasAnoPJ = rawEntradas.filter(e => isPjEntrada(e));
-		const totalFaturadoAno = entradasAnoPJ.reduce((acc, e) => acc + Number(e.valor || 0), 0);
-		const percentualUsoMei = Math.min(100, (totalFaturadoAno / LIMITE_MEI_ANUAL) * 100);
-		const margemDisponivelMei = Math.max(0, LIMITE_MEI_ANUAL - totalFaturadoAno);
-
-		const mesAtualNum = new Date().getMonth() + 1;
-		const mesRef = filterMonth !== "all" ? String(filterMonth).padStart(2, '0') : String(mesAtualNum).padStart(2, '0');
-		const prefixMes = `${filterYear}-${mesRef}`;
-
-		const entradasMesPJ = rawEntradas.filter(e => isPjEntrada(e) && e.data?.startsWith(prefixMes));
-		const gastosMesPJ = rawGastos.filter(g => isPjGasto(g) && g.data?.startsWith(prefixMes));
-
-		const totalReceitasMesPJ = entradasMesPJ.reduce((acc, e) => acc + Number(e.valor || 0), 0);
-		const totalDespesasMesPJ = gastosMesPJ.reduce((acc, g) => acc + Number(g.valor || 0), 0);
-		const lucroLiquidoMesPJ = totalReceitasMesPJ - totalDespesasMesPJ;
-
-		const dasPagoNoMes = rawGastos.some(g => {
-			if (!g.data?.startsWith(prefixMes)) return false;
-			const cat = (g.categoria || "").toLowerCase();
-			const desc = (g.descricao || "").toLowerCase();
-			return cat.includes("das") || cat.includes("simples") || desc.includes("das-mei") || desc.includes("das ") || desc.includes("simples nacional");
-		});
-
-		const contasPJ = contasBancarias.filter(c => {
-			const cNome = (c.nome || "").toLowerCase();
-			const cTipo = (c.tipo || "").toLowerCase();
-			const cInst = (c.instituicao || "").toLowerCase();
-			return cNome.includes("pj") || cNome.includes("empresa") || cNome.includes("mei") || cTipo.includes("pj") || cTipo.includes("juridica") || cInst.includes("pj");
-		});
-
-		const saldoContasPJ = contasPJ.reduce((acc, c) => acc + Number(c.saldo_inicial || 0), 0);
-
-		return {
-			LIMITE_MEI_ANUAL,
-			TETO_MENSAL_MEI,
-			totalFaturadoAno,
-			percentualUsoMei,
-			margemDisponivelMei,
-			mediaMensalFaturada: totalFaturadoAno / (mesAtualNum || 1),
-			totalReceitasMesPJ,
-			totalDespesasMesPJ,
-			lucroLiquidoMesPJ,
-			dasPagoNoMes,
-			contasPJ,
-			saldoContasPJ,
-			mesNome: NOME_MESES[parseInt(mesRef, 10) - 1],
-			lancamentosPJ: [...entradasMesPJ, ...gastosMesPJ].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
-		};
-	}, [rawEntradas, rawGastos, contasBancarias, filterYear, filterMonth]);
 
 	if (isFetchingData) {
 		return (
@@ -999,8 +914,8 @@ export default function HomeWeb() {
 					</div>
 				</button>
 
-				{/* CAMINHO 3: SEM EMPRESA CADASTRADA → CONVITE PARA O PAINEL DO CNPJ */}
-				{!empresa && (
+				{/* CAMINHO 3: SEM EMPRESA CADASTRADA → CONVITE PARA O PAINEL DO CNPJ (só para quem escolheu MEI/ME) */}
+				{!empresa && acompanhaMei === true && (
 				<button
 					type="button"
 					onClick={() => handleMudarCaminho("PJ")}
@@ -1766,6 +1681,7 @@ export default function HomeWeb() {
 				onComplete={(escolha) => {
 					setAcompanhaMei(escolha);
 					setShowMeiModal(false);
+					fetchUser?.(); // atualiza o menu lateral com a escolha
 				}}
 			/>
 

@@ -10,6 +10,8 @@ const ICONES: Record<string, { icone: typeof Bell; cor: string }> = {
 	cobranca_aceita: { icone: CheckCheck, cor: "text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40" },
 	cobranca_recusada: { icone: XCircle, cor: "text-rose-600 bg-rose-50 dark:text-rose-400 dark:bg-rose-950/40" },
 	pagamento_informado: { icone: HandCoins, cor: "text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40" },
+	pagamento_confirmado: { icone: CheckCheck, cor: "text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40" },
+	pagamento_nao_recebido: { icone: XCircle, cor: "text-rose-600 bg-rose-50 dark:text-rose-400 dark:bg-rose-950/40" },
 	pagamento_recebido: { icone: HandCoins, cor: "text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40" },
 	vencimento_fatura: { icone: CreditCard, cor: "text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/40" },
 	vencimento_divida: { icone: Landmark, cor: "text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/40" },

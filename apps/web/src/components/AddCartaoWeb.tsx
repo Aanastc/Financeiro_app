@@ -119,7 +119,7 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 				<div className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1 scrollbar-thin">
 					{/* Conta Bancária */}
 					<div className="space-y-1.5">
-						<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-2 tracking-wider">
+						<label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase ml-2 tracking-wider">
 							Conta Vinculada
 						</label>
 						<select
@@ -137,7 +137,7 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 
 					{/* Nome do Cartão */}
 					<div className="space-y-1.5">
-						<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-2 tracking-wider">
+						<label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase ml-2 tracking-wider">
 							Identificação
 						</label>
 						<input
@@ -150,7 +150,7 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 
 					{/* Limite Total Formatado */}
 					<div className="space-y-1.5">
-						<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-2 tracking-wider">
+						<label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase ml-2 tracking-wider">
 							Limite Total (R$)
 						</label>
 						<InputMoeda
@@ -164,7 +164,7 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 
 					<div className="grid grid-cols-2 gap-4">
 						<div className="space-y-1.5">
-							<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-2 tracking-wider flex items-center gap-1">
+							<label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase ml-2 tracking-wider flex items-center gap-1">
 								<Calendar size={11} /> Vencimento (Dia)
 							</label>
 							<input
@@ -177,7 +177,7 @@ export function AddCartaoWeb({ isOpen, onClose, onSuccess }: any) {
 							/>
 						</div>
 						<div className="space-y-1.5">
-							<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-2 tracking-wider flex items-center gap-1">
+							<label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase ml-2 tracking-wider flex items-center gap-1">
 								<Calendar size={11} /> Fechamento (Dia)
 							</label>
 							<input

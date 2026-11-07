@@ -2,6 +2,7 @@ import { buscarTodasPaginas } from "../../../../../packages/services/paginacao";
 import { idsDaEmpresa, ehDaEmpresa } from "../../../../../packages/services/empresa.service";
 import { contaNoTotal, ehParteDeOutraPessoa, textoObservacao } from "../../lib/lancamentos";
 import CategoryBreakdown from "../../components/CategoryBreakdown";
+import EditarLancamentoModal from "../../components/EditarLancamentoModal";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../../../../../packages/services/supabase";
 import { financeService } from "../../../../../packages/services/finance.service";
@@ -28,7 +29,8 @@ import {
 	RotateCcw,
 	Layers,
 	ChevronLeft,
-	ChevronRight
+	ChevronRight,
+	Pencil
 } from "lucide-react";
 
 const MESES = [
@@ -50,6 +52,7 @@ export default function EntradasWeb() {
 	const [selectedCategory, setSelectedCategory] = useState<string>("");
 	const [searchQuery, setSearchQuery] = useState<string>("");
 	const [filtroStatus, setFiltroStatus] = useState<'TODOS' | 'RECEBIDO' | 'A_RECEBER'>('TODOS');
+	const [editandoId, setEditandoId] = useState<string | null>(null);
 
 	const loadData = useCallback(async () => {
 		setLoading(true);
@@ -238,7 +241,7 @@ export default function EntradasWeb() {
 						<h1 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">
 							Entradas & Receitas
 						</h1>
-						<p className="text-slate-400 dark:text-slate-500 font-medium text-xs">
+						<p className="text-slate-500 dark:text-slate-400 font-medium text-xs">
 							Visão analítica de receitas, salários e previsões financeiras.
 						</p>
 					</div>
@@ -252,7 +255,7 @@ export default function EntradasWeb() {
 						<CheckCircle2 size={22} />
 					</div>
 					<div className="min-w-0">
-						<p className="text-slate-400 dark:text-slate-500 font-bold text-[10px] uppercase tracking-wider truncate">
+						<p className="text-slate-500 dark:text-slate-400 font-bold text-[10px] uppercase tracking-wider truncate">
 							{selectedMonth 
 								? `Recebido (${MESES_COMPLETOS[parseInt(selectedMonth, 10) - 1]}/${year})`
 								: `Recebido no Ano (${year})`}
@@ -268,7 +271,7 @@ export default function EntradasWeb() {
 						<Clock size={22} />
 					</div>
 					<div className="min-w-0">
-						<p className="text-slate-400 dark:text-slate-500 font-bold text-[10px] uppercase tracking-wider truncate">
+						<p className="text-slate-500 dark:text-slate-400 font-bold text-[10px] uppercase tracking-wider truncate">
 							A Receber / Previsto
 						</p>
 						<h2 className="text-xl font-black text-slate-800 dark:text-slate-100 mt-0.5 truncate">
@@ -282,7 +285,7 @@ export default function EntradasWeb() {
 						<Layers size={22} />
 					</div>
 					<div className="min-w-0">
-						<p className="text-slate-400 dark:text-slate-500 font-bold text-[10px] uppercase tracking-wider truncate">
+						<p className="text-slate-500 dark:text-slate-400 font-bold text-[10px] uppercase tracking-wider truncate">
 							Lançamentos Filtrados
 						</p>
 						<h2 className="text-xl font-black text-teal-600 dark:text-teal-400 mt-0.5 truncate">
@@ -338,7 +341,7 @@ export default function EntradasWeb() {
 				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
 					{/* FILTRO POR ANO (ÚNICO) */}
 					<div>
-						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 block mb-1">
+						<label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 block mb-1">
 							Ano
 						</label>
 						<select
@@ -354,7 +357,7 @@ export default function EntradasWeb() {
 
 					{/* FILTRO POR MÊS */}
 					<div>
-						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 block mb-1">
+						<label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 block mb-1">
 							Mês
 						</label>
 						<select
@@ -372,7 +375,7 @@ export default function EntradasWeb() {
 
 					{/* FILTRO POR DIA */}
 					<div>
-						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 block mb-1">
+						<label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 block mb-1">
 							Dia
 						</label>
 						<select
@@ -389,7 +392,7 @@ export default function EntradasWeb() {
 
 					{/* FILTRO POR CATEGORIA */}
 					<div>
-						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 block mb-1">
+						<label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 block mb-1">
 							Categoria
 						</label>
 						<select
@@ -406,7 +409,7 @@ export default function EntradasWeb() {
 
 					{/* BUSCA POR TEXTO / DESCRIÇÃO */}
 					<div>
-						<label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 block mb-1">
+						<label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 block mb-1">
 							Pesquisa
 						</label>
 						<div className="relative">
@@ -430,7 +433,7 @@ export default function EntradasWeb() {
 						<h3 className="font-black text-slate-800 dark:text-slate-100 text-lg">
 							Tabela de Entradas
 						</h3>
-						<p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+						<p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
 							{filtrados.length} {filtrados.length === 1 ? 'registro exibido' : 'registros exibidos'} de acordo com os filtros selecionados
 						</p>
 					</div>
@@ -453,13 +456,14 @@ export default function EntradasWeb() {
 						<div className="overflow-auto max-h-[580px]">
 							<table className="w-full text-left border-collapse min-w-[760px]">
 								<thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800 shadow-2xs">
-									<tr className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+									<tr className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
 										<th className="px-4 py-3.5 w-28">Data</th>
 										<th className="px-4 py-3.5 min-w-[200px]">Descrição</th>
 										<th className="px-4 py-3.5 w-36">Categoria</th>
 										<th className="px-4 py-3.5 w-44">Conta de Destino</th>
 										<th className="px-4 py-3.5 w-32">Status</th>
 										<th className="px-4 py-3.5 text-right w-36">Valor</th>
+										<th className="px-2 py-3.5 w-12"><span className="sr-only">Editar</span></th>
 									</tr>
 								</thead>
 								<tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
@@ -470,7 +474,7 @@ export default function EntradasWeb() {
 										const formattedDate = item.data ? item.data.split('T')[0].split('-').reverse().join('/') : '-';
 
 										return (
-											<tr key={item.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors">
+											<tr key={item.id} onClick={() => setEditandoId(item.id)} title="Clique para editar" className="group hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors cursor-pointer">
 												{/* DATA */}
 												<td className="px-4 py-3.5 font-bold text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap">
 													<div className="flex items-center gap-1.5">
@@ -533,6 +537,18 @@ export default function EntradasWeb() {
 													<span className="text-sm text-emerald-600 dark:text-emerald-400">
 														+ {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.valor)}
 													</span>
+												</td>
+
+												{/* EDITAR */}
+												<td className="px-2 py-3.5 text-center">
+													<button
+														type="button"
+														onClick={(e) => { e.stopPropagation(); setEditandoId(item.id); }}
+														aria-label={`Editar ${item.descricao}`}
+														className="p-1.5 rounded-lg text-slate-400 opacity-60 group-hover:opacity-100 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:text-indigo-300 dark:hover:bg-indigo-950/40 transition cursor-pointer"
+													>
+														<Pencil size={14} />
+													</button>
 												</td>
 											</tr>
 										);
@@ -600,7 +616,7 @@ export default function EntradasWeb() {
 						<h3 className="font-black text-slate-800 dark:text-slate-100 text-lg">
 							Volume Mensal de Receitas
 						</h3>
-						<p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+						<p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
 							Distribuição acumulada de entradas por mês em {year}
 						</p>
 					</div>
@@ -681,6 +697,8 @@ export default function EntradasWeb() {
 				maxVisiveis={8}
 				emptyText="Nenhum lançamento com esses filtros."
 			/>
+
+			<EditarLancamentoModal transacaoId={editandoId} onClose={() => setEditandoId(null)} onSalvo={loadData} tipoCategoria="RECEITA" />
 		</div>
 	);
 }

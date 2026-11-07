@@ -4,6 +4,7 @@ import { HandCoins, Landmark, Loader2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "../../../../packages/services/supabase";
 import { recebimentosDivisaoService } from "../../../../packages/services/recebimentos-divisao.service";
+import { hojeISO } from "../../../../packages/utils/datas";
 
 interface Props {
 	isOpen: boolean;
@@ -18,10 +19,6 @@ interface Props {
 
 const CHAVE_ULTIMA_CONTA = "finance_ultima_conta_recebimento";
 const moeda = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const hoje = () => {
-	const d = new Date();
-	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
 const lerValor = (t: string) => {
 	const limpo = t.replace(/[^\d.,]/g, "");
 	const n = limpo.includes(",") ? Number(limpo.replace(/\./g, "").replace(",", ".")) : Number(limpo);
@@ -37,13 +34,13 @@ export default function ReceberPagamentoModal({ isOpen, onClose, onSuccess, user
 	const [contas, setContas] = useState<{ id: string; nome: string; instituicao?: string | null }[]>([]);
 	const [contaId, setContaId] = useState("");
 	const [valor, setValor] = useState("");
-	const [data, setData] = useState(hoje());
+	const [data, setData] = useState(hojeISO());
 	const [totais, setTotais] = useState<{ total: number; vencido: number } | null>(null);
 	const [salvando, setSalvando] = useState(false);
 
 	useEffect(() => {
 		if (!isOpen || !contato) return;
-		setData(hoje());
+		setData(hojeISO());
 		setValor(valorSugerido ? valorSugerido.toFixed(2).replace(".", ",") : "");
 		supabase
 			.from("contas_bancarias")
@@ -62,7 +59,7 @@ export default function ReceberPagamentoModal({ isOpen, onClose, onSuccess, user
 				setContaId(ativas.find((c: any) => c.id === ultima)?.id || (ativas.length === 1 ? ativas[0].id : ""));
 			});
 		if (!itemIds) {
-			recebimentosDivisaoService.totaisEmAberto(userId, contato.id, hoje()).then((t) => {
+			recebimentosDivisaoService.totaisEmAberto(userId, contato.id, hojeISO()).then((t) => {
 				setTotais(t);
 				if (!valorSugerido) setValor((t.vencido > 0 ? t.vencido : t.total).toFixed(2).replace(".", ","));
 			});
@@ -70,6 +67,16 @@ export default function ReceberPagamentoModal({ isOpen, onClose, onSuccess, user
 			setTotais(null);
 		}
 	}, [isOpen, contato?.id]);
+
+	// Fecha com Esc
+	useEffect(() => {
+		if (!isOpen) return;
+		const aoTeclar = (e: KeyboardEvent) => {
+			if (e.key === "Escape" && !salvando) onClose();
+		};
+		window.addEventListener("keydown", aoTeclar);
+		return () => window.removeEventListener("keydown", aoTeclar);
+	}, [isOpen, salvando, onClose]);
 
 	if (!isOpen || !contato) return null;
 
@@ -127,7 +134,7 @@ export default function ReceberPagamentoModal({ isOpen, onClose, onSuccess, user
 	return (
 		<div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm" onClick={onClose}>
 			<div
-				className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-5 sm:p-6 space-y-5"
+				className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-5 sm:p-6 space-y-5"
 				onClick={(e) => e.stopPropagation()}
 				role="dialog"
 				aria-modal="true"
@@ -144,7 +151,7 @@ export default function ReceberPagamentoModal({ isOpen, onClose, onSuccess, user
 							<p className="text-xs text-slate-500 dark:text-slate-400">de {contato.nome}</p>
 						</div>
 					</div>
-					<button onClick={onClose} aria-label="Fechar" className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer">
+					<button onClick={onClose} aria-label="Fechar" className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
 						<X size={18} />
 					</button>
 				</div>
@@ -160,7 +167,7 @@ export default function ReceberPagamentoModal({ isOpen, onClose, onSuccess, user
 								type="button"
 								onClick={() => setValor(o.v.toFixed(2).replace(".", ","))}
 								disabled={o.v <= 0}
-								className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-emerald-500 disabled:opacity-40 text-left cursor-pointer transition-colors">
+								className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-emerald-500 disabled:opacity-40 text-left cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
 								<p className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400">{o.rotulo}</p>
 								<p className="text-sm font-black tabular-nums text-slate-800 dark:text-slate-100">{moeda(o.v)}</p>
 							</button>
@@ -168,10 +175,10 @@ export default function ReceberPagamentoModal({ isOpen, onClose, onSuccess, user
 					</div>
 				)}
 
-				<div className="grid grid-cols-2 gap-3">
+				<div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3">
 					<label className="space-y-1">
 						<span className="text-xs font-bold text-slate-600 dark:text-slate-300">Valor recebido</span>
-						<InputMoeda value={valor} onChange={(v) => setValor(v)} className={campo} />
+						<InputMoeda value={valor} onChange={(v) => setValor(v)} className={campo} autoFocus />
 					</label>
 					<label className="space-y-1">
 						<span className="text-xs font-bold text-slate-600 dark:text-slate-300">Data</span>
@@ -200,7 +207,7 @@ export default function ReceberPagamentoModal({ isOpen, onClose, onSuccess, user
 				<button
 					onClick={confirmar}
 					disabled={salvando}
-					className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-sm flex items-center justify-center gap-2 cursor-pointer">
+					className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-sm flex items-center justify-center gap-2 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900">
 					{salvando ? <Loader2 size={16} className="animate-spin" /> : <HandCoins size={16} />}
 					Registrar recebimento
 				</button>

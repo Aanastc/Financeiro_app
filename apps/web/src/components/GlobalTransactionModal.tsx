@@ -8,6 +8,7 @@ import toast from "react-hot-toast";
 import { financeService } from "../../../../packages/services/finance.service";
 import { moedaService, ehReal, formatarMoeda, simboloMoeda } from "../../../../packages/services/moeda.service";
 import { lerMoeda } from "./InputMoeda";
+import { hojeISO } from "../../../../packages/utils/datas";
 
 export default function GlobalTransactionModal({ isOpen, onClose, userId }: { isOpen: boolean, onClose: () => void, userId: string }) {
     const [tipo, setTipo] = useState<"GASTO" | "ENTRADA" | "TRANSFERENCIA">("GASTO");
@@ -15,7 +16,7 @@ export default function GlobalTransactionModal({ isOpen, onClose, userId }: { is
     // Formulário
     const [valor, setValor] = useState("");
     const [descricao, setDescricao] = useState("");
-    const [data, setData] = useState(() => new Date().toISOString().split("T")[0]);
+    const [data, setData] = useState(() => hojeISO());
     const [categoriaId, setCategoriaId] = useState("");
     const [formaPagamento, setFormaPagamento] = useState<"CONTA" | "CARTAO">("CONTA");
     const [contaId, setContaId] = useState("");

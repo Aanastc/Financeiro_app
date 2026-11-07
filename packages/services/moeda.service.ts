@@ -1,3 +1,4 @@
+import { hojeISO } from "../utils/datas";
 /**
  * Moedas e cotações.
  *
@@ -45,7 +46,6 @@ export function formatarMoeda(valor: number, moeda = "BRL"): string {
 }
 
 const CHAVE_CACHE = "finance_cotacoes_v1";
-const hojeISO = () => new Date().toISOString().slice(0, 10);
 
 const lerCache = (): Record<string, number> => {
   try {

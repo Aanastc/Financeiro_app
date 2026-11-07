@@ -1,6 +1,6 @@
-import { inserirMovimentacoes, moedasDasContas } from "../../../../packages/services/finance.service";
+import { gravarMovimentacoes, inserirMovimentacoes, moedasDasContas } from "../../../../packages/services/finance.service";
 import { moedaService, ehReal, MOEDAS, formatarMoeda } from "../../../../packages/services/moeda.service";
-import { minhasEmpresas, registrarRetirada, classificarComoRetirada } from "../../../../packages/services/empresa.service";
+import { registrarRetirada, classificarComoRetirada } from "../../../../packages/services/empresa.service";
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { authService } from "../../../../packages/services/auth.service";
@@ -30,6 +30,10 @@ import {
 	type CabecalhoConta,
 	type SaldoDoExtrato,
 } from "../lib/extratoCabecalho";
+import { dataLocalISO, hojeISO } from "../../../../packages/utils/datas";
+
+/** Completa a perna que faltava numa transação que já existe (não desfaz a transação se falhar). */
+const completarPerna = (linhas: any[]) => gravarMovimentacoes(linhas, { desfazerTransacao: false });
 
 export interface TransacaoPreview {
 	id: string;
@@ -1411,7 +1415,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 
 				return {
 					id: Date.now() + index.toString(),
-					data: t.data || new Date().toISOString().split('T')[0],
+					data: t.data || hojeISO(),
 					descricao: cleanDesc || (tipoFinal === "Entrada" ? "Pix Recebido" : tipoFinal === "Meta" ? "Aplicação RDB" : tipoFinal === "Transferencia" ? "Transferência Própria" : tipoFinal === "Fatura" ? "Compra no Cartão" : "Pix Enviado"),
 					valor: Math.abs(parseFloat(t.valor) || 0),
 					tipo_transacao: tipoFinal,
@@ -1672,7 +1676,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 				if (tx) {
 					importados++;
 					if (tx.conta_id) {
-						await inserirMovimentacoes([{
+						await gravarMovimentacoes([{
 							usuario_id: user.id,
 							transacao_id: tx.id,
 							conta_id: tx.conta_id,
@@ -1785,11 +1789,10 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 			//    - a outra conta já registrou a perna contrária (extrato do outro banco)? só completa;
 			//    - senão cria a transferência (conta do outro lado é opcional).
 			const transferencias = itemsToSave.filter(i => i.tipo_transacao === "Transferencia");
-			const empresasDoUsuario = transferencias.length ? await minhasEmpresas(user.id) : [];
 			const somarDias = (iso: string, d: number) => {
 				const x = new Date(`${iso}T12:00:00`);
 				x.setDate(x.getDate() + d);
-				return x.toISOString().slice(0, 10);
+				return dataLocalISO(x);
 			};
 			const pernasDeTransferencia = async (contaId: string, tipo: "ENTRADA" | "SAIDA", data: string) => {
 				const { data: movs } = await supabase
@@ -1877,7 +1880,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 						}
 					}
 					if (candidatas.length === 1) {
-						await inserirMovimentacoes([{
+						await completarPerna([{
 							usuario_id: user.id,
 							transacao_id: candidatas[0].transacao_id,
 							conta_id: contaDoc,
@@ -1899,7 +1902,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 						// a transação do outro lado ainda não tem a perna desta conta?
 						const { data: pernas } = await supabase.from("movimentacoes").select("conta_id").eq("transacao_id", m.transacao_id);
 						if ((pernas || []).some((x: any) => x.conta_id === contaDoc)) continue;
-						await inserirMovimentacoes([{
+						await completarPerna([{
 							usuario_id: user.id,
 							transacao_id: m.transacao_id,
 							conta_id: contaDoc,
@@ -1933,7 +1936,7 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 						for (const m of (entradas || []).filter((x: any) => Math.abs(Number(x.valor) - Number(item.valor)) < 0.01)) {
 							const { data: pernas } = await supabase.from("movimentacoes").select("id").eq("transacao_id", m.transacao_id);
 							if ((pernas || []).length !== 1) continue;
-							await inserirMovimentacoes([{ usuario_id: user.id, transacao_id: m.transacao_id, conta_id: contaDoc, tipo: "SAIDA", valor: item.valor, data: item.data }]);
+							await completarPerna([{ usuario_id: user.id, transacao_id: m.transacao_id, conta_id: contaDoc, tipo: "SAIDA", valor: item.valor, data: item.data }]);
 							// Pix da empresa para a dona = pró-labore (vira "Salário" na visão pessoal); lucros se marca no painel
 							await classificarComoRetirada(user.id, m.transacao_id, "PRO_LABORE", m.conta_id, contaDoc);
 							completadas++;
@@ -1949,7 +1952,6 @@ export function ImportarProvider({ children }: { children: React.ReactNode }) {
 				const origemConta = contas.find((c) => c.id === (entrou ? outra : contaDoc));
 				const destinoConta = contas.find((c) => c.id === (entrou ? contaDoc : outra));
 				if (origemConta?.empresa_id && destinoConta && !destinoConta.empresa_id) {
-					const emp = empresasDoUsuario.find((e) => e.id === origemConta.empresa_id);
 					await registrarRetirada(user.id, {
 						contaEmpresa: origemConta.id,
 						contaPessoal: destinoConta.id,

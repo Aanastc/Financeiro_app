@@ -54,8 +54,41 @@ export default function DashboardLayout() {
   const [isNewTxMenuOpen, setIsNewTxMenuOpen] = useState(false);
   const [isGlobalTxModalOpen, setIsGlobalTxModalOpen] = useState(false);
 
-  // Sidebar Collapsible
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  // Sidebar recolhível.
+  // - Telas grandes (≥1024px): aberta ou recolhida, escolha da pessoa (fica salva).
+  // - Telas médias (768–1023px): recolhida (só ícones) para não espremer o conteúdo;
+  //   o botão abre por cima da página, sem empurrar nada.
+  // - Celular: gaveta, sempre com os nomes.
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("sidebar_recolhida") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [telaGrande, setTelaGrande] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches);
+  const [sidebarAbertaTablet, setSidebarAbertaTablet] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const aoMudar = () => {
+      setTelaGrande(mq.matches);
+      setSidebarAbertaTablet(false);
+    };
+    mq.addEventListener("change", aoMudar);
+    return () => mq.removeEventListener("change", aoMudar);
+  }, []);
+  const sidebarRecolhida = telaGrande ? isSidebarCollapsed : !sidebarAbertaTablet;
+  const alternarSidebar = () => {
+    if (!telaGrande) return setSidebarAbertaTablet((v) => !v);
+    setIsSidebarCollapsed((v) => {
+      try {
+        localStorage.setItem("sidebar_recolhida", v ? "0" : "1");
+      } catch {
+        /* sem armazenamento */
+      }
+      return !v;
+    });
+  };
 
   // PF x EMPRESA: escolhido na barra do topo; o menu lateral e a Home seguem a escolha
   const [empresaNome, setEmpresaNome] = useState<string | null>(null);
@@ -160,6 +193,7 @@ export default function DashboardLayout() {
   // Close mobile menu on route change
   useEffect(() => {
     setIsMobileMenuOpen(false);
+    setSidebarAbertaTablet(false);
   }, [location.pathname]);
 
   if (loading) {
@@ -172,7 +206,7 @@ export default function DashboardLayout() {
 
   // --- COMPONENTES DA SIDEBAR ---
 
-  const NavItem = ({ to, icon: Icon, label, colorClass = "", badge }: any) => {
+  const NavItemBase = ({ to, icon: Icon, label, colorClass = "", badge, colapsada: isSidebarCollapsed }: any) => {
     const currentFull = location.pathname + location.search;
     const isActive = to.includes("?")
       ? currentFull === to
@@ -204,7 +238,7 @@ export default function DashboardLayout() {
     );
   };
 
-  const NavGroup = ({ title, children }: any) => (
+  const NavGroupBase = ({ title, children, colapsada: isSidebarCollapsed }: any) => (
     <div className="mb-4">
       {!isSidebarCollapsed ? (
           <h4 className="px-3 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5">
@@ -217,22 +251,27 @@ export default function DashboardLayout() {
     </div>
   );
 
-  const SidebarContent = () => (
-    <div className="flex flex-col h-full px-3 sm:px-4 py-5 overflow-hidden">
+  // Chamada como função (não como <Componente />) para o menu não ser recriado a cada
+  // render — senão a rolagem do menu voltava ao topo sempre que algo mudava na tela.
+  const renderSidebar = (isSidebarCollapsed: boolean, mobile = false) => {
+    const NavItem = (p: any) => <NavItemBase {...p} colapsada={isSidebarCollapsed} />;
+    const NavGroup = (p: any) => <NavGroupBase {...p} colapsada={isSidebarCollapsed} />;
+    return (
+    <div className={`flex flex-col h-full ${isSidebarCollapsed ? "px-2" : "px-3 sm:px-4"} py-5 overflow-hidden`}>
       {/* Brand */}
-      <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3 px-3'} mb-5 shrink-0 relative`}>
+      <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3 px-3'} ${mobile ? 'pr-12' : ''} mb-5 shrink-0 relative`}>
         <div className="w-8 h-8 bg-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-indigo-200 dark:shadow-none shrink-0">
           <span className="text-white text-lg font-black">T</span>
         </div>
         {!isSidebarCollapsed && (
-            <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tighter">
+            <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tighter whitespace-nowrap truncate">
             TECH FINANCE.
             </h2>
         )}
       </div>
 
       {/* Navegação */}
-      <nav className="flex-1 overflow-y-auto pr-1 pb-6 custom-scrollbar space-y-0.5">
+      <nav className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden -mr-1 pr-1 pb-6 space-y-0.5">
         {convidado ? (
           <>
             <NavGroup title="Convidado">
@@ -287,7 +326,7 @@ export default function DashboardLayout() {
         <NavGroup title="Patrimônio">
           <NavItem to="/investimentos" icon={Briefcase} label="Investimentos" colorClass="text-purple-500" />
           {/* Sem empresa: atalho para cadastrar. Com empresa: troca pela chave no topo */}
-          {!empresaNome && <NavItem to="/empresa" icon={Building2} label="Tenho CNPJ" colorClass="text-indigo-500" />}
+          {!empresaNome && userProfile?.acompanha_mei === true && <NavItem to="/empresa" icon={Building2} label="Tenho CNPJ" colorClass="text-indigo-500" />}
         </NavGroup>
 
         <NavGroup title="Ferramentas">
@@ -299,20 +338,28 @@ export default function DashboardLayout() {
         )}
       </nav>
     </div>
-  );
+    );
+  };
 
   return (
     <ImportarProvider>
       <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 relative overflow-x-hidden">
         
         {/* DESKTOP SIDEBAR */}
-        <aside className={`hidden md:flex flex-col ${isSidebarCollapsed ? 'w-20' : 'w-64'} border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex-shrink-0 z-20 transition-all duration-300 fixed inset-y-0 left-0 h-screen`}>
-          <SidebarContent />
-          <button 
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className="absolute -right-3 top-1/2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full p-1 text-slate-500 shadow-sm cursor-pointer z-50 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+        {/* Tela média com o menu aberto por cima: clicar fora fecha */}
+        {!telaGrande && sidebarAbertaTablet && (
+          <div className="hidden md:block fixed inset-0 z-[35] bg-slate-900/40 backdrop-blur-[2px]" onClick={() => setSidebarAbertaTablet(false)} />
+        )}
+
+        <aside className={`hidden md:flex flex-col ${sidebarRecolhida ? 'w-20' : 'w-64'} ${!telaGrande && !sidebarRecolhida ? 'shadow-2xl' : ''} border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex-shrink-0 z-40 transition-[width] duration-300 fixed inset-y-0 left-0 h-dvh`}>
+          {renderSidebar(sidebarRecolhida)}
+          <button
+            onClick={alternarSidebar}
+            aria-label={sidebarRecolhida ? "Expandir menu" : "Recolher menu"}
+            title={sidebarRecolhida ? "Expandir menu" : "Recolher menu"}
+            className="absolute -right-3 top-[74px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full p-1 text-slate-500 shadow-sm cursor-pointer z-50 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
           >
-            <ChevronLeft size={16} className={`transition-transform duration-300 ${isSidebarCollapsed ? 'rotate-180' : ''}`} />
+            <ChevronLeft size={16} className={`transition-transform duration-300 ${sidebarRecolhida ? 'rotate-180' : ''}`} />
           </button>
         </aside>
 
@@ -320,20 +367,21 @@ export default function DashboardLayout() {
         {isMobileMenuOpen && (
           <div className="md:hidden fixed inset-0 z-50 flex">
             <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
-            <div className="relative flex-1 flex flex-col max-w-xs w-full bg-white dark:bg-slate-900 shadow-2xl transition-all h-full overflow-y-auto">
-              <button 
+            <div className="relative flex flex-col w-[85vw] max-w-xs bg-white dark:bg-slate-900 shadow-2xl h-dvh">
+              <button
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="absolute top-5 right-4 p-2 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500 z-10"
+                aria-label="Fechar menu"
+                className="absolute top-4 right-3 p-2 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500 z-10 cursor-pointer"
               >
                 <X size={20} />
               </button>
-              <SidebarContent />
+              {renderSidebar(false, true)}
             </div>
           </div>
         )}
 
         {/* MAIN CONTENT AREA */}
-        <div className={`flex-1 flex flex-col min-w-0 ${isSidebarCollapsed ? 'md:pl-20' : 'md:pl-64'} w-full transition-all duration-300`}>
+        <div className={`flex-1 flex flex-col min-w-0 md:pl-20 ${isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'} w-full transition-[padding] duration-300`}>
           
           {/* TOP HEADER */}
           <header className="sticky top-0 h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-30">

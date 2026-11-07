@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { X, HandCoins, Building, Calendar, DollarSign } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
 import toast from "react-hot-toast";
+import { dataLocalISO, hojeISO } from "../../../../packages/utils/datas";
 
 export default function AddDividaModal({ isOpen, onClose, userId }: any) {
     const [tipo, setTipo] = useState("emprestimo_pessoal");
@@ -12,7 +13,7 @@ export default function AddDividaModal({ isOpen, onClose, userId }: any) {
     const [valorTotal, setValorTotal] = useState("");
     const [quantidadeParcelas, setQuantidadeParcelas] = useState("12");
     const [dataPrimeiroVencimento, setDataPrimeiroVencimento] = useState(
-        new Date().toISOString().split("T")[0]
+        hojeISO()
     );
 
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -54,7 +55,7 @@ export default function AddDividaModal({ isOpen, onClose, userId }: any) {
                 return {
                     numero_parcela: idx + 1,
                     valor_esperado: valorParcela,
-                    data_vencimento: date.toISOString().split("T")[0],
+                    data_vencimento: dataLocalISO(date),
                     status: "pendente"
                 };
             });

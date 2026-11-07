@@ -4,6 +4,7 @@ import { X, Calendar, CheckCircle2, CircleDashed,    DollarSign, Trash2, Zap, Pe
 import { financeService } from "../../../../packages/services/finance.service";
 import { supabase } from "../../../../packages/services/supabase";
 import toast from "react-hot-toast";
+import { hojeISO } from "../../../../packages/utils/datas";
 
 export default function DividaDetalheModal({ isOpen, onClose, divida, userId, onPagamentoRealizado }: any) {
     const [isPagarModalOpen, setIsPagarModalOpen] = useState(false);
@@ -12,7 +13,7 @@ export default function DividaDetalheModal({ isOpen, onClose, divida, userId, on
     const [parcelaSelecionada, setParcelaSelecionada] = useState<any>(null);
     const [contas, setContas] = useState<any[]>([]);
     const [contaId, setContaId] = useState("");
-    const [dataPagamento, setDataPagamento] = useState(new Date().toISOString().split("T")[0]);
+    const [dataPagamento, setDataPagamento] = useState(hojeISO());
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
     const [isSyncingGastos, setIsSyncingGastos] = useState(false);
@@ -52,7 +53,7 @@ export default function DividaDetalheModal({ isOpen, onClose, divida, userId, on
     if (!isOpen || !divida) return null;
 
     const parcelas = divida.parcelas_divida || [];
-    const hojeStr = new Date().toISOString().split("T")[0];
+    const hojeStr = hojeISO();
     const parcelasVencidasPendentes = parcelas.filter((p: any) => p.status === 'pendente' && p.data_vencimento < hojeStr);
 
     const brl = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(v || 0));
@@ -60,7 +61,7 @@ export default function DividaDetalheModal({ isOpen, onClose, divida, userId, on
 
     const handleAbrirPagamento = (parcela: any) => {
         setParcelaSelecionada(parcela);
-        setDataPagamento(new Date().toISOString().split("T")[0]);
+        setDataPagamento(hojeISO());
         setValorPago(String(Number(parcela.valor_esperado || 0).toFixed(2)));
         setJaSaiuDaConta(true);
         setLancamentoId("");
@@ -449,8 +450,8 @@ export default function DividaDetalheModal({ isOpen, onClose, divida, userId, on
                                             <div className="flex flex-wrap items-center gap-2 mt-2">
                                                 <input
                                                     type="date"
-                                                    value={editando.data}
-                                                    onChange={(e) => setEditando({ ...editando, data: e.target.value })}
+                                                    value={editando?.data ?? ""}
+                                                    onChange={(e) => setEditando((x) => x && { ...x, data: e.target.value })}
                                                     className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 dark:text-slate-100"
                                                     aria-label="Data em que pagou"
                                                 />
@@ -458,8 +459,8 @@ export default function DividaDetalheModal({ isOpen, onClose, divida, userId, on
                                                     type="number"
                                                     step="0.01"
                                                     min="0"
-                                                    value={editando.valor}
-                                                    onChange={(e) => setEditando({ ...editando, valor: e.target.value })}
+                                                    value={editando?.valor ?? ""}
+                                                    onChange={(e) => setEditando((x) => x && { ...x, valor: e.target.value })}
                                                     className="w-28 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 dark:text-slate-100"
                                                     aria-label="Valor pago"
                                                 />

@@ -5,6 +5,7 @@ import { X, ShoppingBag, CreditCard, Wallet } from "lucide-react";
 import { financeService } from "../../../../packages/services/finance.service";
 import { supabase } from "../../../../packages/services/supabase";
 import { AddCartaoWeb } from "./AddCartaoWeb";
+import { hojeISO } from "../../../../packages/utils/datas";
 
 const CATEGORIAS_PADRAO = [
 	"Moradia",
@@ -37,7 +38,7 @@ export function AddGastoWeb({
 	const [form, setForm] = useState({
 		descricao: "",
 		valor: "",
-		data: new Date().toISOString().split("T")[0],
+		data: hojeISO(),
 		categoria: "Outros",
 		classificacao: "Variável",
 		tipo: "", // Optional
@@ -158,7 +159,7 @@ export function AddGastoWeb({
 				<div className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1 custom-scrollbar">
 					{/* 1. INFORMAÇÕES BÁSICAS */}
 					<div className="space-y-3">
-						<p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">1. Informações Básicas</p>
+						<p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block ml-1">1. Informações Básicas</p>
 						<input
 							list="descricao-sugestoes"
 							placeholder="O que você comprou?"
@@ -182,7 +183,7 @@ export function AddGastoWeb({
 
 					{/* 2. FORMA DE PAGAMENTO */}
 					<div className="space-y-2">
-						<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2">2. Forma de Pagamento</label>
+						<label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-2">2. Forma de Pagamento</label>
 						<div className="flex gap-2">
 							{[
 								{ id: "Débito/Pix", icon: <Wallet size={16} /> },
@@ -195,7 +196,7 @@ export function AddGastoWeb({
 									className={`flex-1 p-3 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer text-sm ${
 										form.metodo_pagamento === m.id
 											? "bg-rose-500 text-white shadow-lg shadow-rose-200/20 dark:shadow-none scale-[1.01]"
-											: "bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700"
+											: "bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-rose-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700"
 									}`}>
 									{m.icon} <span>{m.id}</span>
 								</button>
@@ -205,7 +206,7 @@ export function AddGastoWeb({
 
 					{/* 3. DETALHES DO VALOR (DINÂMICO) */}
 					<div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
-						<label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2">3. Detalhes do Gasto</label>
+						<label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-2">3. Detalhes do Gasto</label>
 						
 						{form.metodo_pagamento === "Crédito" ? (
 							<div className="p-4 bg-rose-500/10 dark:bg-rose-500/5 rounded-3xl space-y-4 border border-rose-500/20">
@@ -249,13 +250,13 @@ export function AddGastoWeb({
 									<div className="p-4 bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-rose-500/20 animate-in zoom-in duration-300">
 										<div className="flex justify-between items-end">
 											<div>
-												<p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Parcelamento</p>
+												<p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Parcelamento</p>
 												<p className="text-base sm:text-lg font-black text-rose-500">
 													{form.parcelas}x de {preview.valor}
 												</p>
 											</div>
 											<div className="text-right">
-												<p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Fim do Pagamento</p>
+												<p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Fim do Pagamento</p>
 												<p className="text-xs font-black text-slate-700 dark:text-slate-200">{preview.mesFinal}</p>
 											</div>
 										</div>
@@ -265,7 +266,7 @@ export function AddGastoWeb({
 						) : (
 							<div className="space-y-3">
 								<div className="space-y-1.5">
-									<label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">Conta Bancária Origem</label>
+									<label className="text-[9px] font-black uppercase text-slate-500 dark:text-slate-400 ml-2">Conta Bancária Origem</label>
 									<select
 										className="w-full p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 cursor-pointer text-sm"
 										value={form.conta_id}
@@ -278,7 +279,7 @@ export function AddGastoWeb({
 								</div>
 								
 								<div className="space-y-1.5">
-									<label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">Valor do Gasto</label>
+									<label className="text-[9px] font-black uppercase text-slate-500 dark:text-slate-400 ml-2">Valor do Gasto</label>
 									<InputMoeda
 										className="w-full p-5 bg-slate-50 dark:bg-slate-800 rounded-3xl font-black text-rose-500 dark:text-rose-400 text-3xl border border-slate-200 dark:border-slate-700 focus:border-rose-500 outline-none text-center"
 										value={form.valor}
@@ -291,7 +292,7 @@ export function AddGastoWeb({
 
 					{/* 4. CLASSIFICAÇÃO */}
 					<div className="space-y-3">
-						<p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">4. Categorização</p>
+						<p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block ml-1">4. Categorização</p>
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 							<SeletorCategoria
 								modo="nome"
@@ -317,7 +318,7 @@ export function AddGastoWeb({
 
 					{/* 5. RESPONSÁVEL PELO GASTO */}
 					<div className="space-y-3">
-						<p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block ml-1">5. Responsável pelo Gasto</p>
+						<p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block ml-1">5. Responsável pelo Gasto</p>
 						<div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
 							<label className="flex items-center gap-3 cursor-pointer">
 								<input 
@@ -331,7 +332,7 @@ export function AddGastoWeb({
 							
 							{form.terceiro && (
 								<div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
-									<label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">Quem deve pagar?</label>
+									<label className="text-[9px] font-black uppercase text-slate-500 dark:text-slate-400 ml-1">Quem deve pagar?</label>
 									<select
 										className="w-full p-3.5 rounded-2xl font-bold bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 outline-none border border-slate-200 dark:border-slate-700 focus:border-rose-500 text-sm cursor-pointer"
 										value={form.contato_id}

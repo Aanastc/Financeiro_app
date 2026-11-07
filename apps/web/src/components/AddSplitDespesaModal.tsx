@@ -22,6 +22,7 @@ import { despesasCompartilhadasService } from "../../../../packages/services/des
 import type { Grupo } from "../../../../packages/services/despesas-compartilhadas.service";
 import toast from "react-hot-toast";
 import { notificarDivisaoPorEmail, EMAIL_DIVISAO_ATIVO } from "../../../../packages/services/convite.service";
+import { dataLocalISO, hojeISO } from "../../../../packages/utils/datas";
 
 interface AddSplitDespesaModalProps {
 	isOpen: boolean;
@@ -56,7 +57,7 @@ export default function AddSplitDespesaModal({
 	const [descricao, setDescricao] = useState("");
 	const [valorTotalStr, setValorTotalStr] = useState("");
 	const [data, setData] = useState(
-		() => new Date().toISOString().split("T")[0],
+		() => hojeISO(),
 	);
 	const [categoriaId, setCategoriaId] = useState("");
 	const [formaPagamento, setFormaPagamento] = useState<"CONTA" | "CARTAO">(
@@ -377,7 +378,7 @@ export default function AddSplitDespesaModal({
 					if (isRecorrente) {
 						const baseDate = new Date(data + "T12:00:00");
 						const targetDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + m, diaDoMes);
-						dataFinal = targetDate.toISOString().split("T")[0];
+						dataFinal = dataLocalISO(targetDate);
 						const mesNome = targetDate.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
 						sufixoDesc = ` (${mesNome})`;
 					}
@@ -478,7 +479,7 @@ export default function AddSplitDespesaModal({
 					if (isRecorrente) {
 						const baseDate = new Date(data + "T12:00:00");
 						const targetDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + m, diaDoMes);
-						dataFinal = targetDate.toISOString().split("T")[0];
+						dataFinal = dataLocalISO(targetDate);
 						const mesNome = targetDate.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
 						sufixoDesc = ` (${mesNome})`;
 					}

@@ -15,6 +15,7 @@ import AddMetaWeb from "../../components/AddMetaWeb";
 import AddDepositoWeb from "../../components/AddDepositoWeb";
 import MetaExtratoModal from "../../components/MetaExtratoModal";
 import PageLoader from "../../components/PageLoader";
+import { dataLocalISO } from "../../../../../packages/utils/datas";
 
 export default function MetasWeb() {
 	const [metas, setMetas] = useState<any[]>([]);
@@ -50,7 +51,7 @@ export default function MetasWeb() {
 			await financeService.addMeta(user.id, {
 				titulo: "Reserva de Emergência",
 				valor: 10000,
-				prazo: prazo.toISOString().split("T")[0],
+				prazo: dataLocalISO(prazo),
 				debito_automatico: false,
 			});
 			toast.success("Meta criada. Edite o valor e o prazo como quiser.");
@@ -247,7 +248,7 @@ export default function MetasWeb() {
 											<FileText size={11} className="text-pink-500 opacity-0 group-hover/cardacc:opacity-100 transition-opacity" />
 										</div>
 										<p className="font-black text-[#3D3030] dark:text-slate-200 text-sm">R$ {totalAcumulado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
-										<p className="text-[8px] text-slate-400 dark:text-slate-500 font-bold mt-0.5">
+										<p className="text-[8px] text-slate-500 dark:text-slate-400 font-bold mt-0.5">
 											Depósitos: R$ {totalDepositado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} • Caixinhas/investimentos: R$ {totalInvestido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 										</p>
 									</div>

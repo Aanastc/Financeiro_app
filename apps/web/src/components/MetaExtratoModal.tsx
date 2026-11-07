@@ -237,7 +237,7 @@ export default function MetaExtratoModal({
 				<div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-50/50 dark:bg-slate-950/50 space-y-6">
 					<div>
 						<div className="flex items-center justify-between mb-3">
-							<h4 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-2">
+							<h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-2">
 								<FileText size={15} /> Histórico de Movimentações ({lancamentos.length})
 							</h4>
 							<span className="text-[11px] text-slate-400">Clique na lixeira para excluir lançamentos indevidos</span>
@@ -327,7 +327,7 @@ export default function MetaExtratoModal({
 					{/* Se houver ativos de investimentos vinculados */}
 					{investimentosVinculados.length > 0 && (
 						<div>
-							<h4 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+							<h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
 								<TrendingUp size={15} /> Ativos de Investimentos Vinculados ({investimentosVinculados.length})
 							</h4>
 							<div className="space-y-2">

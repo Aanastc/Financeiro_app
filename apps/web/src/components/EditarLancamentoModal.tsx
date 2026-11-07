@@ -1,4 +1,5 @@
 import InputMoeda from "./InputMoeda";
+import SeletorCategoria from "./SeletorCategoria";
 import { useEffect, useState } from "react";
 import { Loader2, Pencil, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
@@ -9,6 +10,8 @@ interface Props {
 	transacaoId: string | null;
 	onClose: () => void;
 	onSalvo: () => void;
+	/** Mostra o campo de categoria (telas de Gastos e Entradas) */
+	tipoCategoria?: "DESPESA" | "RECEITA";
 }
 
 const lerMeta = (obs?: string | null): Record<string, any> | null => {
@@ -28,24 +31,27 @@ const lerValor = (t: string) => {
 const moeda = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 /**
- * Edita um lançamento de divisão de contas / acordo: descrição, valor e data
- * (ou exclui). Mantém coerentes os dados guardados junto (parte de cada um,
- * valor já pago) e não deixa o valor ficar menor que o que já foi pago.
+ * Edita um lançamento (gasto, entrada, divisão de contas / acordo): descrição,
+ * valor, data e, quando pedido, categoria (ou exclui). Mantém coerentes os dados
+ * guardados junto (parte de cada um, valor já pago) e não deixa o valor ficar
+ * menor que o que já foi pago.
  */
-export default function EditarLancamentoModal({ transacaoId, onClose, onSalvo }: Props) {
+export default function EditarLancamentoModal({ transacaoId, onClose, onSalvo, tipoCategoria }: Props) {
 	const [carregando, setCarregando] = useState(false);
 	const [salvando, setSalvando] = useState(false);
 	const [original, setOriginal] = useState<any>(null);
 	const [descricao, setDescricao] = useState("");
 	const [valor, setValor] = useState("");
 	const [data, setData] = useState("");
+	const [categoriaId, setCategoriaId] = useState("");
 
 	useEffect(() => {
 		if (!transacaoId) return;
 		setCarregando(true);
+		setOriginal(null);
 		supabase
 			.from("transacoes")
-			.select("id, descricao, valor, data, observacao, terceiro, terceiro_pago")
+			.select("id, descricao, valor, data, observacao, terceiro, terceiro_pago, categoria_id")
 			.eq("id", transacaoId)
 			.single()
 			.then(({ data: t, error }) => {
@@ -59,6 +65,7 @@ export default function EditarLancamentoModal({ transacaoId, onClose, onSalvo }:
 				setDescricao(t.descricao || "");
 				setValor(Number(t.valor).toFixed(2).replace(".", ","));
 				setData(t.data);
+				setCategoriaId(t.categoria_id || "");
 			});
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [transacaoId]);
@@ -110,10 +117,24 @@ export default function EditarLancamentoModal({ transacaoId, onClose, onSalvo }:
 					valor: novoValor,
 					data,
 					observacao,
+					...(tipoCategoria ? { categoria_id: categoriaId || null } : {}),
 					...(jaPago > 0 ? { terceiro_pago: jaPago >= novoValor - 0.005 } : {}),
 				})
 				.eq("id", original.id);
 			if (error) throw error;
+			// O saldo da conta vem das movimentações: elas acompanham o novo valor e a nova data.
+			// Só as em real e com o valor antigo (conta em outra moeda guarda o valor convertido).
+			const { data: movs } = await supabase.from("movimentacoes").select("id, valor, moeda").eq("transacao_id", original.id);
+			const acompanham = (movs || []).filter(
+				(m: any) => (!m.moeda || String(m.moeda).toUpperCase() === "BRL") && Math.abs(Number(m.valor) - Number(original.valor)) < 0.005,
+			);
+			if (acompanham.length) {
+				const { error: errMov } = await supabase
+					.from("movimentacoes")
+					.update({ valor: novoValor, data })
+					.in("id", acompanham.map((m: any) => m.id));
+				if (errMov) throw errMov;
+			}
 			toast.success("Lançamento atualizado.");
 			onSalvo();
 			onClose();
@@ -185,6 +206,12 @@ export default function EditarLancamentoModal({ transacaoId, onClose, onSalvo }:
 								<input type="date" value={data} onChange={(e) => setData(e.target.value)} className={campo} />
 							</label>
 						</div>
+						{tipoCategoria && (
+							<label className="block space-y-1">
+								<span className="text-xs font-bold text-slate-600 dark:text-slate-300">Categoria</span>
+								<SeletorCategoria tipo={tipoCategoria} value={categoriaId} onChange={setCategoriaId} className={campo} />
+							</label>
+						)}
 						{jaPago > 0 && (
 							<p className="text-xs text-slate-500 dark:text-slate-400">
 								Já pago/abatido: <strong>{moeda(jaPago)}</strong> — falta {moeda(Math.max(0, lerValor(valor) - jaPago))}.

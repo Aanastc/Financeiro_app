@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import { lerParcelaDaDescricao, descricaoSemParcela } from "../utils/parcelas";
 import { getFaturaCycle, getFaturaMesReferencia, getVencimentoDiaDoMes } from "../utils/cartao.utils";
 import { encontrarPorInstituicao } from "../utils/instituicoes";
+import { cartaoDaDivida } from "../utils/dividas";
 import { buscarTodasPaginas } from "./paginacao";
 import { sincronizarCaixinhas, ocultarCaixinha, contaDaCaixinha } from "./caixinhas.service";
 import {
@@ -13,6 +14,16 @@ import {
   metaIdDoInvestimento,
   corretoraComMeta,
 } from "../utils/investimentos";
+import { dataLocalISO, diaNoMes, hojeISO } from "../utils/datas";
+
+/** A descrição é exatamente a parcela n de N? ("1/12" não pode casar com "11/12") */
+const ehAParcela = (descricao: string | null | undefined, n: number, total: number) => {
+  const p = lerParcelaDaDescricao(descricao);
+  return Boolean(p && p.atual === Number(n) && p.total === Number(total));
+};
+
+/** Sincronização de faturas em andamento por usuário (ver syncCardFaturas) */
+const syncFaturasEmAndamento = new Map<string, { atual: Promise<void>; proxima?: Promise<void> }>();
 
 /** Colunas da migration 007; se ainda não existirem no banco, salva sem elas. */
 const CAMPOS_RENTABILIDADE = ["indexador", "taxa", "vencimento", "liquidez_diaria", "conta_id", "ajuste_valor", "ajuste_data"];
@@ -106,6 +117,25 @@ export async function inserirMovimentacoes(linhas: any[]) {
     return { ...res, error: new Error("Para guardar saldo em outra moeda na mesma conta, rode a seção 11 do supabase/migrations/ajustes_supabase.sql.") };
   }
   return res;
+}
+
+/**
+ * Igual a inserirMovimentacoes, mas não deixa o erro passar em silêncio: se a movimentação
+ * não for gravada, desfaz a transação que acabou de ser criada (senão ela aparece nos
+ * relatórios sem mexer no saldo) e lança o erro para a tela avisar.
+ * Use `desfazerTransacao: false` quando a transação já existia antes (só faltava uma perna).
+ */
+export async function gravarMovimentacoes(linhas: any[], { desfazerTransacao = true }: { desfazerTransacao?: boolean } = {}) {
+  const { error } = await inserirMovimentacoes(linhas);
+  if (!error) return;
+  if (desfazerTransacao) {
+    const ids = [...new Set(linhas.map((l) => l.transacao_id).filter(Boolean))];
+    if (ids.length) {
+      await supabase.from("movimentacoes").delete().in("transacao_id", ids);
+      await supabase.from("transacoes").delete().in("id", ids);
+    }
+  }
+  throw error;
 }
 
 /** Campos de moeda para gravar na transação (só quando não é real). */
@@ -280,7 +310,7 @@ export const financeService = {
 
         // Movimentação de Saída da Origem
         if (conta_id) {
-          await inserirMovimentacoes([{
+          await gravarMovimentacoes([{
             usuario_id,
             transacao_id: tx.id,
             conta_id,
@@ -293,7 +323,7 @@ export const financeService = {
 
         // Movimentação de Entrada no Destino
         if (conta_destino_id) {
-          await inserirMovimentacoes([{
+          await gravarMovimentacoes([{
             usuario_id,
             transacao_id: tx.id,
             conta_id: conta_destino_id,
@@ -337,7 +367,7 @@ export const financeService = {
           }]).select().single();
         if (txError) throw txError;
 
-        await inserirMovimentacoes([{
+        await gravarMovimentacoes([{
           usuario_id,
           transacao_id: tx.id,
           conta_id,
@@ -368,7 +398,7 @@ export const financeService = {
             }]).select().single();
           if (txError) throw txError;
 
-          await inserirMovimentacoes([{
+          await gravarMovimentacoes([{
             usuario_id,
             transacao_id: tx.id,
             conta_id,
@@ -731,7 +761,7 @@ export const financeService = {
       if (txError) throw txError;
 
       if (form.conta_id && tx) {
-        await inserirMovimentacoes([{
+        await gravarMovimentacoes([{
           usuario_id,
           transacao_id: tx.id,
           conta_id: form.conta_id,
@@ -767,16 +797,27 @@ export const financeService = {
     const valorDestaParcela = valorDaParcela(currentParcelaInput);
 
     // 1. 💸 REGISTRA A TRANSAÇÃO NA TABELA `transacoes` (Deduplicação defensiva)
+    // Só vale para importação e parcelas: duas compras iguais no mesmo dia lançadas à mão
+    // (ex.: dois cafés) são duas compras de verdade e não podem virar uma.
     let transacao: any = null;
-    let { data: existingTx } = await supabase
-      .from("transacoes")
-      .select("*")
-      .eq("usuario_id", usuario_id)
-      .eq("data", form.data)
-      .eq("valor", valorDestaParcela)
-      .eq("cartao_id", isCredito ? form.cartao_id : null)
-      .ilike("descricao", `%${descricaoLimpa}%`)
-      .maybeSingle();
+    let existingTx: any = null;
+    // (Compra em conta nunca passou por aqui — o importador já tira os repetidos.)
+    if (isCredito && (form.documento_importado_id || numParcelas > 1)) {
+      let busca = supabase
+        .from("transacoes")
+        .select("*")
+        .eq("usuario_id", usuario_id)
+        .eq("cartao_id", form.cartao_id)
+        .eq("data", form.data)
+        .eq("valor", valorDestaParcela)
+        .ilike("descricao", `%${descricaoLimpa}%`);
+      // Duas linhas iguais no MESMO documento são duas compras; só repete se veio de outro
+      if (form.documento_importado_id) {
+        busca = busca.or(`documento_importado_id.is.null,documento_importado_id.neq.${form.documento_importado_id}`);
+      }
+      const { data: iguais } = await busca.limit(1);
+      existingTx = (iguais || [])[0] || null;
+    }
 
     // Se não achou por data exata, mas for parcelamento, busca se já existia pré-criada para esta mesma parcela
     if (!existingTx && numParcelas > 1) {
@@ -791,8 +832,9 @@ export const financeService = {
         .lte("valor", Math.round((valorDestaParcela + tolerancia) * 100) / 100)
         .ilike("descricao", `%${descricaoLimpa}%`)
         .ilike("descricao", `%${currentParcelaInput}/${numParcelas}%`)
-        .limit(1);
-      const pendingParcTx = (pendingParcTxs || [])[0];
+        .limit(20);
+      // "1/12" também casa com "11/12" no ilike: confere o número da parcela de verdade
+      const pendingParcTx = (pendingParcTxs || []).find((t: any) => ehAParcela(t.descricao, currentParcelaInput, numParcelas));
 
       if (pendingParcTx) {
         existingTx = pendingParcTx;
@@ -881,7 +923,7 @@ export const financeService = {
           if (dataParcela.getDate() !== day) {
             dataParcela.setDate(0); // Ajuste de fim de mês
           }
-          const dataParcelaStr = dataParcela.toISOString().split("T")[0];
+          const dataParcelaStr = dataLocalISO(dataParcela);
           const isCurrent = i === currentParcelaInput;
           const isPast = i < currentParcelaInput;
           const descParcela = `${descricaoLimpa} - Parcela ${i}/${numParcelas}`;
@@ -897,7 +939,8 @@ export const financeService = {
               .eq("valor", valorDaParcela(i))
               .ilike("descricao", `%${descricaoLimpa}%`)
               .ilike("descricao", `%${i}/${numParcelas}%`)
-              .maybeSingle();
+              .limit(20)
+              .then((r) => ({ data: (r.data || []).find((t: any) => ehAParcela(t.descricao, i, numParcelas)) || null }));
 
             if (existingOtherTx) {
               txIdForParcela = existingOtherTx.id;
@@ -1047,115 +1090,6 @@ export const financeService = {
     if (errMovs) throw errMovs;
   },
 
-  async bulkAddGastos(usuario_id: string, gastos: any[]) {
-    const limparDescricao = (descricao: string) => {
-      return descricao.replace(/\(\d+\/\d+\)/g, "").trim();
-    };
-
-    const payload: any[] = [];
-
-    gastos.forEach(g => {
-      const isCredito = g.metodo_pagamento === "Crédito";
-      const descLimpa = limparDescricao(g.descricao);
-      const numParcelas = parseInt(g.total_parcelas) || 1;
-      const parcelaAtual = parseInt(g.parcela_atual) || 1;
-
-      // Se for a primeira parcela de um plano, expande para o futuro
-      if (isCredito && numParcelas > 1 && parcelaAtual === 1) {
-        const idAgrupador = crypto.randomUUID();
-        const [year, month, day] = g.data.split('-').map(Number);
-        // Em importações bulk, o valor já é o da parcela
-        const valorParcela = Math.round(Math.abs(g.valor) * 100) / 100;
-
-        for (let i = 0; i < numParcelas; i++) {
-          const dataParcela = new Date(year, month - 1 + i, day, 12, 0, 0);
-          if (dataParcela.getDate() !== day) {
-            dataParcela.setDate(0);
-          }
-
-          payload.push({
-            usuario_id,
-            descricao: descLimpa,
-            valor: valorParcela,
-            data: dataParcela.toISOString().split("T")[0],
-            categoria: g.categoria || "Outros",
-            classificacao: g.classificacao || "Variável",
-            tipo: g.tipo || "Essencial",
-            metodo_pagamento: "Crédito",
-            cartao_id: g.cartao_id,
-            parcela_atual: i + 1,
-            total_parcelas: numParcelas,
-            identificador_parcelamento: idAgrupador,
-            considerar_soma: false,
-          });
-        }
-      } else {
-        // Gasto normal
-        payload.push({
-          usuario_id,
-          tipo: "DESPESA",
-          descricao: descLimpa,
-          valor: Math.abs(g.valor),
-          data: g.data,
-          cartao_id: isCredito ? g.cartao_id : null,
-          conta_id: !isCredito ? (g.conta_id || null) : null,
-          status: "confirmada"
-        });
-      }
-    });
-
-    const { error } = await supabase.from("transacoes").insert(payload);
-    if (error) throw error;
-  },
-
-  async getGastosPorCartao(cartao_id: string) {
-    const { data, error } = await supabase.from("transacoes").select("*").eq("cartao_id", cartao_id).order("data", { ascending: false });
-    if (error) throw error;
-    return data;
-  },
-
-  /**
-   * LANÇAR PAGAMENTO DE FATURA (NOVA LOGICA)
-   * Registra na tabela de transacoes para liberar limite e abater saldo global
-   */
-  async pagarFatura(
-    usuario_id: string,
-    cartao_id: string,
-    valor: number,
-    mesReferencia: string,
-    tipoPagamento: string = 'Total',
-    dataPagamento?: string,
-    observacao?: string,
-    conta_id?: string
-  ) {
-    const dataIso = dataPagamento || new Date().toISOString().split("T")[0];
-    const { data, error } = await supabase.from("transacoes").insert([{
-      usuario_id,
-      cartao_id,
-      conta_id: conta_id || null,
-      tipo: 'PAGAMENTO_FATURA',
-      descricao: `Pagamento Fatura ${mesReferencia}`,
-      valor,
-      data: dataIso,
-      observacao: observacao || `Tipo: ${tipoPagamento}`
-    }]).select();
-    
-    if (error) throw error;
-
-    if (conta_id && data?.[0]?.id) {
-      await inserirMovimentacoes([{
-        usuario_id,
-        conta_id,
-        transacao_id: data[0].id,
-        tipo: 'SAIDA',
-        valor,
-        data: dataIso
-      }]);
-    }
-
-    return data;
-  },
-
   async getGlobalBalance(usuario_id: string) {
     try {
       // Saldo bancário disponível real: soma dos saldos em todas as contas ativas (saldo_inicial + entradas - saidas)
@@ -1271,7 +1205,7 @@ export const financeService = {
 
     // 2. Movimentação bancária de SAÍDA na conta de origem
     if (params.conta_id && tx) {
-      await inserirMovimentacoes([{
+      await gravarMovimentacoes([{
         usuario_id,
         transacao_id: tx.id,
         conta_id: params.conta_id,
@@ -1400,7 +1334,7 @@ export const financeService = {
 
     // 2. Movimentação bancária de ENTRADA
     if (params.conta_id && tx) {
-      await inserirMovimentacoes([{
+      await gravarMovimentacoes([{
         usuario_id,
         transacao_id: tx.id,
         conta_id: params.conta_id,
@@ -1531,7 +1465,7 @@ export const financeService = {
           valor_investido: saldoCalculado,
           valor_atual: saldoCalculado,
           corretora: corretoraTag,
-          data_inicio: new Date().toISOString().split("T")[0]
+          data_inicio: hojeISO()
         }]);
       }
     } catch (err) {
@@ -1603,7 +1537,7 @@ export const financeService = {
 
     // 2. Movimentação de SAÍDA na conta bancária (Fluxo de caixa real)
     if (params.conta_id && tx) {
-      await inserirMovimentacoes([{
+      await gravarMovimentacoes([{
         usuario_id,
         transacao_id: tx.id,
         conta_id: params.conta_id,
@@ -1667,24 +1601,32 @@ export const financeService = {
       }
     }
 
-    // 4. Se houver dívida de renegociação associada ao cartão/banco, abater a parcela correspondente
+    // 4. Se houver dívida de renegociação DESTE cartão/banco, abater a próxima parcela dela.
+    //    (Antes valia para qualquer renegociação: pagar o Nubank dava baixa na do Santander.)
     try {
-      const { data: dividasReneg } = await supabase
-        .from("dividas")
-        .select("id, descricao, valor_atual, parcelas_divida(*)")
-        .eq("usuario_id", usuario_id)
-        .eq("tipo", "renegociacao_cartao")
-        .eq("status", "ativa");
+      if (!targetCartaoId || !tx) return tx;
+      const [{ data: dividasReneg }, { data: cartoesDoUsuario }] = await Promise.all([
+        supabase
+          .from("dividas")
+          .select("*, parcelas_divida(*)")
+          .eq("usuario_id", usuario_id)
+          .eq("tipo", "renegociacao_cartao")
+          .eq("status", "ativa"),
+        supabase.from("cartoes").select("id, nome").eq("usuario_id", usuario_id).order("nome"),
+      ]);
+      const doMesmoCartao = (d: any) => cartaoDaDivida(d, cartoesDoUsuario || []) === targetCartaoId;
+      // Um pagamento quita no máximo uma parcela
+      const reneg = (dividasReneg || []).filter(doMesmoCartao)[0];
 
-      if (dividasReneg && dividasReneg.length > 0) {
-        for (const reneg of dividasReneg) {
+      if (reneg) {
+        {
           const parcelas = (reneg.parcelas_divida || []).sort((a: any, b: any) => a.numero_parcela - b.numero_parcela);
           const pendentes = parcelas.filter((p: any) => p.status === "pendente");
           if (pendentes.length > 0) {
             // Verifica se o valor pago é compatível com a parcela da renegociação ou cobre ela
             const proxParcela = pendentes[0];
             const pValor = Number(proxParcela.valor_esperado || 0);
-            if (valor >= pValor * 0.95 || Math.abs(valor - pValor) <= 10.0) {
+            if (pValor > 0 && (valor >= pValor * 0.95 || Math.abs(valor - pValor) <= 10.0)) {
               await supabase
                 .from("parcelas_divida")
                 .update({ status: "paga" })
@@ -2005,7 +1947,7 @@ export const financeService = {
     if (txError) throw txError;
 
     // 2. Criar a movimentação de SAÍDA para abater o dinheiro da conta no fluxo de caixa
-    await inserirMovimentacoes([{
+    await gravarMovimentacoes([{
         usuario_id, transacao_id: tx.id, conta_id, tipo: "SAIDA", valor: valor_pago, data: data_pagamento
     }]);
 
@@ -2117,7 +2059,7 @@ export const financeService = {
    * próxima em aberto — pagamento adiantado baixa a parcela mais antiga que falta).
    */
   async vincularPagamentoDivida(
-    usuario_id: string,
+    _usuario_id: string,
     p: { transacao_id: string; divida_id: string; parcela_id?: string | null; valor: number; data: string }
   ) {
     const { data: ja } = await supabase.from("pagamentos_divida").select("id, parcela_id").eq("transacao_id", p.transacao_id).maybeSingle();
@@ -2215,7 +2157,7 @@ export const financeService = {
   },
 
   async marcarParcelasVencidasPagas(divida_id: string) {
-    const hojeStr = new Date().toISOString().split("T")[0];
+    const hojeStr = hojeISO();
     const { error } = await supabase
       .from("parcelas_divida")
       .update({
@@ -2289,7 +2231,7 @@ export const financeService = {
       if (!txErr && tx) {
         // Inserir movimentação de SAÍDA de caixa
         if (finalContaId) {
-          await inserirMovimentacoes([{
+          await gravarMovimentacoes([{
             usuario_id,
             transacao_id: tx.id,
             conta_id: finalContaId,
@@ -2594,18 +2536,24 @@ export const financeService = {
    */
   async autoSyncPagamentosCartaoComTransacoes(usuario_id: string) {
     try {
-      const [cardsRes, contasRes, txRes] = await Promise.all([
+      const [cardsRes, contasRes, txs] = await Promise.all([
         supabase.from("cartoes").select("*").eq("usuario_id", usuario_id),
         supabase.from("contas_bancarias").select("*").eq("usuario_id", usuario_id),
-        supabase.from("transacoes").select("*").eq("usuario_id", usuario_id)
+        // Só o que pode ser pagamento de fatura (todas as páginas, sem o limite de 1000)
+        buscarTodasPaginas<any>((de, ate) =>
+          supabase.from("transacoes").select("id, tipo, descricao, cartao_id, conta_id").eq("usuario_id", usuario_id)
+            .or("tipo.eq.PAGAMENTO_FATURA,descricao.ilike.%pagamento%,descricao.ilike.%pgto%")
+            .order("id").range(de, ate)),
       ]);
 
       const cards = cardsRes.data || [];
       const contas = contasRes.data || [];
-      const txs = txRes.data || [];
       if (cards.length === 0 || txs.length === 0) return;
 
       const contasMap = new Map(contas.map(c => [c.id, c]));
+      // Atualizações em lote: tipo corrigido e cartão identificado
+      const soTipo: string[] = [];
+      const porCartao = new Map<string, string[]>();
 
       for (const tx of txs) {
         const descLower = (tx.descricao || "").toLowerCase();
@@ -2615,9 +2563,7 @@ export const financeService = {
         if (!isPagamentoFatura) continue;
 
         if (tx.cartao_id) {
-          if (tx.tipo !== "PAGAMENTO_FATURA") {
-            await supabase.from("transacoes").update({ tipo: "PAGAMENTO_FATURA" }).eq("id", tx.id);
-          }
+          if (tx.tipo !== "PAGAMENTO_FATURA") soTipo.push(tx.id);
           continue;
         }
 
@@ -2632,11 +2578,16 @@ export const financeService = {
           encontrarPorInstituicao(cards, `${descLower} ${conta?.instituicao || ""} ${contaNomeLower}`) ||
           (cards.length === 1 ? cards[0] : null);
 
-        if (targetCard) {
-          await supabase.from("transacoes").update({
-            cartao_id: targetCard.id,
-            tipo: "PAGAMENTO_FATURA"
-          }).eq("id", tx.id);
+        if (targetCard) porCartao.set(targetCard.id, [...(porCartao.get(targetCard.id) || []), tx.id]);
+      }
+
+      const lotes = (ids: string[]) => Array.from({ length: Math.ceil(ids.length / 200) }, (_, i) => ids.slice(i * 200, i * 200 + 200));
+      for (const ids of lotes(soTipo)) {
+        await supabase.from("transacoes").update({ tipo: "PAGAMENTO_FATURA" }).in("id", ids);
+      }
+      for (const [cartao_id, todos] of porCartao) {
+        for (const ids of lotes(todos)) {
+          await supabase.from("transacoes").update({ cartao_id, tipo: "PAGAMENTO_FATURA" }).in("id", ids);
         }
       }
     } catch (err) {
@@ -2648,18 +2599,60 @@ export const financeService = {
    * SINCRONIZA E GERA AUTOMATICAMENTE AS FATURAS DOS CARTÕES
    * Agrupa as transações de cartão por ciclo mensal e garante registros na tabela faturas
    */
-  async syncCardFaturas(usuario_id: string) {
+  syncCardFaturas(usuario_id: string, { soLeitura = false }: { soLeitura?: boolean } = {}): Promise<void> {
+    // Uma sincronização por usuário de cada vez. Se pedirem outra enquanto roda (ex.: vários
+    // parcelados na importação), ela roda UMA vez depois, já com tudo o que foi gravado.
+    // Sem isso, execuções paralelas criavam a mesma fatura duas vezes.
+    // `soLeitura` (abrir uma tela): se já tem uma rodando, só espera ela — não agenda outra.
+    const fila = syncFaturasEmAndamento.get(usuario_id);
+    if (fila) {
+      if (soLeitura) return fila.proxima || fila.atual;
+      if (!fila.proxima) {
+        fila.proxima = fila.atual.then(() => {
+          syncFaturasEmAndamento.delete(usuario_id);
+          return this.syncCardFaturas(usuario_id);
+        });
+      }
+      return fila.proxima;
+    }
+    const atual = this._syncCardFaturas(usuario_id).finally(() => {
+      const f = syncFaturasEmAndamento.get(usuario_id);
+      if (f && f.atual === atual && !f.proxima) syncFaturasEmAndamento.delete(usuario_id);
+    });
+    syncFaturasEmAndamento.set(usuario_id, { atual });
+    return atual;
+  },
+
+  async _syncCardFaturas(usuario_id: string) {
     try {
       await this.autoSyncPagamentosCartaoComTransacoes(usuario_id);
 
-      const [cardsRes, txRes] = await Promise.all([
+      const [cardsRes, transacoes, faturasExistentes] = await Promise.all([
         supabase.from("cartoes").select("*").eq("usuario_id", usuario_id),
-        supabase.from("transacoes").select("*").eq("usuario_id", usuario_id).not("cartao_id", "is", null)
+        // Todas as páginas: com mais de 1000 lançamentos de cartão, os meses que ficavam
+        // de fora eram tratados como "sem compras" e as faturas deles eram zeradas.
+        buscarTodasPaginas<any>((de, ate) =>
+          supabase.from("transacoes").select("*").eq("usuario_id", usuario_id).not("cartao_id", "is", null).order("id").range(de, ate)),
+        buscarTodasPaginas<any>((de, ate) =>
+          supabase.from("faturas").select("id, cartao_id, data_vencimento, valor_total, valor_pago, status, documento_importado_id, created_at")
+            .eq("usuario_id", usuario_id).order("id").range(de, ate)),
       ]);
 
       const cards = cardsRes.data || [];
-      const transacoes = txRes.data || [];
       if (cards.length === 0) return;
+
+      // Faturas já gravadas, por cartão + vencimento. Se houver repetidas (bug antigo),
+      // fica valendo a importada de documento ou a mais antiga; as outras são zeradas no fim.
+      const faturaPorChave = new Map<string, any>();
+      const repetidas: any[] = [];
+      const ordemFatura = (a: any, b: any) =>
+        Number(Boolean(b.documento_importado_id)) - Number(Boolean(a.documento_importado_id)) ||
+        String(a.created_at || "").localeCompare(String(b.created_at || ""));
+      for (const fa of [...faturasExistentes].sort(ordemFatura)) {
+        const chave = `${fa.cartao_id}_${String(fa.data_vencimento).slice(0, 10)}`;
+        if (faturaPorChave.has(chave)) repetidas.push(fa);
+        else faturaPorChave.set(chave, fa);
+      }
 
       if (transacoes.length === 0) return;
 
@@ -2730,18 +2723,18 @@ export const financeService = {
         if (tipoErrado.length > 0) supabase.from("transacoes").update({ tipo: "PAGAMENTO_FATURA" }).in("id", tipoErrado).then();
       }
 
+      const hojeStr = hojeISO();
+      // Chaves (cartão + vencimento) das faturas que existem pelos ciclos atuais
+      const ciclosAtuais = new Set<string>();
+
       for (const { card, mesRef, items } of groups.values()) {
         const { dataInicio, dataFim } = getFaturaCycle(mesRef, card.fechamento_dia, card.vencimento_dia, card);
-        const dataVencimento = `${mesRef}-${String(getVencimentoDiaDoMes(mesRef, card.fechamento_dia, card.vencimento_dia, card)).padStart(2, "0")}`;
-
-        // Verifica se já existe fatura para esse vencimento
-        const { data: existingFatura } = await supabase
-          .from("faturas")
-          .select("id, valor_total, valor_pago")
-          .eq("usuario_id", usuario_id)
-          .eq("cartao_id", card.id)
-          .eq("data_vencimento", dataVencimento)
-          .maybeSingle();
+        // Vencimento do ciclo (o antigo, para faturas de antes de uma troca de ciclo), sem
+        // passar do fim do mês: dia 30 em fevereiro vira 28/29.
+        const dataVencimento = diaNoMes(mesRef, getVencimentoDiaDoMes(mesRef, card.fechamento_dia, card.vencimento_dia, card));
+        const chave = `${card.id}_${dataVencimento}`;
+        ciclosAtuais.add(chave);
+        const existingFatura = faturaPorChave.get(chave);
 
         const isTxPagamento = (t: any) => t.tipo === "PAGAMENTO_FATURA" || /pagamento\s*recebido|pagamento\s*de\s*fatura|pagamento\s*cart[aã]o/i.test(t.descricao || "");
         const isTxEstorno = (t: any) => t.tipo === "ESTORNO" || /estorno|cr[eé]dito\s*de\s*fatura|desconto\s*\(nufinanceira\)/i.test(t.descricao || "") || /^\s*cr[eé]dito de\b/i.test(t.descricao || "");
@@ -2763,7 +2756,6 @@ export const financeService = {
         const valorTotal = this.calculateInvoiceTotal(items);
         const valorPago = pagoPorGrupo.get(`${card.id}_${mesRef}`) || 0;
 
-        const hojeStr = new Date().toISOString().split("T")[0];
         let status = "aberta";
         if (valorPago >= valorTotal && valorTotal > 0) {
           status = "paga";
@@ -2778,14 +2770,17 @@ export const financeService = {
         let faturaId = existingFatura?.id;
 
         if (existingFatura) {
-          await supabase
-            .from("faturas")
-            .update({
-              valor_total: valorTotal,
-              valor_pago: valorPago,
-              status
-            })
-            .eq("id", existingFatura.id);
+          // Só grava o que mudou (evita centenas de escritas a cada abertura de tela)
+          const mudou =
+            Math.abs(Number(existingFatura.valor_total) - valorTotal) > 0.004 ||
+            Math.abs(Number(existingFatura.valor_pago) - valorPago) > 0.004 ||
+            existingFatura.status !== status;
+          if (mudou) {
+            await supabase
+              .from("faturas")
+              .update({ valor_total: valorTotal, valor_pago: valorPago, status })
+              .eq("id", existingFatura.id);
+          }
         } else {
           const { data: novaFatura } = await supabase
             .from("faturas")
@@ -2802,6 +2797,7 @@ export const financeService = {
             .select()
             .single();
           faturaId = novaFatura?.id;
+          if (novaFatura) faturaPorChave.set(chave, novaFatura);
         }
 
         // Vincula as transações que ainda não possuem fatura_id
@@ -2819,17 +2815,16 @@ export const financeService = {
       // Faturas que não batem mais com nenhum ciclo (ex.: o dia de fechamento/vencimento do
       // cartão mudou e as compras foram reagrupadas): ficam zeradas para não aparecerem como
       // "fatura antiga sem pagamento". Faturas criadas a partir de um documento importado ficam como estão.
-      const ciclosAtuais = new Set([...groups.values()].map(g => `${g.card.id}_${g.mesRef}-${String(g.card.vencimento_dia).padStart(2, "0")}`));
-      const { data: todasFaturas } = await supabase
-        .from("faturas")
-        .select("id, cartao_id, data_vencimento, valor_total, documento_importado_id")
-        .eq("usuario_id", usuario_id);
-      for (const fa of todasFaturas || []) {
-        if (!cardsMap.has(fa.cartao_id) || fa.documento_importado_id) continue;
-        if (ciclosAtuais.has(`${fa.cartao_id}_${String(fa.data_vencimento).slice(0, 10)}`)) continue;
-        if (Number(fa.valor_total) > 0) {
-          await supabase.from("faturas").update({ valor_total: 0, valor_pago: 0, status: "paga" }).eq("id", fa.id);
-        }
+      // Repetidas (mesmo cartão e vencimento) também são zeradas: o valor fica só na principal.
+      // Nada é apagado — só deixam de somar em dobro.
+      const zerar = [
+        ...repetidas,
+        ...[...faturaPorChave.entries()]
+          .filter(([chave]) => !ciclosAtuais.has(chave))
+          .map(([, fa]) => fa),
+      ].filter((fa) => cardsMap.has(fa.cartao_id) && !fa.documento_importado_id && Number(fa.valor_total) > 0);
+      if (zerar.length > 0) {
+        await supabase.from("faturas").update({ valor_total: 0, valor_pago: 0, status: "paga" }).in("id", zerar.map((fa) => fa.id));
       }
     } catch (err) {
       console.warn("Erro ao sincronizar faturas:", err);
@@ -2837,7 +2832,7 @@ export const financeService = {
   },
 
   async getAllFaturas(usuario_id: string) {
-    await this.syncCardFaturas(usuario_id);
+    await this.syncCardFaturas(usuario_id, { soLeitura: true });
 
     const [faturasRes, dividasRes] = await Promise.all([
       supabase
