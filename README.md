@@ -1,6 +1,13 @@
 # 💎 Finance App — Gestão Financeira Pessoal com IA de Ponta
 
-O **Finance App** é uma plataforma moderna e completa de gestão financeira pessoal construída com arquitetura em camadas, banco de dados relacional (PostgreSQL / Supabase) com isolamento multi-tenant via RLS, e inteligência artificial multimodal (Google Gemini 2.0 / 2.5) para interpretação e estruturação automática de documentos financeiros.
+O **Finance App** é uma plataforma moderna e completa de gestão financeira pessoal construída com arquitetura em camadas, banco de dados relacional (PostgreSQL / Supabase) com isolamento multi-tenant via RLS, e inteligência artificial multimodal (Google Gemini 2.5) para interpretação e estruturação automática de documentos financeiros.
+
+### Principais módulos
+- **Finanças pessoais (PF)**: entradas, gastos (com edição de lançamentos e estornos), contas, cartões e faturas, dívidas e renegociações, metas, investimentos e caixinhas.
+- **Importador com IA**: extratos, faturas, contratos e comprovantes (PDF, imagem, CSV, OFX, XLSX) viram lançamentos auditáveis.
+- **Divisão de contas**: despesas com pessoas e grupos, cobranças opcionais (aceitar/recusar — o aceite vale para as parcelas seguintes), convite para a outra pessoa entrar no app e ver o que foi dividido com ela, **"Paguei" por item/parcela com confirmação de quem recebe**, relatórios em Excel e avisos no app (sino em tempo real) e por e-mail.
+- **Empresa (CNPJ/MEI)**: módulo opcional, ativado no cadastro ou no perfil — faturamento, impostos, pró-labore e contas da empresa separadas das pessoais.
+- **Consultor financeiro (educador com IA)**: diagnóstico com base nos números reais do usuário (médias mensais, reserva em meses, peso das dívidas, gastos recorrentes, metas), jornada em 4 etapas, plano de ação passo a passo, lição prática e chat com memória da conversa. Se a IA estiver indisponível, o app gera o plano com as mesmas regras.
 
 ---
 
@@ -92,7 +99,10 @@ A arquitetura possui discriminadores e validadores de schema especializados para
 - **`documentos_importados`**: Tabela de auditoria do motor de IA contendo hash do arquivo, status (`PENDENTE`, `PROCESSANDO`, `AGUARDANDO_CONFIRMACAO`, `PROCESSADO`, `ERRO`), JSONB extraído e nível de confiança.
 - **`metas` & `metas_depositos`**: Objetivos financeiros com progresso e histórico de aportes.
 - **`investimentos` & `historico_investimentos`**: Carteira de ativos e rentabilidade.
-- **`contatos`**: Gestão de devedores e terceiros para divisão de despesas.
+- **`contatos`**: Gestão de devedores e terceiros para divisão de despesas (com vínculo à conta de quem aceitou o convite).
+- **`grupos` & `grupo_membros`**: Grupos de divisão (viagem, casa, casal...). Quem foi convidado lê os grupos de que participa por funções `SECURITY DEFINER`, que expõem só nomes — nunca e-mail ou telefone.
+- **`notificacoes` & `notificacoes_email`**: Avisos do sino (tempo real) e registro de e-mails enviados. Avisos para outra pessoa só nascem de funções do banco que conferem o vínculo.
+- **`empresas`**: Empresa (CNPJ/MEI) do usuário; contas e cartões da empresa ficam fora das telas pessoais.
 
 ---
 
@@ -101,37 +111,46 @@ A arquitetura possui discriminadores e validadores de schema especializados para
 ```text
 finance-app/
 ├── apps/
-│   └── web/                               # Aplicação Web (Vite + React 19 + Tailwind v4)
-│       ├── src/
-│       │   ├── components/                # Componentes reutilizáveis e modais
-│       │   ├── contexts/                  # Contextos globais (ImportarContext, etc.)
-│       │   ├── pages/                     # Telas completas (Extrato, Cartões, Dívidas, etc.)
-│       │   │   ├── Cartoes.tsx            # Gestão de cartões e limites
-│       │   │   ├── ConsultorInteligente.tsx # IA Financeira com execução de ações no chat
-│       │   │   ├── Contas.tsx             # Contas bancárias e saldos
-│       │   │   ├── Devedores.tsx          # Gestão de devedores / divisão de contas
-│       │   │   ├── Dividas.tsx            # Empréstimos e obrigações parceladas
-│       │   │   ├── Faturas.tsx            # Acompanhamento mensal de faturas
-│       │   │   ├── Gastos.tsx             # Histórico e lançamentos de despesas
-│       │   │   ├── Importador.tsx         # Interface da IA de importação
-│       │   │   └── Investimentos.tsx      # Carteira de investimentos
-│       │   └── index.css                  # Design system com suporte completo Dark/Light mode
+│   ├── web/                               # Aplicação Web (Vite + React 19 + Tailwind v4)
+│   │   └── src/
+│   │       ├── components/                # Componentes reutilizáveis e modais
+│   │       │   ├── divisao/               # Divisão de contas (pessoas, histórico, pagamentos para confirmar)
+│   │       │   └── pj/                    # Componentes do módulo empresa
+│   │       ├── contexts/                  # Contextos globais (ImportarContext, etc.)
+│   │       ├── layouts/                   # DashboardLayout (sidebar responsiva, topo, PF x Empresa)
+│   │       ├── lib/                       # Regras de tela sem React
+│   │       │   ├── contextoFinanceiro.ts  # Retrato financeiro do usuário para o consultor
+│   │       │   ├── educadorFinanceiro.ts  # Persona, prompts e plano local do consultor
+│   │       │   ├── lancamentos.ts         # Regras comuns de lançamentos (o que soma, parte de terceiros)
+│   │       │   └── relatorioDivisao.ts    # Planilhas Excel da divisão de contas
+│   │       ├── pages/
+│   │       │   ├── acesso/                # Landing, login, cadastro, verificação e senha
+│   │       │   ├── comum/                 # Contas e Importador (PF e empresa)
+│   │       │   ├── pf/                    # Entradas, Gastos, Cartões, Faturas, Dívidas, Devedores,
+│   │       │   │                          # Metas, Investimentos e Consultor
+│   │       │   └── pj/                    # Empresa (CNPJ/MEI)
+│   │       └── index.css                  # Design system Dark/Light e barras de rolagem
+│   └── mobile/                            # App mobile (Expo / React Native)
 ├── packages/
 │   ├── services/                          # Serviços de domínio financeiro e integrações
 │   │   ├── ai.service.ts                  # Cliente da IA (chama a Edge Function, sem chave no navegador)
 │   │   ├── auth.service.ts                # Cadastro, login, perfil e recuperação de senha
+│   │   ├── convite.service.ts             # Convites, "compartilhado comigo", grupos e "Paguei"
+│   │   ├── despesas-compartilhadas.service.ts # Grupos e divisão de despesas
 │   │   ├── document-import.service.ts     # Pipeline de importação com IA e validação de schema
-│   │   ├── document-import.types.ts       # Tipagens e schemas estritos por tipo de documento
+│   │   ├── empresa.service.ts             # Módulo empresa (CNPJ/MEI) e retiradas
 │   │   ├── finance.service.ts             # Regras de negócio contábeis e persistência
+│   │   ├── notificacoes.service.ts        # Sino de avisos e lembretes de vencimento
+│   │   ├── recebimentos-divisao.service.ts # Recebimentos da divisão de contas e conciliação do Pix
 │   │   ├── paginacao.ts                   # Busca paginada (o Supabase limita 1000 linhas por consulta)
-│   │   ├── despesas-compartilhadas.service.ts           # Grupos e divisão de despesas
 │   │   └── supabase.ts                    # Cliente Supabase com persistência segura
-│   └── utils/
-│       ├── cartao.utils.ts                # Ciclos de fatura
-│       └── instituicoes.ts                # Detecção genérica de bancos/instituições
+│   └── utils/                             # Ciclos de fatura, datas, parcelas, dívidas, instituições
 ├── supabase/
-│   ├── functions/ai-generate/             # Edge Function: proxy autenticado para o Gemini
-│   └── migrations/                        # (ignorado pelo git) SQL rodado no SQL Editor — ajustes_supabase.sql
+│   ├── functions/
+│   │   ├── ai-generate/                   # Edge Function: proxy autenticado para o Gemini
+│   │   └── notificar-divisao/             # Edge Function: e-mail para quem participa de uma divisão
+│   ├── migrations/                        # (ignorado pelo git) ajustes_supabase.sql — só o que falta rodar
+│   └── historico/                         # (ignorado pelo git) SQL já aplicado
 ├── scripts/                               # Scripts de automação e testes automatizados
 │   └── test_auditoria_regras_financeiras.mjs
 └── lançamentos/                           # (ignorado pelo git) amostras locais de documentos
@@ -158,6 +177,10 @@ npm install
 supabase link --project-ref <seu-project-ref>
 supabase secrets set GEMINI_API_KEY=sua_chave      # a chave NUNCA vai para o front-end
 supabase functions deploy ai-generate
+
+# E-mails da divisão de contas (opcional; sem isso, os avisos ficam só no sino do app)
+supabase secrets set RESEND_API_KEY=re_xxx EMAIL_REMETENTE="Tech Finance <avisos@seudominio.com>" APP_URL=https://<seu-dominio>
+supabase functions deploy notificar-divisao
 ```
 > ⚠️ Não use variáveis `VITE_*` para chaves secretas: tudo que começa com `VITE_` é embutido no JavaScript publicado.
 
@@ -180,14 +203,16 @@ node scripts/test_auditoria_regras_financeiras.mjs
 ### 5. Validar Tipos e Build de Produção
 ```bash
 cd apps/web
-npm run typecheck
-npm run build
+npm run build      # roda a checagem de tipos (tsconfig.app.json) e depois o build do Vite
 ```
+
+Para a divisão de contas funcionar entre duas contas (convite, "compartilhado comigo", grupos e "Paguei"), o SQL pendente precisa ter sido aplicado no Supabase **antes** de publicar o front-end.
 
 ---
 
 ## 🎨 7. Design System e Acessibilidade
 - **Dark Mode & Light Mode**: Implementação com Tailwind CSS v4 e variáveis semânticas para contraste e legibilidade ideais em qualquer tela.
+- **Responsivo**: sidebar aberta em telas grandes, só com ícones em telas médias (abre por cima do conteúdo) e gaveta no celular; barras de rolagem finas que seguem o tema.
 - **Componentes Dinâmicos**: Animações fluidas via `framer-motion`, ícones consistentes via `lucide-react` e notificações reativas com `react-hot-toast`.
 - **Prevenção de Falhas**: Modais com backdrop blur, validação em tempo real de inputs e bloqueio de envios inválidos.
 

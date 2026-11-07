@@ -231,7 +231,13 @@ export default function Cartoes() {
 				}, 0);
 
 				const limiteTotal = Number(c.limite || 0);
-				const faturaAtualValor = faturaAbertaAtual ? Math.max(0, Number(faturaAbertaAtual.valor_total || 0) - Number(faturaAbertaAtual.valor_pago || 0)) : valorComprasMesAtual;
+				// Fatura atual = TOTAL da fatura (como na página Faturas: o maior entre o registro e a
+				// soma das compras do ciclo). Antes mostrava o saldo (total − pago): qualquer pagamento
+				// atribuído à fatura aberta (ex.: sobra de um pagamento ou pagamento contado duas vezes)
+				// fazia uma fatura de mais de mil aparecer como R$ 65. O pago aparece separado no card.
+				const faturaAtualValor = Math.round(Math.max(Number(faturaAbertaAtual?.valor_total || 0), valorComprasMesAtual) * 100) / 100;
+				const faturaAtualPago = Math.round(Math.min(faturaAtualValor, Number(faturaAbertaAtual?.valor_pago || 0)) * 100) / 100;
+				const faturaAtualSaldo = Math.round(Math.max(0, faturaAtualValor - faturaAtualPago) * 100) / 100;
 				const totalComprometido = Math.round((totalComprasComprometidas + saldoFaturasAnteriores) * 100) / 100;
 				const disponivel = Math.round((limiteTotal - totalComprometido) * 100) / 100;
 
@@ -254,6 +260,8 @@ export default function Cartoes() {
 						isRenegociado: true,
 						limiteTotal,
 						faturaAtualValor,
+						faturaAtualPago,
+						faturaAtualSaldo,
 						totalComprasComprometidas,
 						saldoFaturasAnteriores,
 						faturasAnterioresIds: faturasAnterioresPendentes.map((f: any) => f.id),
@@ -276,6 +284,8 @@ export default function Cartoes() {
 					isRenegociado: false,
 					limiteTotal,
 					faturaAtualValor,
+					faturaAtualPago,
+					faturaAtualSaldo,
 					totalComprasComprometidas,
 					saldoFaturasAnteriores,
 					faturasAnterioresIds: faturasAnterioresPendentes.map((f: any) => f.id),
@@ -453,6 +463,12 @@ export default function Cartoes() {
 												R$ {Number(cartao.faturaAtualValor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 											</span>
 										</div>
+										{Number(cartao.faturaAtualPago || 0) > 0.009 && (
+											<p className="text-[10px] font-bold text-white/80 text-right -mt-1 mb-1.5">
+												pago R$ {Number(cartao.faturaAtualPago).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} · falta R${" "}
+												{Number(cartao.faturaAtualSaldo || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+											</p>
+										)}
 
 										{/* Barra de Progresso com Glassmorphism e gradiente de alerta */}
 										<div className="w-full bg-black/25 backdrop-blur-sm h-2 rounded-full overflow-hidden p-[2px] border border-white/10">
