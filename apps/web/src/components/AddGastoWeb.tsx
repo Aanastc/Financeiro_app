@@ -6,6 +6,7 @@ import { financeService } from "../../../../packages/services/finance.service";
 import { supabase } from "../../../../packages/services/supabase";
 import { AddCartaoWeb } from "./AddCartaoWeb";
 import { hojeISO } from "../../../../packages/utils/datas";
+import { procurarParecidos, textoAviso } from "../lib/duplicados";
 
 const CATEGORIAS_PADRAO = [
 	"Moradia",
@@ -117,6 +118,14 @@ export function AddGastoWeb({
 			data: { user },
 		} = await supabase.auth.getUser();
 		if (!user) return;
+
+		// Aviso de repetido (não bloqueia: duas compras iguais podem ser reais)
+		const valorNum = parseFloat(String(form.valor).replace(/\./g, "").replace(",", ".")) || 0;
+		const nParcelas = form.metodo_pagamento === "Crédito" ? parseInt(form.parcelas) || 1 : 1;
+		const candidatos = [{ descricao: form.descricao, valor: valorNum, data: form.data }];
+		if (nParcelas > 1) candidatos.push({ descricao: form.descricao, valor: Math.round((valorNum / nParcelas) * 100) / 100, data: form.data });
+		const parecidos = await procurarParecidos(user.id, candidatos).catch(() => []);
+		if (parecidos.length > 0 && !window.confirm(`${textoAviso(parecidos.slice(0, 1))}\n\nLançar mesmo assim?`)) return;
 
 		try {
 			await financeService.addGasto(user.id, {

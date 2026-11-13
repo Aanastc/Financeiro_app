@@ -39,6 +39,7 @@ import PessoasDivisao from "../../components/divisao/PessoasDivisao";
 import DetalhePessoa from "../../components/divisao/DetalhePessoa";
 import HistoricoDivisao from "../../components/divisao/HistoricoDivisao";
 import PagamentosParaConfirmar from "../../components/divisao/PagamentosParaConfirmar";
+import EditarLoteModal from "../../components/divisao/EditarLoteModal";
 import { montarPessoas } from "../../lib/divisaoPessoas";
 import EditarLancamentoModal from "../../components/EditarLancamentoModal";
 import PedirTelefoneModal from "../../components/PedirTelefoneModal";
@@ -91,6 +92,8 @@ export default function Devedores() {
 	const [pessoaAbertaId, setPessoaAbertaId] = useState<string | null>(null);
 	// Evita cruzar saldos duas vezes ao mesmo tempo (recarregamentos em sequência)
 	const compensandoRef = useRef(false);
+	// Edição em lote (ex.: todas as compras de um vencimento)
+	const [loteEdicao, setLoteEdicao] = useState<{ itens: any[]; titulo: string } | null>(null);
 	// confirmandoAvisoId: o recebimento confirma um "Paguei" avisado pela outra pessoa
 	const [receberDe, setReceberDe] = useState<{ contato: { id: string; nome: string }; itemIds?: string[]; valorSugerido?: number; confirmandoAvisoId?: string } | null>(null);
 	const [initialGrupoIdForSplit, setInitialGrupoIdForSplit] = useState<
@@ -1189,37 +1192,57 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 										resumo={(lista: any[]) => {
 											const infos = lista.map(info);
 											const minha = infos.reduce((s, i) => s + (i.minhaParte || 0), 0);
-											const opcionais = lista.filter((d) => info(d).meta.opcional).length;
+											// Opcionais: só os que ainda esperam resposta contam como "opcional"
+											const metas = lista.map((d) => info(d).meta);
+											const aguardando = metas.filter((m) => m.opcional && !m.resposta_cobranca).length;
+											const aceitos = metas.filter((m) => m.opcional && m.resposta_cobranca === "aceita").length;
+											const recusados = metas.filter((m) => m.opcional && m.resposta_cobranca === "recusada").length;
 											const pagadores = [...new Set(infos.map((i) => i.quemPagou))];
 											return {
 												total: infos.reduce((s, i) => s + i.total, 0),
 												quitado: lista.every((d) => d.terceiro_pago),
-												detalhe: `pago por ${pagadores.join(" e ")} · sua parte ${fmt(minha)}${opcionais ? ` · ${opcionais} opcional(is)` : ""}`,
+												detalhe:
+													`pago por ${pagadores.join(" e ")} · sua parte ${fmt(minha)}` +
+													(aguardando ? ` · ${aguardando} opcional(is) aguardando resposta` : "") +
+													(aceitos ? ` · ${aceitos} aceito(s)` : "") +
+													(recusados ? ` · ${recusados} recusado(s)` : ""),
 											};
 										}}
 										acao={(lista: any[]) => {
 											const abertos = lista.filter((d) => !d.terceiro_pago);
-											if (abertos.length === 0) return null;
+											const editar =
+												lista.length > 1 ? (
+													<button
+														onClick={() => setLoteEdicao({ itens: lista, titulo: `vencimento ${new Date(lista[0].data + "T12:00:00").toLocaleDateString("pt-BR")}` })}
+														title="Editar todos os itens deste vencimento"
+														className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap">
+														<Pencil size={12} /> Editar
+													</button>
+												) : null;
+											if (abertos.length === 0) return editar;
 											const contatoId = abertos[0].contato_id;
 											const mesmoContato = abertos.every((d) => d.terceiro && d.contato_id && d.contato_id === contatoId);
 											const contato = contatos.find((c) => c.id === contatoId);
-											if (!mesmoContato || !contato) return null; // dívidas mistas: pagar item a item
+											if (!mesmoContato || !contato) return editar; // dívidas mistas: pagar item a item
 											const aberto = abertos.reduce(
 												(s, d) => s + Math.max(0, Number(d.valor) - (Number(getPaymentInfo(d.observacao)?.valor_pago) || 0)),
 												0,
 											);
 											return (
-												<button
-													onClick={() =>
-														setReceberDe({
-															contato: { id: contato.id, nome: contato.nome },
-															itemIds: abertos.map((d) => d.id),
-															valorSugerido: Math.round(aberto * 100) / 100,
-														})
-													}
-													className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap">
-													Registrar pagamento
-												</button>
+												<span className="flex items-center gap-2">
+													{editar}
+													<button
+														onClick={() =>
+															setReceberDe({
+																contato: { id: contato.id, nome: contato.nome },
+																itemIds: abertos.map((d) => d.id),
+																valorSugerido: Math.round(aberto * 100) / 100,
+															})
+														}
+														className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap">
+														Registrar pagamento
+													</button>
+												</span>
 											);
 										}}
 										renderItem={(d: any, dentroDoMes: boolean) => {
@@ -1240,14 +1263,27 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 																)}
 															</h4>
 															<p className="text-[11px] text-slate-500 dark:text-slate-400">
-																{new Date(d.data + "T12:00:00").toLocaleDateString("pt-BR")} · pago por{" "}
+																{new Date(d.data + "T12:00:00").toLocaleDateString("pt-BR")}
+																{i.meta.data_compra && String(i.meta.data_compra).slice(0, 10) !== String(d.data).slice(0, 10) && (
+																	<> · compra em {new Date(String(i.meta.data_compra).slice(0, 10) + "T12:00:00").toLocaleDateString("pt-BR")}</>
+																)}
+																{" "}· pago por{" "}
 																<strong className="text-slate-700 dark:text-slate-200">{i.quemPagou}</strong>
 																{i.minhaParte !== null && ` · sua parte ${fmt(i.minhaParte)}`}
-																{i.meta.opcional && (
-																	<span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 text-[9px] font-black uppercase">
-																		Opcional
-																	</span>
-																)}
+																{i.meta.opcional &&
+																	(i.meta.resposta_cobranca === "aceita" ? (
+																		<span className="ml-1.5 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 text-[9px] font-black uppercase">
+																			Opcional · aceita
+																		</span>
+																	) : i.meta.resposta_cobranca === "recusada" ? (
+																		<span className="ml-1.5 px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 text-[9px] font-black uppercase">
+																			Opcional · recusada
+																		</span>
+																	) : (
+																		<span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 text-[9px] font-black uppercase">
+																			Opcional · aguardando
+																		</span>
+																	))}
 															</p>
 														</div>
 													</div>
@@ -1521,6 +1557,8 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 			)}
 
 			<EditarLancamentoModal transacaoId={editandoId} onClose={() => setEditandoId(null)} onSalvo={loadAllData} />
+
+			<EditarLoteModal itens={loteEdicao?.itens || null} titulo={loteEdicao?.titulo} onClose={() => setLoteEdicao(null)} onSalvo={loadAllData} />
 
 			<DetalhePessoa
 				pessoa={pessoaAberta}

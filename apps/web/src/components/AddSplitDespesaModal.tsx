@@ -23,6 +23,7 @@ import type { Grupo } from "../../../../packages/services/despesas-compartilhada
 import toast from "react-hot-toast";
 import { notificarDivisaoPorEmail, EMAIL_DIVISAO_ATIVO } from "../../../../packages/services/convite.service";
 import { dataLocalISO, hojeISO } from "../../../../packages/utils/datas";
+import { procurarParecidos, textoAviso } from "../lib/duplicados";
 
 interface AddSplitDespesaModalProps {
 	isOpen: boolean;
@@ -345,6 +346,17 @@ export default function AddSplitDespesaModal({
 				);
 				return;
 			}
+		}
+
+		// Aviso de repetido: compara o total e as partes com o que já foi lançado (não bloqueia)
+		{
+			const uid = (await supabase.auth.getUser()).data.user?.id || "";
+			const valores = [valorTotal, cotaContatoAmigo, minhaCotaAmigo].filter((v) => v > 0);
+			const parecidos = await procurarParecidos(
+				uid,
+				[...new Set(valores.map((v) => Math.round(v * 100) / 100))].map((valor) => ({ descricao, valor, data })),
+			).catch(() => []);
+			if (parecidos.length > 0 && !window.confirm(`${textoAviso(parecidos.slice(0, 1))}\n\nLançar mesmo assim?`)) return;
 		}
 
 		setLoading(true);

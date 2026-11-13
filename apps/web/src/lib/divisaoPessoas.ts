@@ -22,6 +22,8 @@ export interface ItemPessoa {
 	quitado: boolean;
 	direcao: "RECEBER" | "PAGAR";
 	opcional: boolean;
+	/** Resposta da outra pessoa a uma cobrança opcional */
+	resposta?: "aceita" | "recusada" | null;
 	recusado: boolean;
 	compensado: boolean;
 	grupo?: string;
@@ -75,6 +77,7 @@ export function montarPessoas(devedores: any[], credores: any[]): PessoaSaldo[] 
 				quitado: Boolean(t.terceiro_pago),
 				direcao: "RECEBER",
 				opcional: Boolean(meta.opcional),
+				resposta: meta.resposta_cobranca || null,
 				recusado,
 				compensado: Array.isArray(meta.pagamentos) && meta.pagamentos.some((x: any) => x.tipo === "compensacao"),
 				grupo: meta.grupo_nome,

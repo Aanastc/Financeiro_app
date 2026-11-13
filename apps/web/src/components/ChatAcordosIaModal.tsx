@@ -17,6 +17,7 @@ import { aiService } from "../../../../packages/services/ai.service";
 import { supabase } from "../../../../packages/services/supabase";
 import { notificarDivisaoPorEmail } from "../../../../packages/services/convite.service";
 import { notificacoesService } from "../../../../packages/services/notificacoes.service";
+import { procurarParecidos, textoAviso } from "../lib/duplicados";
 import type { Grupo, GrupoMembro } from "../../../../packages/services/despesas-compartilhadas.service";
 
 /* ============================================================================
@@ -1104,7 +1105,7 @@ Regras:
 
 	const confirmar = async () => {
 		const r = rascunho;
-		const lancamentos = gerarLancamentos(r);
+		let lancamentos = gerarLancamentos(r);
 		if (!r.pessoaNome || lancamentos.length === 0) {
 			toast.error("Faltam informações para lançar.");
 			return;
@@ -1114,6 +1115,22 @@ Regras:
 			let uid = userId;
 			if (!uid) uid = (await supabase.auth.getUser()).data.user?.id || "";
 			if (!uid) throw new Error("Sessão expirada.");
+
+			// Aviso de repetidos: pode pular só os parecidos, lançar tudo ou voltar para revisar
+			const parecidos = await procurarParecidos(uid, lancamentos).catch(() => []);
+			if (parecidos.length > 0) {
+				const aviso = textoAviso(parecidos);
+				if (window.confirm(`${aviso}\n\nOK = lançar só os NOVOS (pular os ${parecidos.length} repetidos)\nCancelar = ver outras opções`)) {
+					const repetidos = new Set(parecidos.map((p) => p.candidato));
+					lancamentos = lancamentos.filter((l) => !repetidos.has(l));
+					if (lancamentos.length === 0) {
+						toast("Tudo já estava lançado: nada novo para gravar.");
+						return;
+					}
+				} else if (!window.confirm("Lançar TUDO mesmo assim, inclusive os que parecem repetidos?\n\nCancelar = voltar e revisar.")) {
+					return;
+				}
+			}
 
 			// Contato: usa o existente ou cadastra
 			let contatoId = r.contatoId;

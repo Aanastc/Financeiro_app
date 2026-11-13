@@ -89,9 +89,13 @@ export default function DetalhePessoa({
 					onClick={() => onAlternarOpcional(i)}
 					title={i.opcional ? "Tornar obrigatória" : "Tornar opcional (a pessoa pode recusar)"}
 					className={`hidden sm:inline px-1.5 py-0.5 rounded text-[9px] font-black uppercase cursor-pointer ${
-						i.opcional ? "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+						i.opcional && i.resposta === "aceita"
+							? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200"
+							: i.opcional
+								? "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200"
+								: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
 					}`}>
-					{i.opcional ? "Opcional" : "Obrigatória"}
+					{i.opcional ? (i.resposta === "aceita" ? "Opcional · aceita" : "Opcional · aguardando") : "Obrigatória"}
 				</button>
 			)}
 			<span className={`text-sm font-black tabular-nums shrink-0 ${i.direcao === "RECEBER" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
