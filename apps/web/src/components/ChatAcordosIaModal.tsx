@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
 	AlertCircle,
 	Bot,
+	Calendar,
 	CheckCircle2,
 	ChevronRight,
+	Clock,
 	Loader2,
 	RotateCcw,
 	Send,
@@ -73,6 +75,8 @@ interface Rascunho {
 	jaNoExtrato: boolean | null;
 	/** Dia do mês em que vencem as parcelas (0 = mesmo dia da compra) */
 	diaVencimento: number | null;
+	/** Data específica do 1º vencimento (AAAA-MM-DD), caso o usuário tenha informado com mês/ano (ex.: 29/11/2026) */
+	dataPrimeiroVencimento?: string | null;
 	opcionaisDecididos: boolean;
 	/** Já perguntamos se a divisão é dentro de um grupo em que a pessoa está */
 	grupoDecidido: boolean;
@@ -221,6 +225,7 @@ const rascunhoVazio = (): Rascunho => ({
 	quemPagou: null,
 	jaNoExtrato: null,
 	diaVencimento: null,
+	dataPrimeiroVencimento: null,
 	opcionaisDecididos: false,
 	grupoDecidido: false,
 	itens: [],
@@ -263,8 +268,12 @@ const datasDoAcordo = (cronograma: PagamentoAcordo[]) => {
 /**
  * N-ésima parcela com vencimento no dia `dia`: a 1ª vence no próprio mês da
  * compra se o dia ainda não passou, senão no mês seguinte (dia 31 em fevereiro = 28/29).
+ * Se houver uma data específica de 1º vencimento (AAAA-MM-DD), avança a partir dela.
  */
-const vencimento = (dataCompra: string, dia: number, n: number) => {
+const vencimento = (dataCompra: string, dia: number, n: number, dataPrimeiroVenc?: string | null) => {
+	if (dataPrimeiroVenc) {
+		return somarMeses(dataPrimeiroVenc, n);
+	}
 	const [a, m, d] = dataCompra.split("-").map(Number);
 	const inicio = d <= dia ? 0 : 1;
 	const alvo = new Date(a, m - 1 + inicio + n, 1);
@@ -331,11 +340,11 @@ const gerarLancamentos = (r: Rascunho): Lancamento[] => {
 		if (devido <= 0) continue;
 		const n = Math.max(1, i.parcelas || 1);
 		const base = centavos(devido / n);
-		const dia = n > 1 && r.diaVencimento ? r.diaVencimento : 0;
+		const dia = r.diaVencimento ? r.diaVencimento : (r.dataPrimeiroVencimento ? Number(r.dataPrimeiroVencimento.slice(8, 10)) : 0);
 		for (let p = 0; p < n; p++) {
 			out.push({
 				itemId: i.id,
-				data: dia ? vencimento(i.dataCompra, dia, p) : somarMeses(i.dataCompra, p),
+				data: (dia > 0 || r.dataPrimeiroVencimento) ? vencimento(i.dataCompra, dia || 1, p, r.dataPrimeiroVencimento) : somarMeses(i.dataCompra, p),
 				descricao: n > 1 ? `${i.descricao} (${p + 1}/${n})` : i.descricao,
 				valor: p === n - 1 ? centavos(devido - base * (n - 1)) : base,
 				opcional: r.quemPagou === "EU" && i.opcional,
@@ -467,7 +476,7 @@ export default function ChatAcordosIaModal({
 		if (r.itens.some((i) => !i.valorTotal)) return "valor";
 		if (r.itens.some((i) => !i.dataCompra)) return "data";
 		if (r.itens.some((i) => !i.parcelas)) return "parcelas";
-		if (r.itens.some((i) => (i.parcelas || 1) > 1) && r.diaVencimento === null) return "vencimento";
+		if (r.itens.some((i) => (i.parcelas || 1) > 1) && r.diaVencimento === null && !r.dataPrimeiroVencimento) return "vencimento";
 		if (r.itens.some((i) => !i.divisao)) return "divisao";
 		if (r.itens.some((i) => (i.divisao === "VALOR" && i.valorOutro === null) || (i.divisao === "PERCENTUAL" && i.percentualOutro === null)))
 			return "valorOutro";
@@ -542,15 +551,16 @@ export default function ChatAcordosIaModal({
 						? "Foi **à vista ou parcelado**? Se cada compra for diferente, me diga (ex.: \"mercado à vista, tênis em 3x\")."
 						: `${r.itens[0].descricao} foi **à vista ou parcelado**?`,
 					chips: [
-						{ rotulo: varios ? "Tudo à vista" : "À vista", aplicar: (x) => aplicarEmTodos(x, "parcelas", 1) },
-						...[2, 3, 6, 10, 12].map((n) => ({ rotulo: `${n}x`, aplicar: (x: Rascunho) => aplicarEmTodos(x, "parcelas", n) })),
+						{ rotulo: varios ? "Tudo à vista" : "À vista", aplicar: (x) => aplicarEmTodos(x, "parcelas", 1, false) },
+						...[2, 3, 4, 5, 6, 10, 12].map((n) => ({ rotulo: `${n}x`, aplicar: (x: Rascunho) => aplicarEmTodos(x, "parcelas", n, false) })),
 					],
 				};
 			case "vencimento": {
 				const diaCompra = Number((r.itens.find((i) => (i.parcelas || 1) > 1)?.dataCompra || hojeISO()).slice(8, 10));
 				return {
-					texto: "Em que **dia do mês** vencem as parcelas? (ex.: \"dia 29\")",
+					texto: "Em que **dia do mês** vencem as parcelas? (ex.: \"todo dia 29\")",
 					chips: [
+						{ rotulo: "Dia 29", aplicar: (x) => ({ ...x, diaVencimento: 29 }) },
 						{ rotulo: `Mesmo dia da compra (${diaCompra})`, aplicar: (x) => ({ ...x, diaVencimento: 0 }) },
 						...[5, 10, 15, 20, 25].map((d) => ({ rotulo: `Dia ${d}`, aplicar: (x: Rascunho) => ({ ...x, diaVencimento: d }) })),
 					],
@@ -688,6 +698,11 @@ export default function ChatAcordosIaModal({
 			case "vencimento": {
 				if (!curto) return null;
 				if (/mesmo dia|da compra/.test(t)) return { ...r, diaVencimento: 0 };
+				const dataC = lerData(texto);
+				if (dataC) {
+					const dia = Number(dataC.slice(8, 10));
+					return { ...r, diaVencimento: dia, dataPrimeiroVencimento: dataC };
+				}
 				const d = t.match(/\b(\d{1,2})\b/);
 				return d && Number(d[1]) >= 1 && Number(d[1]) <= 31 ? { ...r, diaVencimento: Number(d[1]) } : null;
 			}
@@ -842,6 +857,7 @@ export default function ChatAcordosIaModal({
 				const d = numeroSeguro(b.diaVencimento);
 				return d && d >= 1 && d <= 31 ? Math.round(d) : anterior.diaVencimento;
 			})(),
+			dataPrimeiroVencimento: anterior.dataPrimeiroVencimento,
 			tipoRelacao: b.tipoRelacao === "DEVO_PARA_ELE" || b.tipoRelacao === "ELE_ME_DEVE" ? b.tipoRelacao : anterior.tipoRelacao,
 		};
 		if (r.quemPagou === "OUTRO") r = { ...r, jaNoExtrato: false, opcionaisDecididos: true };
@@ -885,8 +901,8 @@ Atualize o rascunho com as informações da nova mensagem e responda SOMENTE um 
 Regras:
 - Mantenha tudo o que já está preenchido, a não ser que o usuário peça para mudar. NUNCA invente valores: use null quando não souber.
 - "modo": "DIVISAO" quando o usuário lista compras/gastos para dividir; "ACORDO" quando cola um acordo/cronograma de pagamentos com datas e valores.
-- "itens" (DIVISAO), um por compra: { "descricao", "valorTotal" (valor TOTAL da compra, número), "dataCompra" ("AAAA-MM-DD"; se disser "todas"/"tudo", aplique a todos os itens; sem ano, use ${new Date().getFullYear()}), "parcelas" (1 = à vista), "divisao" ("IGUAL" = meio a meio, "VALOR" ou "PERCENTUAL"), "valorOutro" (quanto fica para a outra pessoa, quando VALOR), "percentualOutro" (quando PERCENTUAL), "opcional" (true quando o item estiver marcado como "(Opcional)" ou o usuário disser que a pessoa pode recusar) }.
-- "diaVencimento": dia do mês em que vencem as parcelas, se o usuário disser (ex.: "vence todo dia 29" → 29); senão null.
+- "itens" (DIVISAO), um por compra: { "descricao", "valorTotal" (valor TOTAL da compra, número), "dataCompra" ("AAAA-MM-DD"; se disser "todas"/"tudo", aplique a todos os itens; sem ano, use ${new Date().getFullYear()}), "parcelas" (número de parcelas SE o usuário especificou explicitamente, ex: 1 para à vista, 6 para 6x. NUNCA assuma 1 nem à vista se o usuário não disse: se ele NÃO mencionou se foi à vista ou parcelado, RETORNE null para o assistente perguntar!), "divisao" ("IGUAL" = meio a meio, "VALOR" ou "PERCENTUAL"), "valorOutro" (quanto fica para a outra pessoa, quando VALOR), "percentualOutro" (quando PERCENTUAL), "opcional" (true quando o item estiver marcado como "(Opcional)" ou o usuário disser que a pessoa pode recusar) }.
+- "diaVencimento": dia do mês em que vencem as parcelas, se o usuário disser (ex.: "vence todo dia 29" ou "vencimento dia 29/11/2026" → 29); senão null.
 - Se o usuário remover um item, não o devolva. Se adicionar, inclua.
 - "pessoaNome": nome da OUTRA pessoa (nunca o próprio usuário). "grupoNome": se citar um grupo.
 - "quemPagou": "EU" se o usuário pagou, "OUTRO" se a outra pessoa pagou.
@@ -1038,13 +1054,87 @@ Regras:
 		avancar(r);
 	};
 
+	/**
+	 * Entende comandos diretos de ajuste em qualquer momento da conversa:
+	 * "o vencimento é dia 29/11/2026", "vence dia 29", "em 6x", "à vista", etc.
+	 */
+	const interpretarAjusteQualquerMomento = (texto: string, r: Rascunho): Rascunho | null => {
+		const t = semAcento(texto);
+		let alterou = false;
+		let x = { ...r };
+
+		// 1. Parcelas: "em 6x", "6x", "6 vezes", "6 parcelas", "parcelar em 6", "a vista", "1x"
+		const mParc = t.match(/\b(?:parcelad[oa]\s+(?:em|de)\s+|parcelar\s+(?:em\s+)?|em\s+)?(\d{1,2})\s*(?:x|vezes|parcelas?)\b/) ||
+			t.match(/\bparcelar\s+em\s+(\d{1,2})\b/);
+		if (mParc && Number(mParc[1]) >= 1 && Number(mParc[1]) <= 48) {
+			x = aplicarEmTodos(x, "parcelas", Number(mParc[1]), false);
+			alterou = true;
+		} else if (/\b(a vista|avista|vista|1x)\b/.test(t) && !/\d+\s*x/.test(t)) {
+			x = aplicarEmTodos(x, "parcelas", 1, false);
+			alterou = true;
+		}
+
+		// 2. Vencimento: "o vencimento e dia 29/11/2026", "vencimento dia 29", "vence dia 29", "vence em 29/11"
+		const dataCompleta = lerData(texto);
+		const mVenc = t.match(/\b(?:vencimento|vence\w*|vencer|pagar\s+dia|dia\s+do\s+vencimento)\s+(?:e\s+)?(?:no\s+dia\s+|o\s+dia\s+|dia\s+|em\s+)?(\d{1,2})(?:[/.-](\d{1,2}))?/) ||
+			t.match(/\bdia\s+(\d{1,2})\s+(?:de\s+)?(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)/) ||
+			(r.itens.length > 0 && /^\s*(?:dia\s+)?(\d{1,2})\s*$/.test(t) ? t.match(/(\d{1,2})/) : null);
+
+		if (dataCompleta && /\b(venc\w*|vence\w*)\b/.test(t)) {
+			const dia = Number(dataCompleta.slice(8, 10));
+			x.diaVencimento = dia;
+			x.dataPrimeiroVencimento = dataCompleta;
+			alterou = true;
+		} else if (mVenc) {
+			const dia = Number(mVenc[1]);
+			if (dia >= 1 && dia <= 31) {
+				x.diaVencimento = dia;
+				if (dataCompleta) {
+					x.dataPrimeiroVencimento = dataCompleta;
+				}
+				alterou = true;
+			}
+		}
+
+		// 3. Divisão: "meio a meio", "50%"
+		if (/meio a meio|metade|50 ?%|igual/.test(t)) {
+			x = aplicarEmTodos(x, "divisao", "IGUAL", false);
+			alterou = true;
+		}
+
+		// 4. Quem pagou
+		if (/\b(eu paguei|paguei)\b/.test(t)) {
+			x.quemPagou = "EU";
+			alterou = true;
+		}
+
+		return alterou ? x : null;
+	};
+
 	const enviar = async () => {
 		const texto = input.trim();
 		if (!texto || pensando || salvando) return;
 		setMensagens((prev) => [...prev, { id: novoId(), autor: "user", texto, hora: agora() }]);
 		setInput("");
 
-		// 1) Resposta simples à pergunta pendente: resolve sem IA
+		// 1) Ajuste geral em qualquer momento (ex.: "em 6x", "vencimento dia 29/11/2026")
+		const ajusteGeral = interpretarAjusteQualquerMomento(texto, rascunho);
+		if (ajusteGeral) {
+			const avisos: string[] = [];
+			if (ajusteGeral.diaVencimento !== rascunho.diaVencimento || ajusteGeral.dataPrimeiroVencimento !== rascunho.dataPrimeiroVencimento) {
+				avisos.push(`vencimento dia ${ajusteGeral.diaVencimento}`);
+			}
+			const parcNovo = ajusteGeral.itens[0]?.parcelas;
+			const parcAntigo = rascunho.itens[0]?.parcelas;
+			if (parcNovo !== parcAntigo && parcNovo) {
+				avisos.push(`parcelado em ${parcNovo === 1 ? "à vista" : `${parcNovo}x`}`);
+			}
+			const prefixo = avisos.length ? `Atualizei o resumo: ${avisos.join(", ")}.` : "Atualizei o resumo.";
+			avancar(ajusteGeral, prefixo);
+			return;
+		}
+
+		// 2) Resposta simples à pergunta pendente: resolve sem IA
 		const local = ajustesPorItem(texto, rascunho) || interpretarLocal(pergunta, texto, rascunho);
 		if (local) {
 			avancar(local, pergunta === "confirmar" ? "Atualizei o resumo." : "");
@@ -1149,6 +1239,7 @@ Regras:
 			const hoje = hojeISO();
 			const itensPorId = new Map(r.itens.map((i) => [i.id, i]));
 			const devoEu = r.modo === "ACORDO" ? r.tipoRelacao === "DEVO_PARA_ELE" : r.quemPagou === "OUTRO";
+			const loteId = crypto.randomUUID();
 
 			const linhas = lancamentos.map((l) => {
 				const item = l.itemId ? itensPorId.get(l.itemId) : undefined;
@@ -1179,6 +1270,7 @@ Regras:
 					is_split: true,
 					split_tipo: "amigo",
 					origem: "assistente_ia",
+					lote_id: loteId,
 					descricao_original: item?.descricao || l.descricao,
 					valor_total: l.valor,
 					contato_id: contatoId,
@@ -1278,35 +1370,126 @@ Regras:
 				</div>
 
 				{r.modo === "DIVISAO" && (
-					<div className="space-y-1.5 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
-						{r.itens.map((i) => (
-							<div
-								key={i.id}
-								className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 text-xs flex items-start justify-between gap-3">
-								<div className="min-w-0">
-									<p className="font-bold text-slate-800 dark:text-slate-100 truncate">{i.descricao}</p>
-									<p className="text-[11px] text-slate-500 dark:text-slate-400">
-										{moeda(i.valorTotal || 0)} · {i.dataCompra ? dataBR(i.dataCompra) : "—"} ·{" "}
-										{(i.parcelas || 1) > 1 ? `${i.parcelas}x${r.diaVencimento ? ` (dia ${r.diaVencimento})` : ""}` : "à vista"} ·{" "}
-										{i.divisao === "IGUAL" ? "meio a meio" : i.divisao === "PERCENTUAL" ? `${i.percentualOutro}% para ${primeiroNome}` : `${moeda(i.valorOutro || 0)} para ${primeiroNome}`}
-									</p>
-								</div>
-								{podeOpcional && (
-									<label className="shrink-0 flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer select-none">
-										<input
-											type="checkbox"
-											className="accent-purple-600"
-											checked={i.opcional}
-											onChange={(e) =>
-												setRascunho({ ...r, itens: r.itens.map((x) => (x.id === i.id ? { ...x, opcional: e.target.checked } : x)) })
-											}
-										/>
-										Opcional
-									</label>
-								)}
+					<>
+						{/* CONTROLE RÁPIDO DE PARCELAS E VENCIMENTO */}
+						<div className="p-3.5 rounded-2xl bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 space-y-3">
+							<div className="flex flex-wrap items-center justify-between gap-2">
+								<span className="text-xs font-black uppercase tracking-wider text-purple-900 dark:text-purple-300 flex items-center gap-1.5">
+									<Calendar size={14} className="text-purple-600 dark:text-purple-400" /> Parcelamento e Vencimento
+								</span>
+								<span className="text-[11px] font-black text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/60 px-2 py-0.5 rounded-full">
+									{r.itens.length > 0 && (r.itens[0].parcelas || 1) > 1 ? `${r.itens[0].parcelas}x` : "À vista (1x)"}
+									{r.diaVencimento ? ` · Vence dia ${r.diaVencimento}` : (r.dataPrimeiroVencimento ? ` · Vence ${dataBR(r.dataPrimeiroVencimento)}` : "")}
+								</span>
 							</div>
-						))}
-					</div>
+
+							{/* Seletor de Parcelas */}
+							<div>
+								<span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1.5">
+									Número de parcelas:
+								</span>
+								<div className="flex flex-wrap gap-1.5">
+									{[1, 2, 3, 4, 5, 6, 10, 12].map((num) => {
+										const ativo = (r.itens[0]?.parcelas || 1) === num && r.itens.every((it) => (it.parcelas || 1) === num);
+										return (
+											<button
+												key={num}
+												type="button"
+												onClick={() => {
+													setRascunho((prev) => aplicarEmTodos(prev, "parcelas", num, false));
+												}}
+												className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+													ativo
+														? "bg-purple-600 text-white shadow-sm ring-2 ring-purple-400"
+														: "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-purple-300"
+												}`}>
+												{num === 1 ? "À vista (1x)" : `${num}x`}
+											</button>
+										);
+									})}
+								</div>
+							</div>
+
+							{/* Seletor de Dia de Vencimento */}
+							<div>
+								<span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1.5">
+									Dia de vencimento da fatura/parcela:
+								</span>
+								<div className="flex flex-wrap items-center gap-1.5">
+									{[5, 10, 15, 20, 25, 29].map((dia) => {
+										const ativo = r.diaVencimento === dia;
+										return (
+											<button
+												key={dia}
+												type="button"
+												onClick={() => {
+													setRascunho((prev) => ({ ...prev, diaVencimento: dia }));
+												}}
+												className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+													ativo
+														? "bg-purple-600 text-white shadow-sm ring-2 ring-purple-400"
+														: "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-purple-300"
+												}`}>
+												Dia {dia}
+											</button>
+										);
+									})}
+									<div className="flex items-center gap-1 ml-auto">
+										<span className="text-[11px] text-slate-500 font-medium">Outro dia:</span>
+										<input
+											type="number"
+											min={1}
+											max={31}
+											placeholder="ex: 29"
+											value={r.diaVencimento || ""}
+											onChange={(e) => {
+												const val = parseInt(e.target.value, 10);
+												if (!isNaN(val) && val >= 1 && val <= 31) {
+													setRascunho((prev) => ({ ...prev, diaVencimento: val }));
+												} else if (e.target.value === "") {
+													setRascunho((prev) => ({ ...prev, diaVencimento: null }));
+												}
+											}}
+											className="w-16 px-2 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-bold text-center"
+										/>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						{/* LISTA DE ITENS */}
+						<div className="space-y-1.5 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
+							{r.itens.map((i) => (
+								<div
+									key={i.id}
+									className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 text-xs flex items-start justify-between gap-3">
+									<div className="min-w-0">
+										<p className="font-bold text-slate-800 dark:text-slate-100 truncate">{i.descricao}</p>
+										<p className="text-[11px] text-slate-500 dark:text-slate-400">
+											{moeda(i.valorTotal || 0)} · {i.dataCompra ? `Compra: ${dataBR(i.dataCompra)}` : "—"} ·{" "}
+											{(i.parcelas || 1) > 1 
+												? `${i.parcelas}x (${moeda(centavos(parteDoOutro(i) / (i.parcelas || 1)))}/mês${r.diaVencimento ? ` · vence dia ${r.diaVencimento}` : ""})` 
+												: `à vista${r.diaVencimento ? ` (vence dia ${r.diaVencimento})` : ""}`} ·{" "}
+											{i.divisao === "IGUAL" ? "meio a meio" : i.divisao === "PERCENTUAL" ? `${i.percentualOutro}% para ${primeiroNome}` : `${moeda(i.valorOutro || 0)} para ${primeiroNome}`}
+										</p>
+									</div>
+									{podeOpcional && (
+										<label className="shrink-0 flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer select-none">
+											<input
+												type="checkbox"
+												className="accent-purple-600"
+												checked={i.opcional}
+												onChange={(e) =>
+													setRascunho({ ...r, itens: r.itens.map((x) => (x.id === i.id ? { ...x, opcional: e.target.checked } : x)) })
+												}
+											/>
+											Opcional
+										</label>
+									)}
+								</div>
+							))}
+						</div>
+					</>
 				)}
 
 				<div className="space-y-2">
@@ -1315,32 +1498,46 @@ Regras:
 						<span className="tabular-nums">{moeda(total)}</span>
 					</div>
 					<div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
-						{porData(lanc).map((g) => (
-							<div
-								key={g.data}
-								className="p-2.5 rounded-xl border bg-slate-50 dark:bg-slate-800/40 border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 text-xs">
-								<div className="flex items-center gap-2 min-w-0">
-									<span className="font-black w-18 shrink-0 text-purple-600 dark:text-purple-400 tabular-nums">{dataBR(g.data)}</span>
-									<span className="truncate text-slate-600 dark:text-slate-300">
-										{g.itens.length === 1 ? g.itens[0].descricao : `${g.itens.length} itens`}
-									</span>
-									{g.opcional > 0 && (
-										<span className="shrink-0 text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
-											{g.itens.length === 1 ? "Opcional" : `${moeda(g.opcional)} opcional`}
+						{porData(lanc).map((g) => {
+							const primeiroItem = g.itens[0];
+							const totalParc = primeiroItem?.totalParcelas || 1;
+							const parcNum = primeiroItem?.parcela || 1;
+							return (
+								<div
+									key={g.data}
+									className="p-2.5 rounded-xl border bg-slate-50 dark:bg-slate-800/40 border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 text-xs">
+									<div className="flex items-center gap-2 min-w-0">
+										<div className="flex items-center gap-1.5 shrink-0">
+											<Calendar size={13} className="text-purple-600 dark:text-purple-400" />
+											<span className="text-[10px] font-bold uppercase text-slate-400">Vence:</span>
+											<span className="font-black text-purple-600 dark:text-purple-400 tabular-nums">{dataBR(g.data)}</span>
+										</div>
+										{totalParc > 1 && (
+											<span className="shrink-0 text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">
+												{parcNum}/{totalParc}
+											</span>
+										)}
+										<span className="truncate text-slate-600 dark:text-slate-300">
+											{g.itens.length === 1 ? g.itens[0].descricao : `${g.itens.length} itens`}
 										</span>
+										{g.opcional > 0 && (
+											<span className="shrink-0 text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
+												{g.itens.length === 1 ? "Opcional" : `${moeda(g.opcional)} opcional`}
+											</span>
+										)}
+									</div>
+									{g.compensado > 0 ? (
+										<span className="text-right shrink-0 leading-tight">
+											<span className="block text-[10px] text-slate-400 line-through tabular-nums">{moeda(g.total)}</span>
+											<span className="block font-black tabular-nums text-slate-800 dark:text-slate-100">{moeda(g.total - g.compensado)}</span>
+											<span className="block text-[10px] font-bold text-emerald-600 dark:text-emerald-400">− {moeda(g.compensado)} abatido</span>
+										</span>
+									) : (
+										<span className="font-black tabular-nums text-slate-800 dark:text-slate-100 shrink-0">{moeda(g.total)}</span>
 									)}
 								</div>
-								{g.compensado > 0 ? (
-									<span className="text-right shrink-0 leading-tight">
-										<span className="block text-[10px] text-slate-400 line-through tabular-nums">{moeda(g.total)}</span>
-										<span className="block font-black tabular-nums text-slate-800 dark:text-slate-100">{moeda(g.total - g.compensado)}</span>
-										<span className="block text-[10px] font-bold text-emerald-600 dark:text-emerald-400">− {moeda(g.compensado)} abatido</span>
-									</span>
-								) : (
-									<span className="font-black tabular-nums text-slate-800 dark:text-slate-100 shrink-0">{moeda(g.total)}</span>
-								)}
-							</div>
-						))}
+							);
+						})}
 					</div>
 					{abatido > 0 && (
 						<p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
