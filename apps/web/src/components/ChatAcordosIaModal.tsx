@@ -978,7 +978,8 @@ Regras:
 		let x = r;
 		if (/\bhoje\b/.test(t)) x = aplicarEmTodos(x, "dataCompra", hojeISO());
 		else if (/\bontem\b/.test(t)) x = aplicarEmTodos(x, "dataCompra", ontemISO());
-		const n = t.match(/(?:parcelad[oa]\s+(?:em|de)\s+)?(\d{1,2})\s*(?:x|vezes)\b/);
+		const ehFracao = /\d+\s*\/\s*\d+\s*x|x\s*\d+\s*\/\s*\d+|\d+\s*x\s*\d+/i.test(t);
+		const n = !ehFracao ? (t.match(/\b(?:parcelad[oa]\s+(?:em|de)\s+|em\s+)(\d{1,2})\s*(?:x|vezes)\b/) || t.match(/\b(\d{1,2})\s*(?:vezes|parcelas)\b/)) : null;
 		if (n && Number(n[1]) >= 1 && Number(n[1]) <= 48) x = aplicarEmTodos(x, "parcelas", Number(n[1]));
 		else if (/\ba vista\b/.test(t)) x = aplicarEmTodos(x, "parcelas", 1);
 		const venc = t.match(/vence\w*\s+(?:todo\s+)?(?:o\s+)?dia\s+(\d{1,2})/);
@@ -1059,26 +1060,40 @@ Regras:
 	 * "o vencimento é dia 29/11/2026", "vence dia 29", "em 6x", "à vista", etc.
 	 */
 	const interpretarAjusteQualquerMomento = (texto: string, r: Rascunho): Rascunho | null => {
+		// Se não há itens ainda, o usuário está inserindo as compras, nunca é um comando de ajuste
+		if (r.itens.length === 0) return null;
+
+		// Se o texto parece uma nova lista de itens com R$, não é comando de ajuste
+		if (/r\$\s*\d/i.test(texto) || itensLocais(texto).length > 0) return null;
+
 		const t = semAcento(texto);
 		let alterou = false;
 		let x = { ...r };
 
 		// 1. Parcelas: "em 6x", "6x", "6 vezes", "6 parcelas", "parcelar em 6", "a vista", "1x"
-		const mParc = t.match(/\b(?:parcelad[oa]\s+(?:em|de)\s+|parcelar\s+(?:em\s+)?|em\s+)?(\d{1,2})\s*(?:x|vezes|parcelas?)\b/) ||
-			t.match(/\bparcelar\s+em\s+(\d{1,2})\b/);
-		if (mParc && Number(mParc[1]) >= 1 && Number(mParc[1]) <= 48) {
-			x = aplicarEmTodos(x, "parcelas", Number(mParc[1]), false);
-			alterou = true;
-		} else if (/\b(a vista|avista|vista|1x)\b/.test(t) && !/\d+\s*x/.test(t)) {
-			x = aplicarEmTodos(x, "parcelas", 1, false);
-			alterou = true;
+		// Ignora frações como 1/2 x 1/4 ou dimensões como 55x35cm
+		const ehFracaoOuDimensao = /\d+\s*\/\s*\d+\s*x|x\s*\d+\s*\/\s*\d+|\d+\s*x\s*\d+/i.test(t);
+		if (!ehFracaoOuDimensao) {
+			const mParc =
+				t.match(/\b(?:parcelad[oa]\s+(?:em|de)\s+|parcelar\s+(?:em\s+)?|dividir\s+em\s+|em\s+)(\d{1,2})\s*(?:x|vezes|parcelas?)?\b/) ||
+				t.match(/^\s*(?:em\s+)?(\d{1,2})\s*x\s*$/) ||
+				t.match(/\b(\d{1,2})\s*(?:vezes|parcelas)\b/);
+
+			if (mParc && Number(mParc[1]) >= 1 && Number(mParc[1]) <= 48) {
+				x = aplicarEmTodos(x, "parcelas", Number(mParc[1]), false);
+				alterou = true;
+			} else if (/\b(a vista|avista|vista|1x)\b/.test(t) && !/\d+\s*x/.test(t)) {
+				x = aplicarEmTodos(x, "parcelas", 1, false);
+				alterou = true;
+			}
 		}
 
 		// 2. Vencimento: "o vencimento e dia 29/11/2026", "vencimento dia 29", "vence dia 29", "vence em 29/11"
 		const dataCompleta = lerData(texto);
-		const mVenc = t.match(/\b(?:vencimento|vence\w*|vencer|pagar\s+dia|dia\s+do\s+vencimento)\s+(?:e\s+)?(?:no\s+dia\s+|o\s+dia\s+|dia\s+|em\s+)?(\d{1,2})(?:[/.-](\d{1,2}))?/) ||
+		const mVenc =
+			t.match(/\b(?:vencimento|vence\w*|vencer|pagar\s+dia|dia\s+do\s+vencimento)\s+(?:e\s+)?(?:no\s+dia\s+|o\s+dia\s+|dia\s+|em\s+)?(\d{1,2})(?:[/.-](\d{1,2}))?/) ||
 			t.match(/\bdia\s+(\d{1,2})\s+(?:de\s+)?(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)/) ||
-			(r.itens.length > 0 && /^\s*(?:dia\s+)?(\d{1,2})\s*$/.test(t) ? t.match(/(\d{1,2})/) : null);
+			(/^\s*(?:dia\s+)?(\d{1,2})\s*$/.test(t) ? t.match(/(\d{1,2})/) : null);
 
 		if (dataCompleta && /\b(venc\w*|vence\w*)\b/.test(t)) {
 			const dia = Number(dataCompleta.slice(8, 10));
@@ -1116,6 +1131,15 @@ Regras:
 		if (!texto || pensando || salvando) return;
 		setMensagens((prev) => [...prev, { id: novoId(), autor: "user", texto, hora: agora() }]);
 		setInput("");
+
+		// Se está na etapa de itens ou ainda não tem itens, e o texto tem itens com valores: extrai direto localmente!
+		if (pergunta === "itens" || rascunho.itens.length === 0) {
+			const itens = itensLocais(texto);
+			if (itens.length > 0) {
+				avancar(instrucoesGerais(texto, { ...rascunho, modo: "DIVISAO", itens }));
+				return;
+			}
+		}
 
 		// 1) Ajuste geral em qualquer momento (ex.: "em 6x", "vencimento dia 29/11/2026")
 		const ajusteGeral = interpretarAjusteQualquerMomento(texto, rascunho);
