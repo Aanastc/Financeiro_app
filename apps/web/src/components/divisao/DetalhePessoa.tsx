@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ArrowDownLeft, ArrowUpRight, ChevronDown, Download, HandCoins, MessageSquare, Pencil, Send, Undo2, X } from "lucide-react";
 import ListaPorData from "../ListaPorData";
-import type { ItemPessoa, PessoaSaldo } from "../../lib/divisaoPessoas";
+import { textoOrigens, type ItemPessoa, type PessoaSaldo } from "../../lib/divisaoPessoas";
 import { corAvatar } from "./PessoasDivisao";
 
 const moeda = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -83,6 +83,11 @@ export default function DetalhePessoa({
 					{i.pago > 0 && !i.quitado && ` · ${i.compensado ? "abatido" : "pago"} ${moeda(i.pago)} de ${moeda(i.valor)}`}
 					{i.recusado && " · recusado"}
 				</span>
+				{i.abatido > 0 && (
+					<span className="block text-[11px] font-semibold text-emerald-700 dark:text-emerald-400" title={i.abatidoDe.map((o) => `${o.descricao} (${dataBR(o.data)}): ${moeda(o.valor)}`).join("\n")}>
+						abatido {moeda(i.abatido)} de {moeda(i.valor)} · {i.direcao === "RECEBER" ? "você devia" : `${primeiro} devia`} {textoOrigens(i.abatidoDe)}
+					</span>
+				)}
 			</span>
 			{i.direcao === "RECEBER" && !i.quitado && !i.recusado && (
 				<button

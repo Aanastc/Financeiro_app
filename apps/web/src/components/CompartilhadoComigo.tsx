@@ -6,6 +6,8 @@ import toast from "react-hot-toast";
 import ListaPorData from "./ListaPorData";
 import { notificacoesService } from "../../../../packages/services/notificacoes.service";
 import { conviteService, type DespesaCompartilhadaComigo, type GrupoQueParticipo } from "../../../../packages/services/convite.service";
+import type { Abatimento } from "../../../../packages/services/despesas-compartilhadas.service";
+import { textoOrigens } from "../lib/divisaoPessoas";
 
 const moeda = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -14,7 +16,12 @@ const moeda = (v: number) => v.toLocaleString("pt-BR", { style: "currency", curr
  * Aparece para quem foi vinculado a um contato por convite — inclusive convidados.
  * Só altera algo quando a cobrança é opcional: aí você pode aceitar ou recusar.
  */
-export default function CompartilhadoComigo() {
+export default function CompartilhadoComigo({ abatimentos }: { abatimentos?: Map<string, Abatimento> } = {}) {
+	// Em aberto já descontado o abatimento automático do grupo
+	const abatidoNo = (i: DespesaCompartilhadaComigo) =>
+		Math.min(Math.max(0, Number(i.valor) - Number(i.valor_pago || 0)), abatimentos?.get(i.id)?.valor || 0);
+	const emAberto = (i: DespesaCompartilhadaComigo) =>
+		Math.max(0, Math.round((Number(i.valor) - Number(i.valor_pago || 0) - abatidoNo(i)) * 100) / 100);
 	const [itens, setItens] = useState<DespesaCompartilhadaComigo[] | null>(null);
 	const [respondendo, setRespondendo] = useState<string | null>(null);
 	// "Paguei" de um item/parcela: id do item e valor digitado
@@ -105,7 +112,7 @@ export default function CompartilhadoComigo() {
 			if (!i.grupo_id) continue;
 			const g = mapa.get(i.grupo_id) || { id: i.grupo_id, nome: i.grupo_nome || "Grupo", criadoPor: i.pessoa, membros: [], voceDeve: 0, teDevem: 0 };
 			if (!i.quitado && i.resposta !== "recusada") {
-				const aberto = Math.max(0, Number(i.valor) - Number(i.valor_pago || 0));
+				const aberto = emAberto(i);
 				if (i.direcao === "VOCE_DEVE") g.voceDeve += aberto;
 				else g.teDevem += aberto;
 			}
@@ -118,7 +125,7 @@ export default function CompartilhadoComigo() {
 		const mapa = new Map<string, { voceDeve: number; teDevem: number; itens: DespesaCompartilhadaComigo[] }>();
 		for (const i of itens || []) {
 			const grupo = mapa.get(i.pessoa) || { voceDeve: 0, teDevem: 0, itens: [] };
-			const aberto = Math.max(0, Number(i.valor) - Number(i.valor_pago || 0));
+			const aberto = emAberto(i);
 			if (!i.quitado && i.resposta !== "recusada") {
 				if (i.direcao === "VOCE_DEVE") grupo.voceDeve += aberto;
 				else grupo.teDevem += aberto;
@@ -199,14 +206,15 @@ export default function CompartilhadoComigo() {
 							resumo={(lista) => ({
 								total: lista
 									.filter((i) => i.resposta !== "recusada")
-									.reduce((s, i) => s + Math.max(0, Number(i.valor) - Number(i.valor_pago || 0)), 0),
+									.reduce((s, i) => s + emAberto(i), 0),
 								quitado: lista.every((i) => i.quitado),
 								detalhe: lista.some((i) => i.opcional && !i.resposta && !i.quitado)
 									? `${lista.filter((i) => i.opcional && !i.resposta && !i.quitado).length} opcional(is) para responder`
 									: undefined,
 							})}
 							renderItem={(i) => {
-								const aberto = Math.max(0, Number(i.valor) - Number(i.valor_pago || 0));
+								const aberto = emAberto(i);
+								const abatido = abatidoNo(i);
 								const recusada = i.resposta === "recusada";
 								const podeResponder = i.opcional && i.direcao === "VOCE_DEVE" && !i.quitado && !i.resposta;
 								const aguardando = i.direcao === "VOCE_DEVE" && !i.quitado && i.pagamento_informado;
@@ -244,10 +252,17 @@ export default function CompartilhadoComigo() {
 											<div className="text-right shrink-0">
 												<p className="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{moeda(Number(i.valor))}</p>
 												<p className={`text-[11px] font-semibold ${i.quitado ? "text-emerald-600 dark:text-emerald-400" : recusada ? "text-rose-600 dark:text-rose-400" : "text-slate-500 dark:text-slate-400"}`}>
-													{i.quitado ? "quitado" : recusada ? "recusada" : i.resposta === "aceita" ? "aceita" : i.valor_pago > 0 ? `resta ${moeda(aberto)}` : "em aberto"}
+													{i.quitado || (abatido > 0 && aberto <= 0)
+														? abatido > 0 && !i.quitado ? "quitado por abatimento" : "quitado"
+														: recusada ? "recusada" : abatido > 0 || i.valor_pago > 0 ? `resta ${moeda(aberto)}` : i.resposta === "aceita" ? "aceita" : "em aberto"}
 												</p>
 											</div>
 										</div>
+										{abatido > 0.009 && (
+											<p className="pl-11 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+												abatido {moeda(abatido)} de {moeda(Number(i.valor))} · compensado {textoOrigens(abatimentos?.get(i.id)?.origens || [])}
+											</p>
+										)}
 										{aguardando && (
 											<p className="pl-11 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
 												⏳ Você avisou que pagou {moeda(Number(i.pagamento_informado?.valor) || 0)} · aguardando {i.pessoa.split(" ")[0]} confirmar

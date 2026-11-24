@@ -12,6 +12,12 @@ const lerMeta = (obs?: string | null): any => {
 };
 const centavos = (v: number) => Math.round(v * 100) / 100;
 
+/** "em “Mercado” (25/11/2026)" ou "em “Mercado” (25/11/2026) e mais 2" — de onde veio um abatimento */
+export const textoOrigens = (origens: { descricao: string; data: string }[]) =>
+	origens.length === 0
+		? ""
+		: `em “${origens[0].descricao}” (${new Date(`${origens[0].data}T12:00:00`).toLocaleDateString("pt-BR")})${origens.length > 1 ? ` e mais ${origens.length - 1}` : ""}`;
+
 export interface ItemPessoa {
 	id: string;
 	data: string;
@@ -26,6 +32,9 @@ export interface ItemPessoa {
 	resposta?: "aceita" | "recusada" | null;
 	recusado: boolean;
 	compensado: boolean;
+	/** Abatido automaticamente pelo que você deve a essa pessoa no mesmo grupo (só cálculo) */
+	abatido: number;
+	abatidoDe: { descricao: string; data: string; valor: number; autor: string | null }[];
 	grupo?: string;
 	raw: any;
 }
@@ -49,7 +58,15 @@ const limpar = (t: string, nome: string) =>
 		.replace(/\s*\[[^\]]*\]\s*$/, "")
 		.trim();
 
-export function montarPessoas(devedores: any[], credores: any[]): PessoaSaldo[] {
+/** Abatimentos automáticos por lançamento (ver despesasCompartilhadasService.calcularAbatimentos). */
+type Abatimentos = Map<string, { valor: number; origens: { descricao: string; data: string; valor: number; autor: string | null }[] }>;
+
+export function montarPessoas(devedores: any[], credores: any[], abatimentos?: Abatimentos): PessoaSaldo[] {
+	const abater = (id: string, aberto: number) => {
+		const a = abatimentos?.get(id);
+		const abatido = a ? centavos(Math.min(aberto, a.valor)) : 0;
+		return { abatido, abatidoDe: abatido > 0 ? a!.origens : [], aberto: centavos(aberto - abatido) };
+	};
 	const mapa = new Map<string, PessoaSaldo>();
 	const pegar = (contato: any) => {
 		const p = mapa.get(contato.id) || { contato, receber: 0, pagar: 0, saldo: 0, proximo: null, itens: [], devedor: null };
@@ -66,7 +83,7 @@ export function montarPessoas(devedores: any[], credores: any[]): PessoaSaldo[] 
 			const valor = Number(t.valor) || 0;
 			const recusado = meta.resposta_cobranca === "recusada";
 			const pago = t.terceiro_pago ? valor : Math.min(valor, Number(meta.valor_pago) || 0);
-			const aberto = t.terceiro_pago || recusado ? 0 : centavos(valor - pago);
+			const { aberto, abatido, abatidoDe } = abater(t.id, t.terceiro_pago || recusado ? 0 : centavos(valor - pago));
 			p.itens.push({
 				id: t.id,
 				data: t.data,
@@ -80,6 +97,8 @@ export function montarPessoas(devedores: any[], credores: any[]): PessoaSaldo[] 
 				resposta: meta.resposta_cobranca || null,
 				recusado,
 				compensado: Array.isArray(meta.pagamentos) && meta.pagamentos.some((x: any) => x.tipo === "compensacao"),
+				abatido,
+				abatidoDe,
 				grupo: meta.grupo_nome,
 				raw: t,
 			});
@@ -94,7 +113,7 @@ export function montarPessoas(devedores: any[], credores: any[]): PessoaSaldo[] 
 			const meta = lerMeta(t.observacao);
 			const valor = Number(t.valor ?? t.valor_parcela_usuario) || 0;
 			const pago = t.quitado ? valor : Math.min(valor, Number(t.valor_pago) || 0);
-			const aberto = t.quitado ? 0 : centavos(valor - pago);
+			const { aberto, abatido, abatidoDe } = abater(t.id, t.quitado ? 0 : centavos(valor - pago));
 			p.itens.push({
 				id: t.id,
 				data: t.data,
@@ -107,6 +126,8 @@ export function montarPessoas(devedores: any[], credores: any[]): PessoaSaldo[] 
 				opcional: false,
 				recusado: false,
 				compensado: Array.isArray(meta.pagamentos) && meta.pagamentos.some((x: any) => x.tipo === "compensacao"),
+				abatido,
+				abatidoDe,
 				grupo: meta.grupo_nome,
 				raw: t,
 			});

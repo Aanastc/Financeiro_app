@@ -55,6 +55,12 @@ export interface BalancoMembro {
   saldoLiquido: number; // positivo = tem a receber, negativo = deve
 }
 
+/** Quanto de um lançamento foi abatido pelo que a outra pessoa te deve (e de onde veio). */
+export interface Abatimento {
+  valor: number;
+  origens: { txId: string; descricao: string; data: string; valor: number; autor: string | null }[];
+}
+
 export interface SimplificacaoDivida {
   devedorId: string;
   devedorNome: string;
@@ -330,6 +336,88 @@ class DespesasCompartilhadasService {
     }
 
     return novoMembro;
+  }
+
+  /** Dívidas em aberto que um lançamento do grupo cria entre membros (quem deve → quem pagou). */
+  private dividasDoLancamento(membros: GrupoMembro[], d: any) {
+    let meta: any = {};
+    try {
+      if (typeof d.observacao === "string" && d.observacao.trim().startsWith("{")) meta = JSON.parse(d.observacao);
+    } catch {}
+    if (d.terceiro_pago || meta.resposta_cobranca === "recusada") return [];
+    const valor = Number(d.valor) || 0;
+    const aberto = valor - Math.min(valor, Number(meta.valor_pago) || 0);
+    if (aberto <= 0.009) return [];
+
+    const ids = new Set(membros.map(m => m.id));
+    const autor = this.autorDoLancamento(membros, d, meta);
+    const pagadorId: string | undefined = meta.pago_por_id && ids.has(meta.pago_por_id) ? meta.pago_por_id : autor?.id;
+    if (!pagadorId) return [];
+    const base = {
+      txId: String(d.id),
+      data: String(d.data || "").slice(0, 10),
+      descricao: `${meta.descricao_original || d.descricao || "Despesa"}${Number(meta.total_parcelas) > 1 ? ` (${meta.parcela}/${meta.total_parcelas})` : ""}`,
+      autor: d.de_outro_membro ? String(d.autor_nome || "") || null : null,
+    };
+
+    if (d.terceiro) {
+      // Quem lançou pagou: devem os outros participantes, na proporção da parte de cada um
+      const devedores = (Array.isArray(meta.participantes) ? meta.participantes : []).filter(
+        (p: any) => p.id !== pagadorId && p.id !== autor?.id && !p.is_user && ids.has(p.id) && Number(p.valor_devido) > 0
+      );
+      const soma = devedores.reduce((s: number, p: any) => s + Number(p.valor_devido), 0);
+      if (soma <= 0) return [];
+      return devedores.map((p: any) => ({ ...base, devedor: p.id as string, credor: pagadorId, aberto: (aberto * Number(p.valor_devido)) / soma }));
+    }
+    // Outra pessoa pagou: quem lançou deve a ela
+    if (autor && autor.id !== pagadorId) return [{ ...base, devedor: autor.id, credor: pagadorId, aberto }];
+    return [];
+  }
+
+  /**
+   * Abatimento automático entre duas pessoas do grupo: o que A deve a B é abatido
+   * do que B deve a A, sempre dos vencimentos mais próximos para os mais distantes,
+   * até completar o menor dos dois totais. É só cálculo (nada é gravado): se um
+   * lançamento muda ou é apagado, o abatimento se refaz sozinho.
+   */
+  calcularAbatimentos(membros: GrupoMembro[], despesas: any[]): Map<string, Abatimento> {
+    const resultado = new Map<string, Abatimento>();
+    const dividas = despesas.flatMap(d => this.dividasDoLancamento(membros, d));
+    const pares = new Map<string, typeof dividas>();
+    for (const x of dividas) {
+      const chave = [x.devedor, x.credor].sort().join("|");
+      pares.set(chave, [...(pares.get(chave) || []), x]);
+    }
+    const ordem = (a: any, b: any) => a.data.localeCompare(b.data) || a.txId.localeCompare(b.txId);
+    const anotar = (alvo: any, origem: any, valor: number) => {
+      const r = resultado.get(alvo.txId) || { valor: 0, origens: [] };
+      r.valor += valor;
+      r.origens.push({ txId: origem.txId, descricao: origem.descricao, data: origem.data, valor, autor: origem.autor });
+      resultado.set(alvo.txId, r);
+    };
+
+    for (const lista of pares.values()) {
+      const umLado = lista.filter(x => x.devedor === lista[0].devedor).sort(ordem);
+      const outroLado = lista.filter(x => x.devedor !== lista[0].devedor).sort(ordem);
+      let i = 0, j = 0;
+      let restoA = umLado[0]?.aberto || 0, restoB = outroLado[0]?.aberto || 0;
+      while (i < umLado.length && j < outroLado.length) {
+        const valor = Math.min(restoA, restoB);
+        if (valor > 0.004) {
+          anotar(umLado[i], outroLado[j], valor);
+          anotar(outroLado[j], umLado[i], valor);
+        }
+        restoA -= valor;
+        restoB -= valor;
+        if (restoA <= 0.004) restoA = umLado[++i]?.aberto || 0;
+        if (restoB <= 0.004) restoB = outroLado[++j]?.aberto || 0;
+      }
+    }
+    for (const r of resultado.values()) {
+      r.valor = Math.round(r.valor * 100) / 100;
+      r.origens = r.origens.map(o => ({ ...o, valor: Math.round(o.valor * 100) / 100 }));
+    }
+    return resultado;
   }
 
   // 5. CALCULAR BALANÇO E SIMPLIFICAÇÃO DE DÍVIDAS (SIMPLIFICAÇÃO DE DÍVIDAS)

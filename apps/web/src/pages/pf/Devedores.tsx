@@ -4,7 +4,7 @@ import { recebimentosDivisaoService } from "../../../../../packages/services/rec
 import { authService } from "../../../../../packages/services/auth.service";
 import { financeService } from "../../../../../packages/services/finance.service";
 import { despesasCompartilhadasService } from "../../../../../packages/services/despesas-compartilhadas.service";
-import type { Grupo } from "../../../../../packages/services/despesas-compartilhadas.service";
+import type { Abatimento, Grupo } from "../../../../../packages/services/despesas-compartilhadas.service";
 import { supabase } from "../../../../../packages/services/supabase";
 import { buscarTodasPaginas } from "../../../../../packages/services/paginacao";
 import { motion } from "framer-motion";
@@ -40,7 +40,7 @@ import DetalhePessoa from "../../components/divisao/DetalhePessoa";
 import HistoricoDivisao from "../../components/divisao/HistoricoDivisao";
 import PagamentosParaConfirmar from "../../components/divisao/PagamentosParaConfirmar";
 import EditarLoteModal from "../../components/divisao/EditarLoteModal";
-import { montarPessoas } from "../../lib/divisaoPessoas";
+import { montarPessoas, textoOrigens } from "../../lib/divisaoPessoas";
 import EditarLancamentoModal from "../../components/EditarLancamentoModal";
 import PedirTelefoneModal from "../../components/PedirTelefoneModal";
 import CriarGrupoModal from "../../components/CriarGrupoModal";
@@ -549,7 +549,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 				setReceberDe({
 					contato: { id: contato.id, nome: contato.nome },
 					itemIds: [item.id],
-					valorSugerido: Math.max(0, Math.round((Number(item.valor) - pago) * 100) / 100),
+					valorSugerido: Math.max(0, Math.round((Number(item.valor) - pago - abatidoDe(item.id)) * 100) / 100),
 				});
 				return;
 			}
@@ -768,8 +768,22 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 		);
 	}, [grupoSelecionado, despesasDoGrupoSelecionado]);
 
+	// Abatimento automático dentro de cada grupo: o que você deve a alguém abate o que
+	// essa pessoa te deve, dos vencimentos mais próximos para os mais distantes (só cálculo)
+	const abatimentos = useMemo(() => {
+		const todos = new Map<string, Abatimento>();
+		const lancamentos = [...todasDespesasSplit, ...despesasOutrosMembros];
+		for (const g of grupos) {
+			const doGrupo = lancamentos.filter((d) => getPaymentInfo(d.observacao)?.grupo_id === g.id);
+			if (doGrupo.length === 0) continue;
+			despesasCompartilhadasService.calcularAbatimentos(g.membros || [], doGrupo).forEach((a, id) => todos.set(id, a));
+		}
+		return todos;
+	}, [grupos, todasDespesasSplit, despesasOutrosMembros]);
+	const abatidoDe = (id: string) => abatimentos.get(id)?.valor || 0;
+
 	// Uma pessoa = um saldo (o que ela te deve menos o que você deve a ela)
-	const pessoas = useMemo(() => montarPessoas(devedores, credores), [devedores, credores]);
+	const pessoas = useMemo(() => montarPessoas(devedores, credores, abatimentos), [devedores, credores, abatimentos]);
 	const pessoasFiltradas = useMemo(() => {
 		const q = termoBusca.trim().toLowerCase();
 		if (!q) return pessoas;
@@ -806,7 +820,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 					loadAllData();
 				}}
 			/>
-			<CompartilhadoComigo />
+			<CompartilhadoComigo abatimentos={abatimentos} />
 			{/* TOPO */}
 			<div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
 				<div>
@@ -1168,8 +1182,19 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 						const compras = new Set(despesasDoGrupoSelecionado.map((d) => info(d).titulo)).size;
 						const datas = new Set(despesasDoGrupoSelecionado.map((d) => d.data)).size;
 
+						// Em aberto depois de pagamentos; e se o abatimento automático já cobriu tudo
+						const abertoDe = (d: any) => Math.max(0, Number(d.valor) - (Number(getPaymentInfo(d.observacao)?.valor_pago) || 0));
+						const quitadoPorAbatimento = (d: any) =>
+							!d.terceiro_pago && abatidoDe(d.id) > 0 && abatidoDe(d.id) >= abertoDe(d) - 0.01;
+						const seloAbatido = (
+							<span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+								Quitado por abatimento
+							</span>
+						);
 						const statusItem = (d: any, pequeno = false) =>
-							d.terceiro_pago ? (
+							quitadoPorAbatimento(d) ? (
+								seloAbatido
+							) : d.terceiro_pago ? (
 								<span className="flex items-center gap-2">
 									<span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
 										Quitado
@@ -1218,11 +1243,13 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 											const aceitos = metas.filter((m) => m.opcional && m.resposta_cobranca === "aceita").length;
 											const recusados = metas.filter((m) => m.opcional && m.resposta_cobranca === "recusada").length;
 											const pagadores = [...new Set(infos.map((i) => i.quemPagou))];
+											const abatido = lista.reduce((s, d) => s + Math.min(abertoDe(d), abatidoDe(d.id)), 0);
 											return {
 												total: infos.reduce((s, i) => s + i.total, 0),
-												quitado: lista.every((d) => d.terceiro_pago),
+												quitado: lista.every((d) => d.terceiro_pago || quitadoPorAbatimento(d)),
 												detalhe:
 													`pago por ${pagadores.join(" e ")} · sua parte ${fmt(minha)}` +
+													(abatido > 0.009 ? ` · ${fmt(abatido)} abatido` : "") +
 													(aguardando ? ` · ${aguardando} opcional(is) aguardando resposta` : "") +
 													(aceitos ? ` · ${aceitos} aceito(s)` : "") +
 													(recusados ? ` · ${recusados} recusado(s)` : ""),
@@ -1231,7 +1258,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 										acao={(listaCompleta: any[]) => {
 											// Só os seus lançamentos podem ser editados ou quitados por você
 											const lista = listaCompleta.filter((d) => !d.de_outro_membro);
-											const abertos = lista.filter((d) => !d.terceiro_pago);
+											const abertos = lista.filter((d) => !d.terceiro_pago && !quitadoPorAbatimento(d));
 											const editar =
 												lista.length > 1 ? (
 													<button
@@ -1247,9 +1274,10 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 											const contato = contatos.find((c) => c.id === contatoId);
 											if (!mesmoContato || !contato) return editar; // dívidas mistas: pagar item a item
 											const aberto = abertos.reduce(
-												(s, d) => s + Math.max(0, Number(d.valor) - (Number(getPaymentInfo(d.observacao)?.valor_pago) || 0)),
+												(s, d) => s + Math.max(0, abertoDe(d) - abatidoDe(d.id)),
 												0,
 											);
+											if (aberto <= 0.009) return editar;
 											return (
 												<span className="flex items-center gap-2">
 													{editar}
@@ -1308,12 +1336,20 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 																		</span>
 																	))}
 															</p>
+															{abatimentos.get(d.id) && Math.min(abertoDe(d), abatidoDe(d.id)) > 0.009 && (
+																<p
+																	className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400"
+																	title={abatimentos.get(d.id)!.origens.map((o) => `${o.descricao}: ${fmt(o.valor)}`).join("\n")}>
+																	abatido {fmt(Math.min(abertoDe(d), abatidoDe(d.id)))} de {fmt(Number(d.valor))} · compensado{" "}
+																	{textoOrigens(abatimentos.get(d.id)!.origens)}
+																</p>
+															)}
 														</div>
 													</div>
 													<div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
 														<span className="font-black text-[13px] tabular-nums text-slate-900 dark:text-slate-100">{fmt(i.total)}</span>
 														{i.deOutro ? (
-															d.terceiro_pago && (
+															quitadoPorAbatimento(d) ? seloAbatido : d.terceiro_pago && (
 																<span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
 																	Quitado
 																</span>
