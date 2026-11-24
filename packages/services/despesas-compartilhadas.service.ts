@@ -21,6 +21,9 @@ export interface Grupo {
   cor_hex?: string;
   criado_em: string;
   membros?: GrupoMembro[];
+  /** Grupo criado por outra pessoa em que você é membro (não dá para excluir nem editar membros) */
+  compartilhado?: boolean;
+  dono_nome?: string | null;
 }
 
 export interface TransacaoSplit {
@@ -104,11 +107,16 @@ class DespesasCompartilhadasService {
         .order("criado_em", { ascending: false });
 
       if (!error && remoteGrupos) {
-        const { data: perfil } = await supabase.from("usuarios").select("nome").eq("id", userId).maybeSingle();
-        return remoteGrupos.map((g: any) => ({
+        const [{ data: perfil }, compartilhados] = await Promise.all([
+          supabase.from("usuarios").select("nome").eq("id", userId).maybeSingle(),
+          this.getGruposCompartilhados(),
+        ]);
+        const meus = remoteGrupos.map((g: any) => ({
           ...g,
           membros: this.marcarMembroUsuario(g.grupo_membros || [], userId, perfil?.nome)
         }));
+        const ids = new Set(meus.map((g: any) => g.id));
+        return [...meus, ...compartilhados.filter(g => !ids.has(g.id))];
       }
     } catch (err) {
       console.log("Fallback para storage local de grupos");
@@ -116,6 +124,54 @@ class DespesasCompartilhadasService {
 
     // Fallback para localStorage
     return this.getLocalGrupos(userId);
+  }
+
+  /** Grupos de outras pessoas em que você é membro (SQL seção 21; sem a função, lista vazia). */
+  async getGruposCompartilhados(): Promise<Grupo[]> {
+    const { data, error } = await supabase.rpc("grupos_compartilhados_comigo");
+    if (error || !Array.isArray(data)) {
+      if (error) console.warn("Grupos compartilhados indisponíveis:", error.message);
+      return [];
+    }
+    return data.map((g: any) => ({
+      ...g,
+      compartilhado: true,
+      membros: (g.membros || []).map((m: any) => ({
+        ...m,
+        contato_id: null,
+        is_user: m.id === g.meu_membro_id
+      }))
+    }));
+  }
+
+  /**
+   * Lançamentos que os OUTROS membros fizeram nos seus grupos (os seus já vêm da
+   * tabela transacoes). Somente leitura: vêm marcados com de_outro_membro.
+   */
+  async getDespesasDeOutrosMembros(): Promise<any[]> {
+    const { data, error } = await supabase.rpc("despesas_grupos_compartilhados");
+    if (error) {
+      console.warn("Despesas de outros membros indisponíveis:", error.message);
+      return [];
+    }
+    return (data || []).map((t: any) => ({ ...t, de_outro_membro: true }));
+  }
+
+  /**
+   * Membro do grupo que fez o lançamento. Nos seus, é você; nos de outros membros,
+   * vem do próprio lançamento (autor_membro_id, ou o participante marcado como
+   * "você" do lado de quem lançou, ou quem pagou quando foi o autor que pagou).
+   */
+  autorDoLancamento(membros: GrupoMembro[], d: any, meta: any): GrupoMembro | undefined {
+    if (!d?.de_outro_membro) return membros.find(m => m.is_user);
+    const porId = (id?: string) => (id ? membros.find(m => m.id === id) : undefined);
+    const participantes: any[] = Array.isArray(meta?.participantes) ? meta.participantes : [];
+    return (
+      porId(meta?.autor_membro_id) ||
+      porId(participantes.find(p => p.is_user)?.id) ||
+      (d.terceiro ? porId(meta?.pago_por_id) : undefined) ||
+      membros.find(m => m.usuario_id && m.usuario_id === d.usuario_id)
+    );
   }
 
   /**
@@ -314,35 +370,37 @@ class DespesasCompartilhadasService {
       const valorTotal = Number(meta?.valor_total || d.valor || 0);
       totalGastoGrupo += valorTotal;
 
+      // Quem lançou: você nos seus lançamentos; o outro membro nos dele
+      const autor = this.autorDoLancamento(membros, d, meta);
+
       // Quem pagou
       const pagadorId = meta?.pago_por_id;
 
       if (pagadorId && mapaBalancos.has(pagadorId)) {
         mapaBalancos.get(pagadorId)!.pago += valorTotal;
       } else {
-        // Se foi o usuário que pagou
-        const primeiroMembro = membros.find(m => m.is_user) || membros[0];
+        // Sem pagador informado: foi quem lançou
+        const primeiroMembro = autor || membros[0];
         if (primeiroMembro && mapaBalancos.has(primeiroMembro.id)) {
           mapaBalancos.get(primeiroMembro.id)!.pago += valorTotal;
         }
       }
 
       // Já pago (total ou parcial): desconta do saldo de quem devia e de quem recebeu
-      const quemPagouCompra = pagadorId && mapaBalancos.has(pagadorId) ? pagadorId : (membros.find(m => m.is_user) || membros[0])?.id;
+      const quemPagouCompra = pagadorId && mapaBalancos.has(pagadorId) ? pagadorId : (autor || membros[0])?.id;
       // Cobrança opcional recusada: quem pagou fica com o valor (sai do que o outro deve)
       const recusada = meta?.resposta_cobranca === "recusada";
       const jaAcertado = d.terceiro_pago || recusada ? Number(d.valor) || 0 : Number(meta?.valor_pago) || 0;
       if (jaAcertado > 0 && quemPagouCompra) {
         let devedores: { id: string; peso: number }[] = [];
         if (d.terceiro) {
-          // Você pagou: quem te devia eram os outros participantes
+          // Quem lançou pagou: quem devia eram os outros participantes
           devedores = (Array.isArray(meta?.participantes) ? meta.participantes : [])
-            .filter((p: any) => p.id !== quemPagouCompra && !p.is_user && mapaBalancos.has(p.id))
+            .filter((p: any) => p.id !== quemPagouCompra && p.id !== autor?.id && !p.is_user && mapaBalancos.has(p.id))
             .map((p: any) => ({ id: p.id, peso: Number(p.valor_devido) || 0 }));
         } else {
-          // Outra pessoa pagou: quem devia era você
-          const eu = membros.find(m => m.is_user);
-          if (eu && eu.id !== quemPagouCompra) devedores = [{ id: eu.id, peso: 1 }];
+          // Outra pessoa pagou: quem devia era quem lançou
+          if (autor && autor.id !== quemPagouCompra) devedores = [{ id: autor.id, peso: 1 }];
         }
         const somaPesos = devedores.reduce((s, x) => s + x.peso, 0);
         if (devedores.length && somaPesos > 0) {

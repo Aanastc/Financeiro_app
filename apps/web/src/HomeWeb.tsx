@@ -1649,7 +1649,7 @@ export default function HomeWeb() {
 				}}
 				userId={userId}
 				contatosDisponiveis={contatos}
-				grupos={grupos}
+				grupos={grupos.filter((g) => !g.compartilhado)}
 			/>
 
 			{/* MODAL DE CRIAR GRUPO */}

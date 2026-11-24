@@ -451,10 +451,13 @@ export default function AddSplitDespesaModal({
 					(p) => p.id === pagadorGrupoId,
 				);
 				const vocePagou = pagadorMembro?.is_user || false;
+				// Nome gravado sem o "(Você)" da tela: o lançamento também aparece para os outros membros
+				const nomeLimpo = (nome?: string) => (nome || "").replace(/\s*\(Você\)$/, "");
+				const euNoGrupo = participantesGrupo.find((p) => p.is_user);
 
 				const participantesDetalhados = calculoMembrosGrupo.map((m) => ({
 					id: m.id,
-					nome: m.nome,
+					nome: nomeLimpo(m.nome),
 					valor_devido: m.valorDevido,
 					contato_id: m.contato_id,
 					is_user: m.is_user,
@@ -465,10 +468,11 @@ export default function AddSplitDespesaModal({
 					split_tipo: "grupo",
 					grupo_id: grupoId,
 					grupo_nome: grupoAtual?.nome || "Grupo",
+					autor_membro_id: euNoGrupo?.id || null,
 					descricao_original: descricao,
 					valor_total: valorTotal,
 					pago_por_id: pagadorGrupoId,
-					pago_por_nome: pagadorMembro?.nome || "Participante",
+					pago_por_nome: nomeLimpo(pagadorMembro?.nome) || "Participante",
 					voce_pagou: vocePagou,
 					metodo_divisao: metodoDivisao,
 					participantes: participantesDetalhados,
@@ -534,7 +538,7 @@ export default function AddSplitDespesaModal({
 							observacao: JSON.stringify({
 								...grupoMetadataComRec,
 								parceria_credor_id: pagadorMembro?.contato_id || pagadorGrupoId,
-								parceria_credor_nome: pagadorMembro?.nome,
+								parceria_credor_nome: nomeLimpo(pagadorMembro?.nome),
 							}),
 							status: m === 0 ? "confirmada" : "pendente",
 						});
@@ -764,6 +768,7 @@ export default function AddSplitDespesaModal({
 											{grupos.map((g) => (
 												<option key={g.id} value={g.id}>
 													{g.nome} ({g.membros?.length || 0} membros)
+													{g.compartilhado ? ` · de ${(g.dono_nome || "outra pessoa").split(" ")[0]}` : ""}
 												</option>
 											))}
 										</select>

@@ -59,6 +59,8 @@ export default function Devedores() {
 	const [contatos, setContatos] = useState<any[]>([]);
 	const [grupos, setGrupos] = useState<Grupo[]>([]);
 	const [todasDespesasSplit, setTodasDespesasSplit] = useState<any[]>([]);
+	// Lançamentos dos outros membros nos grupos (somente leitura)
+	const [despesasOutrosMembros, setDespesasOutrosMembros] = useState<any[]>([]);
 	const [usuariosComConta, setUsuariosComConta] = useState<Set<string>>(
 		new Set(),
 	);
@@ -122,7 +124,7 @@ export default function Devedores() {
 				user.nome || user.email?.split("@")[0] || "Você",
 			);
 
-			const [devedoresData, contatosRes, transacoesRes, gruposRes] =
+			const [devedoresData, contatosRes, transacoesRes, gruposRes, outrosMembrosRes] =
 				await Promise.all([
 					financeService.getDevedores(user.id),
 					supabase
@@ -146,9 +148,11 @@ export default function Devedores() {
 						return [] as any[];
 					}),
 					despesasCompartilhadasService.getGrupos(user.id),
+					despesasCompartilhadasService.getDespesasDeOutrosMembros(),
 				]);
 
 			setDevedores(devedoresData || []);
+			setDespesasOutrosMembros(outrosMembrosRes || []);
 			
 			// Remove e-mails dummy @example.com e @exemplo.com dos contatos
 			const contatosRaw = contatosRes.data || [];
@@ -725,7 +729,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 	const despesasDoGrupoSelecionado = useMemo(() => {
 		if (!grupoSelecionado) return [];
 		const membros = grupoSelecionado.membros || [];
-		return todasDespesasSplit
+		return [...todasDespesasSplit, ...despesasOutrosMembros]
 			.filter((d) => getPaymentInfo(d.observacao)?.grupo_id === grupoSelecionado.id)
 			.map((d) => {
 				// Lançamentos levados ao grupo só com a parte de quem deve: completa a parte de
@@ -748,12 +752,12 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 					valor_total: Math.round((outros + parteDoPagador) * 100) / 100,
 					participantes: [
 						...parts,
-						{ id: pagador.id, nome: pagador.nome, valor_devido: parteDoPagador, ...(pagador.is_user ? { is_user: true } : {}) },
+						{ id: pagador.id, nome: pagador.nome, valor_devido: parteDoPagador, ...(pagador.is_user && !d.de_outro_membro ? { is_user: true } : {}) },
 					],
 				};
 				return { ...d, observacao: JSON.stringify(corrigido) };
 			});
-	}, [grupoSelecionado, todasDespesasSplit]);
+	}, [grupoSelecionado, todasDespesasSplit, despesasOutrosMembros]);
 
 	// BALANÇO E SIMPLIFICAÇÃO DO GRUPO SELECIONADO
 	const analiseDoGrupo = useMemo(() => {
@@ -952,13 +956,17 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 												<Users size={26} />
 											</div>
 											<div className="min-w-0">
-												<p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Grupo</p>
+												<p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+													{grupoSelecionado.compartilhado
+														? `Grupo de ${(grupoSelecionado.dono_nome || "outra pessoa").split(" ")[0]}`
+														: "Grupo"}
+												</p>
 												<h1 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight truncate">
 													{grupoSelecionado.nome}
 												</h1>
 												<div className="mt-1.5 flex flex-wrap items-center gap-1.5">
 													{membros.map((m) => {
-														const ativo = !m.is_user && contatoTemConta(contatoDoMembro(m));
+														const ativo = !m.is_user && (grupoSelecionado.compartilhado ? Boolean(m.usuario_id) : contatoTemConta(contatoDoMembro(m)));
 														return (
 															<span
 																key={m.id}
@@ -981,11 +989,13 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 												className="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-xs shadow-md shadow-emerald-600/20 transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap">
 												<Plus size={16} /> Adicionar despesa
 											</button>
+											{!grupoSelecionado.compartilhado && (
 											<button
 												onClick={() => setIsChatIaOpen(true)}
 												className="px-4 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-2xl font-black text-xs shadow-md shadow-purple-500/20 transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap">
 												<Sparkles size={16} /> Lançar com IA
 											</button>
+											)}
 											<button
 												onClick={() =>
 													exportarExcelGrupo({
@@ -999,6 +1009,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 												title="Baixar planilha do grupo">
 												<Download size={16} /> Excel
 											</button>
+											{!grupoSelecionado.compartilhado && (
 											<button
 												onClick={() => handleExcluirGrupo(grupoSelecionado)}
 												className="p-3 bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 dark:bg-slate-800 dark:hover:bg-rose-950/50 dark:text-slate-400 dark:hover:text-rose-400 rounded-2xl transition-colors cursor-pointer"
@@ -1006,6 +1017,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 												aria-label="Excluir grupo">
 												<Trash2 size={16} />
 											</button>
+											)}
 										</div>
 									</div>
 								</div>
@@ -1103,7 +1115,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 															</span>
 														)}
 													</div>
-													{membro && !ehVoce && (
+													{membro && !ehVoce && !grupoSelecionado.compartilhado && (
 														<div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/70 dark:border-slate-700/60">
 															<span className={`text-[11px] font-bold ${ativo ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"}`}>
 																{conviteService.textoSituacao(contato, ativo)}
@@ -1133,11 +1145,19 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 						const info = (d: any) => {
 							const meta = getPaymentInfo(d.observacao) || {};
 							const pagador = membros.find((m) => m.id === meta.pago_por_id);
-							const voce = Boolean(pagador?.is_user || meta.voce_pagou);
-							const minha = (meta.participantes || []).find((p: any) => p.is_user || membros.find((m) => m.id === p.id)?.is_user);
+							// Nos lançamentos de outro membro, "is_user"/"voce_pagou" se referem a quem lançou
+							const deOutro = Boolean(d.de_outro_membro);
+							const voce = Boolean(pagador?.is_user || (!deOutro && meta.voce_pagou));
+							const minha = (meta.participantes || []).find(
+								(p: any) => (!deOutro && p.is_user) || membros.find((m) => m.id === p.id)?.is_user,
+							);
 							return {
 								meta,
-								quemPagou: voce ? "você" : meta.pago_por_nome || pagador?.nome || "outra pessoa",
+								deOutro,
+								autor: deOutro ? String(d.autor_nome || "outro membro").split(" ")[0] : null,
+								quemPagou: voce
+									? "você"
+									: (deOutro ? pagador?.nome || meta.pago_por_nome : meta.pago_por_nome || pagador?.nome) || "outra pessoa",
 								minhaParte: minha ? Number(minha.valor_devido) || 0 : null,
 								total: Number(meta.valor_total || d.valor) || 0,
 								titulo: String(meta.descricao_original || d.descricao || "")
@@ -1208,7 +1228,9 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 													(recusados ? ` · ${recusados} recusado(s)` : ""),
 											};
 										}}
-										acao={(lista: any[]) => {
+										acao={(listaCompleta: any[]) => {
+											// Só os seus lançamentos podem ser editados ou quitados por você
+											const lista = listaCompleta.filter((d) => !d.de_outro_membro);
 											const abertos = lista.filter((d) => !d.terceiro_pago);
 											const editar =
 												lista.length > 1 ? (
@@ -1270,6 +1292,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 																{" "}· pago por{" "}
 																<strong className="text-slate-700 dark:text-slate-200">{i.quemPagou}</strong>
 																{i.minhaParte !== null && ` · sua parte ${fmt(i.minhaParte)}`}
+																{i.deOutro && ` · lançado por ${i.autor}`}
 																{i.meta.opcional &&
 																	(i.meta.resposta_cobranca === "aceita" ? (
 																		<span className="ml-1.5 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 text-[9px] font-black uppercase">
@@ -1289,14 +1312,24 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 													</div>
 													<div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
 														<span className="font-black text-[13px] tabular-nums text-slate-900 dark:text-slate-100">{fmt(i.total)}</span>
-														<button
-																onClick={() => setEditandoId(d.id)}
-																title="Editar lançamento"
-																aria-label="Editar lançamento"
-																className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:text-indigo-300 dark:hover:bg-indigo-950/40 cursor-pointer transition-colors">
-																<Pencil size={14} />
-															</button>
-														{statusItem(d, dentroDoMes)}
+														{i.deOutro ? (
+															d.terceiro_pago && (
+																<span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+																	Quitado
+																</span>
+															)
+														) : (
+															<>
+																<button
+																	onClick={() => setEditandoId(d.id)}
+																	title="Editar lançamento"
+																	aria-label="Editar lançamento"
+																	className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:text-indigo-300 dark:hover:bg-indigo-950/40 cursor-pointer transition-colors">
+																	<Pencil size={14} />
+																</button>
+																{statusItem(d, dentroDoMes)}
+															</>
+														)}
 													</div>
 												</div>
 											);
@@ -1352,7 +1385,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 					) : (
 						<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 							{gruposFiltrados.map((grupo) => {
-								const despesasDoGrupo = todasDespesasSplit.filter((d) => {
+								const despesasDoGrupo = [...todasDespesasSplit, ...despesasOutrosMembros].filter((d) => {
 									const m = getPaymentInfo(d.observacao);
 									return m?.grupo_id === grupo.id;
 								});
@@ -1376,7 +1409,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 													<Layers size={22} />
 												</div>
 												<span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
-													{grupo.tipo}
+													{grupo.compartilhado ? `de ${(grupo.dono_nome || "outra pessoa").split(" ")[0]}` : grupo.tipo}
 												</span>
 											</div>
 
@@ -1650,8 +1683,8 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 					}}
 					userId={userId}
 					contatosDisponiveis={contatos}
-					grupos={grupos}
-					grupoInicial={grupoSelecionado}
+					grupos={grupos.filter((g) => !g.compartilhado)}
+					grupoInicial={grupoSelecionado?.compartilhado ? null : grupoSelecionado}
 				/>
 			)}
 
