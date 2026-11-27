@@ -1322,6 +1322,15 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 										itens={despesasDoGrupoSelecionado}
 										dataDe={(d: any) => d.data}
 										ordem="asc"
+										ordenarItens={(a: any, b: any) => {
+											const ia = info(a);
+											const ib = info(b);
+											const da = String(ia.meta.data_compra || a.data || "").slice(0, 10);
+											const db = String(ib.meta.data_compra || b.data || "").slice(0, 10);
+											const cmpData = da.localeCompare(db);
+											if (cmpData !== 0) return cmpData;
+											return ia.titulo.localeCompare(ib.titulo, "pt-BR");
+										}}
 										cabecalho={
 											<div className="hidden lg:grid lg:grid-cols-[minmax(0,1fr)_96px_96px_132px_196px] items-center gap-3 pb-2.5 mb-1 border-b border-slate-100 dark:border-slate-800 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
 												<span>Despesa / Vencimento</span>

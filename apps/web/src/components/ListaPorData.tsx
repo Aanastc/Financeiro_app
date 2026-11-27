@@ -27,6 +27,8 @@ interface Props<T> {
 	compacto?: boolean;
 	/** Cabeçalho opcional de colunas exibido acima da lista (ex.: Total / Sua parte / Saldo) */
 	cabecalho?: ReactNode;
+	/** Comparador opcional para ordenar os itens dentro de cada data */
+	ordenarItens?: (a: T, b: T) => number;
 }
 
 /**
@@ -34,7 +36,7 @@ interface Props<T> {
  * 6 linhas (uma por mês) em vez de 180. Cada linha abre os itens daquele mês.
  * Um grupo com um item só é mostrado direto, sem cabeçalho.
  */
-export default function ListaPorData<T>({ itens, dataDe, resumo, renderItem, acao, ordem = "asc", limite, compacto, cabecalho }: Props<T>) {
+export default function ListaPorData<T>({ itens, dataDe, resumo, renderItem, acao, ordem = "asc", limite, compacto, cabecalho, ordenarItens }: Props<T>) {
 	const [abertos, setAbertos] = useState<Set<string>>(new Set());
 	const [verTudo, setVerTudo] = useState(false);
 
@@ -44,10 +46,13 @@ export default function ListaPorData<T>({ itens, dataDe, resumo, renderItem, aca
 			const d = dataDe(i);
 			mapa.set(d, [...(mapa.get(d) || []), i]);
 		}
-		const lista = [...mapa.entries()].map(([data, lista]) => ({ data, itens: lista }));
+		const lista = [...mapa.entries()].map(([data, itensGrupo]) => ({
+			data,
+			itens: ordenarItens ? [...itensGrupo].sort(ordenarItens) : itensGrupo,
+		}));
 		lista.sort((a, b) => (ordem === "asc" ? a.data.localeCompare(b.data) : b.data.localeCompare(a.data)));
 		return lista;
-	}, [itens, dataDe, ordem]);
+	}, [itens, dataDe, ordem, ordenarItens]);
 
 	const visiveis = limite && !verTudo ? grupos.slice(0, limite) : grupos;
 	const alternar = (d: string) =>
