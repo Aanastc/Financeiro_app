@@ -7,25 +7,53 @@ body {
   margin: 0;
   font-family: 'Inter', sans-serif;
   -webkit-font-smoothing: antialiased;
-  background-color: #f3f7f5;
-  background-image: radial-gradient(circle at top right, rgba(16, 185, 129, 0.08), transparent 42%), radial-gradient(circle at bottom left, rgba(245, 158, 11, 0.05), transparent 38%);
+  background-color: #eff6f2;
+  background-image:
+    radial-gradient(circle at 92% 4%, rgba(16, 185, 129, 0.14), transparent 36%),
+    radial-gradient(circle at 8% 92%, rgba(245, 158, 11, 0.10), transparent 36%);
+  background-attachment: fixed;
   @apply text-slate-900 dark:text-slate-100;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition: background-color 0.25s ease, color 0.2s ease;
 }
 
 .dark body {
-  background-color: #080d0b;
-  background-image: radial-gradient(circle at top right, rgba(16, 185, 129, 0.1), transparent 44%), radial-gradient(circle at bottom left, rgba(245, 158, 11, 0.05), transparent 38%);
+  background-color: #060d0a;
+  background-image:
+    radial-gradient(circle at 92% 4%, rgba(16, 185, 129, 0.14), transparent 40%),
+    radial-gradient(circle at 8% 92%, rgba(245, 158, 11, 0.07), transparent 36%);
 }
 
-/* Barra de rolagem do projeto todo: fina, arredondada, sem setas, segue o tema */
+/* Ambiente PJ (Empresa / CNPJ): paleta Azul Executivo + Âmbar */
+html[data-visao="pj"] body {
+  background-color: #eef3fa;
+  background-image:
+    radial-gradient(circle at 92% 4%, rgba(37, 99, 235, 0.14), transparent 38%),
+    radial-gradient(circle at 8% 92%, rgba(217, 119, 6, 0.10), transparent 36%);
+}
+
+html.dark[data-visao="pj"] body {
+  background-color: #060a14;
+  background-image:
+    radial-gradient(circle at 92% 4%, rgba(59, 130, 246, 0.15), transparent 42%),
+    radial-gradient(circle at 8% 92%, rgba(245, 158, 11, 0.08), transparent 36%);
+}
+
+/* Barra de rolagem do projeto todo: fina, arredondada, sem setas, segue o tema PF/PJ */
 :root {
-  --scroll-thumb: #b7cec4;
+  --scroll-thumb: #b0cdc0;
   --scroll-thumb-hover: #059669;
 }
 .dark {
-  --scroll-thumb: #243830;
+  --scroll-thumb: #1f372d;
   --scroll-thumb-hover: #10b981;
+}
+html[data-visao="pj"] {
+  --scroll-thumb: #b4c5e0;
+  --scroll-thumb-hover: #2563eb;
+}
+html.dark[data-visao="pj"] {
+  --scroll-thumb: #1e2d4a;
+  --scroll-thumb-hover: #3b82f6;
 }
 
 /* Chrome, Edge, Safari */

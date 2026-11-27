@@ -102,6 +102,15 @@ export default function DashboardLayout() {
     }
   });
   const visaoEfetiva: Visao = empresaNome ? visao : "PF";
+  const isPJ = visaoEfetiva === "PJ";
+
+  // Aplica a temática global PF (Esmeralda/Dourado) vs PJ (Azul Executivo/Âmbar) no documento
+  useEffect(() => {
+    document.documentElement.dataset.visao = isPJ ? "pj" : "pf";
+    document.title = isPJ
+      ? `Gestão PJ · ${empresaNome || "Empresa"} | Vida Financeira`
+      : "Vida Financeira · Pessoal | Tech Finance";
+  }, [isPJ, empresaNome]);
   const mudarVisao = (v: Visao) => {
     setVisaoState(v);
     try {
@@ -216,8 +225,12 @@ export default function DashboardLayout() {
         to={to}
         className={`flex items-center gap-3 px-3 py-2 rounded-xl font-bold transition-all ${
           isActive
-            ? "bg-indigo-600 text-white shadow-md shadow-indigo-200 dark:shadow-none"
-            : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200"
+            ? isPJ
+              ? "bg-gradient-to-r from-blue-600 to-indigo-700 text-white shadow-md shadow-blue-500/20 dark:shadow-none"
+              : "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/20 dark:shadow-none"
+            : isPJ
+              ? "text-slate-300 hover:bg-slate-800/80 hover:text-white"
+              : "text-slate-600 dark:text-slate-400 hover:bg-emerald-50/80 dark:hover:bg-emerald-950/30 hover:text-emerald-800 dark:hover:text-emerald-200"
         } ${isSidebarCollapsed ? "justify-center px-0" : ""}`}
         title={isSidebarCollapsed ? (badge ? `${label} (${badge})` : label) : undefined}
       >
@@ -260,16 +273,22 @@ export default function DashboardLayout() {
     <div className={`flex flex-col h-full ${isSidebarCollapsed ? "px-2" : "px-3 sm:px-4"} py-5 overflow-hidden`}>
       {/* Brand */}
       <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3 px-3'} ${mobile ? 'pr-12' : ''} mb-5 shrink-0 relative`}>
-        <div className="w-9 h-9 bg-gradient-to-br from-emerald-600 via-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-md shadow-emerald-200/70 dark:shadow-none shrink-0 ring-1 ring-emerald-400/30">
-          <Wallet className="w-5 h-5 text-white" />
+        <div
+          className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-md shrink-0 ring-1 ${
+            isPJ
+              ? "bg-gradient-to-br from-blue-600 via-blue-700 to-amber-500 shadow-blue-900/30 ring-blue-400/30"
+              : "bg-gradient-to-br from-emerald-600 via-emerald-500 to-teal-600 shadow-emerald-200/70 dark:shadow-none ring-emerald-400/30"
+          }`}
+        >
+          {isPJ ? <Building2 className="w-5 h-5 text-white" /> : <Wallet className="w-5 h-5 text-white" />}
         </div>
         {!isSidebarCollapsed && (
           <div className="min-w-0">
-            <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight leading-tight whitespace-nowrap truncate">
-              Vida Financeira
+            <h2 className={`text-base font-black tracking-tight leading-tight whitespace-nowrap truncate ${isPJ ? "text-white" : "text-slate-900 dark:text-white"}`}>
+              {isPJ ? (empresaNome || "Gestão PJ") : "Vida Financeira"}
             </h2>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400 leading-tight">
-              Tech Finance
+            <p className={`text-[10px] font-bold uppercase tracking-widest leading-tight ${isPJ ? "text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+              {isPJ ? "Empresa · CNPJ" : "Pessoal · PF"}
             </p>
           </div>
         )}
@@ -348,7 +367,7 @@ export default function DashboardLayout() {
 
   return (
     <ImportarProvider>
-      <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 relative overflow-x-hidden">
+      <div className="flex min-h-screen bg-transparent text-slate-800 dark:text-slate-100 relative overflow-x-hidden">
         
         {/* DESKTOP SIDEBAR */}
         {/* Tela média com o menu aberto por cima: clicar fora fecha */}
@@ -356,13 +375,23 @@ export default function DashboardLayout() {
           <div className="hidden md:block fixed inset-0 z-[35] bg-slate-900/40 backdrop-blur-[2px]" onClick={() => setSidebarAbertaTablet(false)} />
         )}
 
-        <aside className={`hidden md:flex flex-col ${sidebarRecolhida ? 'w-20' : 'w-64'} ${!telaGrande && !sidebarRecolhida ? 'shadow-2xl' : ''} border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex-shrink-0 z-40 transition-[width] duration-300 fixed inset-y-0 left-0 h-dvh`}>
+        <aside
+          className={`hidden md:flex flex-col ${sidebarRecolhida ? 'w-20' : 'w-64'} ${!telaGrande && !sidebarRecolhida ? 'shadow-2xl' : ''} border-r flex-shrink-0 z-40 transition-[width,background-color,border-color] duration-300 fixed inset-y-0 left-0 h-dvh ${
+            isPJ
+              ? "bg-slate-900 border-slate-800 text-slate-100"
+              : "bg-white/95 dark:bg-[#0b1410]/95 backdrop-blur-md border-emerald-200/70 dark:border-emerald-950/80"
+          }`}
+        >
           {renderSidebar(sidebarRecolhida)}
           <button
             onClick={alternarSidebar}
             aria-label={sidebarRecolhida ? "Expandir menu" : "Recolher menu"}
             title={sidebarRecolhida ? "Expandir menu" : "Recolher menu"}
-            className="absolute -right-3 top-[74px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full p-1 text-slate-500 shadow-sm cursor-pointer z-50 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+            className={`absolute -right-3 top-[74px] bg-white dark:bg-slate-800 border rounded-full p-1 text-slate-500 shadow-sm cursor-pointer z-50 transition-colors ${
+              isPJ
+                ? "border-blue-200 dark:border-blue-900 hover:text-blue-600 dark:hover:text-blue-400"
+                : "border-emerald-200 dark:border-emerald-900 hover:text-emerald-600 dark:hover:text-emerald-400"
+            }`}
           >
             <ChevronLeft size={16} className={`transition-transform duration-300 ${sidebarRecolhida ? 'rotate-180' : ''}`} />
           </button>
@@ -372,7 +401,7 @@ export default function DashboardLayout() {
         {isMobileMenuOpen && (
           <div className="md:hidden fixed inset-0 z-50 flex">
             <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
-            <div className="relative flex flex-col w-[85vw] max-w-xs bg-white dark:bg-slate-900 shadow-2xl h-dvh">
+            <div className={`relative flex flex-col w-[85vw] max-w-xs shadow-2xl h-dvh ${isPJ ? "bg-slate-900 text-slate-100" : "bg-white dark:bg-[#0b1410]"}`}>
               <button
                 onClick={() => setIsMobileMenuOpen(false)}
                 aria-label="Fechar menu"
@@ -389,8 +418,14 @@ export default function DashboardLayout() {
         <div className={`flex-1 flex flex-col min-w-0 md:pl-20 ${isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'} w-full transition-[padding] duration-300`}>
           
           {/* TOP HEADER */}
-          <header className="sticky top-0 h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-30">
-            <div className="flex items-center gap-4">
+          <header
+            className={`sticky top-0 h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 border-b backdrop-blur-md z-30 border-t-[3px] transition-colors ${
+              isPJ
+                ? "border-t-blue-600 border-b-blue-200/70 dark:border-b-blue-950/70 bg-white/85 dark:bg-[#0a101d]/85"
+                : "border-t-emerald-500 border-b-emerald-200/70 dark:border-b-emerald-950/70 bg-white/85 dark:bg-[#0b1410]/85"
+            }`}
+          >
+            <div className="flex items-center gap-3 sm:gap-4">
               <button 
                 className="md:hidden p-2 -ml-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 onClick={() => setIsMobileMenuOpen(true)}
@@ -398,19 +433,28 @@ export default function DashboardLayout() {
                 <Menu size={24} />
               </button>
               <h1 className={`text-lg font-black text-slate-800 dark:text-slate-100 truncate md:hidden ${empresaNome && !convidado ? "hidden" : ""}`}>
-                Tech Finance.
+                Vida Financeira
               </h1>
+
+              {/* Indicador claro do ambiente atual (PF vs PJ) */}
+              {!empresaNome && !convidado && (
+                <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
+                  <Wallet size={13} /> Vida Pessoal (PF)
+                </span>
+              )}
 
               {/* PF x EMPRESA */}
               {empresaNome && !convidado && (
-                <div role="tablist" aria-label="O que você quer ver" className="flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                <div role="tablist" aria-label="O que você quer ver" className="flex p-1 rounded-xl bg-slate-100/90 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
                   <button
                     type="button"
                     role="tab"
                     aria-selected={visaoEfetiva === "PF"}
                     onClick={() => mudarVisao("PF")}
                     className={`flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-black transition-all cursor-pointer ${
-                      visaoEfetiva === "PF" ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                      visaoEfetiva === "PF"
+                        ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm"
+                        : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                     }`}
                   >
                     <Wallet size={15} /> <span>Pessoa Física</span>
@@ -422,7 +466,9 @@ export default function DashboardLayout() {
                     onClick={() => mudarVisao("PJ")}
                     title={empresaNome}
                     className={`flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-black transition-all cursor-pointer ${
-                      visaoEfetiva === "PJ" ? "bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                      visaoEfetiva === "PJ"
+                        ? "bg-gradient-to-r from-blue-600 to-indigo-700 text-white shadow-sm"
+                        : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                     }`}
                   >
                     <Building2 size={15} />
@@ -610,8 +656,12 @@ export default function DashboardLayout() {
 
             <button 
               onClick={() => setIsNewTxMenuOpen(!isNewTxMenuOpen)}
-              className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-white shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all z-40 ${
-                isNewTxMenuOpen ? 'bg-slate-800 dark:bg-slate-700 rotate-45' : 'bg-indigo-600 hover:bg-indigo-500'
+              className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-white shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all z-40 cursor-pointer ${
+                isNewTxMenuOpen
+                  ? 'bg-slate-800 dark:bg-slate-700 rotate-45'
+                  : isPJ
+                    ? 'bg-gradient-to-br from-blue-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600 shadow-blue-500/30'
+                    : 'bg-gradient-to-br from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-500/30'
               }`}
             >
               <Plus size={28} />
