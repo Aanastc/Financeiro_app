@@ -77,6 +77,8 @@ interface Rascunho {
 	diaVencimento: number | null;
 	/** Data específica do 1º vencimento (AAAA-MM-DD), caso o usuário tenha informado com mês/ano (ex.: 29/11/2026) */
 	dataPrimeiroVencimento?: string | null;
+	/** Quando true, empurra o 1º vencimento para o mês seguinte (ex.: fatura do cartão já fechou) */
+	faturaFechada?: boolean;
 	opcionaisDecididos: boolean;
 	/** Já perguntamos se a divisão é dentro de um grupo em que a pessoa está */
 	grupoDecidido: boolean;
@@ -226,6 +228,7 @@ const rascunhoVazio = (): Rascunho => ({
 	jaNoExtrato: null,
 	diaVencimento: null,
 	dataPrimeiroVencimento: null,
+	faturaFechada: false,
 	opcionaisDecididos: false,
 	grupoDecidido: false,
 	itens: [],
@@ -270,12 +273,19 @@ const datasDoAcordo = (cronograma: PagamentoAcordo[]) => {
  * compra se o dia ainda não passou, senão no mês seguinte (dia 31 em fevereiro = 28/29).
  * Se houver uma data específica de 1º vencimento (AAAA-MM-DD), avança a partir dela.
  */
-const vencimento = (dataCompra: string, dia: number, n: number, dataPrimeiroVenc?: string | null) => {
+const vencimento = (
+	dataCompra: string,
+	dia: number,
+	n: number,
+	dataPrimeiroVenc?: string | null,
+	faturaFechada = false
+) => {
+	const deslocamento = faturaFechada ? 1 : 0;
 	if (dataPrimeiroVenc) {
-		return somarMeses(dataPrimeiroVenc, n);
+		return somarMeses(dataPrimeiroVenc, n + deslocamento);
 	}
 	const [a, m, d] = dataCompra.split("-").map(Number);
-	const inicio = d <= dia ? 0 : 1;
+	const inicio = (d <= dia ? 0 : 1) + deslocamento;
 	const alvo = new Date(a, m - 1 + inicio + n, 1);
 	const ultimo = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate();
 	return `${alvo.getFullYear()}-${pad(alvo.getMonth() + 1)}-${pad(Math.min(dia, ultimo))}`;
@@ -344,7 +354,10 @@ const gerarLancamentos = (r: Rascunho): Lancamento[] => {
 		for (let p = 0; p < n; p++) {
 			out.push({
 				itemId: i.id,
-				data: (dia > 0 || r.dataPrimeiroVencimento) ? vencimento(i.dataCompra, dia || 1, p, r.dataPrimeiroVencimento) : somarMeses(i.dataCompra, p),
+				data:
+					dia > 0 || r.dataPrimeiroVencimento
+						? vencimento(i.dataCompra, dia || 1, p, r.dataPrimeiroVencimento, Boolean(r.faturaFechada))
+						: somarMeses(i.dataCompra, p + (r.faturaFechada ? 1 : 0)),
 				descricao: n > 1 ? `${i.descricao} (${p + 1}/${n})` : i.descricao,
 				valor: p === n - 1 ? centavos(devido - base * (n - 1)) : base,
 				opcional: r.quemPagou === "EU" && i.opcional,
@@ -1404,6 +1417,7 @@ Regras:
 								<span className="text-[11px] font-black text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/60 px-2 py-0.5 rounded-full">
 									{r.itens.length > 0 && (r.itens[0].parcelas || 1) > 1 ? `${r.itens[0].parcelas}x` : "À vista (1x)"}
 									{r.diaVencimento ? ` · Vence dia ${r.diaVencimento}` : (r.dataPrimeiroVencimento ? ` · Vence ${dataBR(r.dataPrimeiroVencimento)}` : "")}
+									{r.faturaFechada ? " · Próximo mês" : ""}
 								</span>
 							</div>
 
@@ -1447,7 +1461,7 @@ Regras:
 												key={dia}
 												type="button"
 												onClick={() => {
-													setRascunho((prev) => ({ ...prev, diaVencimento: dia }));
+													setRascunho((prev) => ({ ...prev, diaVencimento: dia, dataPrimeiroVencimento: null }));
 												}}
 												className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
 													ativo
@@ -1469,7 +1483,7 @@ Regras:
 											onChange={(e) => {
 												const val = parseInt(e.target.value, 10);
 												if (!isNaN(val) && val >= 1 && val <= 31) {
-													setRascunho((prev) => ({ ...prev, diaVencimento: val }));
+													setRascunho((prev) => ({ ...prev, diaVencimento: val, dataPrimeiroVencimento: null }));
 												} else if (e.target.value === "") {
 													setRascunho((prev) => ({ ...prev, diaVencimento: null }));
 												}
@@ -1479,6 +1493,53 @@ Regras:
 									</div>
 								</div>
 							</div>
+
+							{/* Seletor de Fatura Aberta vs Fatura Já Fechada (empurra 1ª parcela para o mês seguinte) */}
+							{(() => {
+								const dataRef = r.itens[0]?.dataCompra;
+								const diaRef = r.diaVencimento || (r.dataPrimeiroVencimento ? Number(r.dataPrimeiroVencimento.slice(8, 10)) : 0);
+								const dataAtual =
+									dataRef && (diaRef > 0 || r.dataPrimeiroVencimento)
+										? vencimento(dataRef, diaRef || 1, 0, r.dataPrimeiroVencimento, false)
+										: dataRef
+											? somarMeses(dataRef, 0)
+											: null;
+								const dataProx =
+									dataRef && (diaRef > 0 || r.dataPrimeiroVencimento)
+										? vencimento(dataRef, diaRef || 1, 0, r.dataPrimeiroVencimento, true)
+										: dataRef
+											? somarMeses(dataRef, 1)
+											: null;
+								return (
+									<div>
+										<span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1.5">
+											1ª parcela vence em (fatura do cartão):
+										</span>
+										<div className="flex flex-wrap gap-1.5">
+											<button
+												type="button"
+												onClick={() => setRascunho((prev) => ({ ...prev, faturaFechada: false }))}
+												className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+													!r.faturaFechada
+														? "bg-purple-600 text-white shadow-sm ring-2 ring-purple-400"
+														: "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-purple-300"
+												}`}>
+												Fatura atual{dataAtual ? ` (${dataBR(dataAtual)})` : ""}
+											</button>
+											<button
+												type="button"
+												onClick={() => setRascunho((prev) => ({ ...prev, faturaFechada: true }))}
+												className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+													r.faturaFechada
+														? "bg-purple-600 text-white shadow-sm ring-2 ring-purple-400"
+														: "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-purple-300"
+												}`}>
+												Fatura já fechou · próximo mês{dataProx ? ` (${dataBR(dataProx)})` : ""}
+											</button>
+										</div>
+									</div>
+								);
+							})()}
 						</div>
 
 						{/* LISTA DE ITENS */}
