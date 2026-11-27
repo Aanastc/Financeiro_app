@@ -803,7 +803,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 			initial={{ opacity: 0 }}
 			animate={{ opacity: 1 }}
 			className="space-y-6 sm:space-y-8 pb-20">
-			{!grupoSelecionado && (
+			{!grupoSelecionado && !pessoaAberta && (
 			<>
 			<PagamentosParaConfirmar
 				devedores={devedores}
@@ -869,7 +869,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 			{/* ========================================================
           ABAS DE NAVEGAÇÃO 
          ======================================================== */}
-			{!grupoSelecionado && (
+			{!grupoSelecionado && !pessoaAberta && (
 				<div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4">
 						<div className="flex flex-wrap bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl border border-slate-200 dark:border-slate-700 gap-1" role="tablist">
 							{[
@@ -922,6 +922,53 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 						Carregando despesas compartilhadas...
 					</p>
 				</div>
+			) : pessoaAberta ? (
+				<DetalhePessoa
+					pessoa={pessoaAberta}
+					temConta={contatoTemConta(pessoaAberta?.contato)}
+					situacaoConvite={conviteService.textoSituacao(pessoaAberta.contato, contatoTemConta(pessoaAberta.contato))}
+					convitePendente={conviteService.situacao(pessoaAberta.contato, contatoTemConta(pessoaAberta.contato)) === "pendente"}
+					onClose={() => setPessoaAbertaId(null)}
+					onReceber={(itemIds, valor) =>
+						setReceberDe({ contato: { id: pessoaAberta.contato.id, nome: pessoaAberta.contato.nome }, itemIds, valorSugerido: valor })
+					}
+					onPagar={(item) => handleOpenPaymentModal(item.raw)}
+					onEditar={(id) => setEditandoId(id)}
+					onDesfazer={(id) => handleDesfazerPagamento(id)}
+					onAlternarOpcional={(item) => handleAlternarOpcional(item.raw, !item.opcional)}
+					onCobrar={() => pessoaAberta?.devedor && handleCobrarWhatsApp(pessoaAberta.devedor)}
+					onExcel={() =>
+						exportarExcelPessoa({
+							nome: pessoaAberta.contato.nome,
+							itens: pessoaAberta.devedor?.itens || [],
+							itensPagar: pessoaAberta.itens.filter((i) => i.direcao === "PAGAR").map((i) => i.raw),
+						}).catch(() => toast.error("Não foi possível gerar a planilha."))
+					}
+					onConvidar={() => handleConvidarContato(pessoaAberta.contato)}
+					extra={
+						pessoaAberta?.devedor
+							? (() => {
+									const d = pessoaAberta.devedor;
+									const foraDoGrupo = (d.itens || []).filter((i: any) => !getPaymentInfo(i.observacao)?.grupo_id).length;
+									const opcoes = gruposDoContato(d.contato);
+									if (foraDoGrupo === 0 || opcoes.length === 0) return null;
+									return (
+										<div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-purple-50 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/50">
+											<span className="text-xs font-semibold text-purple-800 dark:text-purple-200">{foraDoGrupo} lançamento(s) fora de grupo</span>
+											{opcoes.map(({ grupo, membro }) => (
+												<button
+													key={grupo.id}
+													onClick={() => handleMoverParaGrupo(d, grupo, membro)}
+													className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold cursor-pointer">
+													Mover para o grupo {grupo.nome}
+												</button>
+											))}
+										</div>
+									);
+								})()
+							: null
+					}
+				/>
 			) : grupoSelecionado ? (
 				/* ========================================================
            VISÃO DETALHADA DO GRUPO SELECIONADO
@@ -1868,56 +1915,6 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 			<EditarLancamentoModal transacaoId={editandoId} onClose={() => setEditandoId(null)} onSalvo={loadAllData} />
 
 			<EditarLoteModal itens={loteEdicao?.itens || null} titulo={loteEdicao?.titulo} onClose={() => setLoteEdicao(null)} onSalvo={loadAllData} />
-
-			<DetalhePessoa
-				pessoa={pessoaAberta}
-				temConta={contatoTemConta(pessoaAberta?.contato)}
-				situacaoConvite={pessoaAberta ? conviteService.textoSituacao(pessoaAberta.contato, contatoTemConta(pessoaAberta.contato)) : ""}
-				convitePendente={Boolean(pessoaAberta && conviteService.situacao(pessoaAberta.contato, contatoTemConta(pessoaAberta.contato)) === "pendente")}
-				onClose={() => setPessoaAbertaId(null)}
-				onReceber={(itemIds, valor) =>
-					pessoaAberta && setReceberDe({ contato: { id: pessoaAberta.contato.id, nome: pessoaAberta.contato.nome }, itemIds, valorSugerido: valor })
-				}
-				onPagar={(item) => handleOpenPaymentModal(item.raw)}
-				onEditar={(id) => setEditandoId(id)}
-				onDesfazer={(id) => handleDesfazerPagamento(id)}
-				onAlternarOpcional={(item) => handleAlternarOpcional(item.raw, !item.opcional)}
-				onCobrar={() => pessoaAberta?.devedor && handleCobrarWhatsApp(pessoaAberta.devedor)}
-				onExcel={() =>
-					pessoaAberta &&
-					exportarExcelPessoa({
-						nome: pessoaAberta.contato.nome,
-						itens: pessoaAberta.devedor?.itens || [],
-						itensPagar: pessoaAberta.itens.filter((i) => i.direcao === "PAGAR").map((i) => i.raw),
-					}).catch(() =>
-						toast.error("Não foi possível gerar a planilha."),
-					)
-				}
-				onConvidar={() => pessoaAberta && handleConvidarContato(pessoaAberta.contato)}
-				extra={
-					pessoaAberta?.devedor
-						? (() => {
-								const d = pessoaAberta.devedor;
-								const foraDoGrupo = (d.itens || []).filter((i: any) => !getPaymentInfo(i.observacao)?.grupo_id).length;
-								const opcoes = gruposDoContato(d.contato);
-								if (foraDoGrupo === 0 || opcoes.length === 0) return null;
-								return (
-									<div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/50">
-										<span className="text-[11px] font-semibold text-purple-800 dark:text-purple-200">{foraDoGrupo} lançamento(s) fora de grupo</span>
-										{opcoes.map(({ grupo, membro }) => (
-											<button
-												key={grupo.id}
-												onClick={() => handleMoverParaGrupo(d, grupo, membro)}
-												className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold cursor-pointer">
-												Mover para o grupo {grupo.nome}
-											</button>
-										))}
-									</div>
-								);
-							})()
-						: null
-				}
-			/>
 
 			<PedirTelefoneModal
 				isOpen={Boolean(cobrarSemTelefone)}
