@@ -68,30 +68,30 @@ export default function ListaPorData<T>({ itens, dataDe, resumo, renderItem, aca
 				const aberto = abertos.has(g.data);
 				return (
 					<div key={g.data} className={compacto ? "rounded-xl border border-slate-200/70 dark:border-slate-700/60" : "py-2"}>
-						<div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${compacto ? "p-2" : "py-1.5"}`}>
+						<div className={`flex flex-col lg:flex-row lg:items-center justify-between gap-3 ${compacto ? "p-2" : "py-2.5"}`}>
 							<button
 								type="button"
 								onClick={() => alternar(g.data)}
 								aria-expanded={aberto}
-								className="flex items-center gap-3 min-w-0 text-left cursor-pointer group">
+								className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer group">
 								{!compacto && (
-									<span className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
-										<CalendarDays size={18} />
+									<span className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+										<CalendarDays size={17} />
 									</span>
 								)}
-								<span className="min-w-0">
-									<span className={`block font-black text-slate-800 dark:text-slate-100 ${compacto ? "text-[11px]" : "text-sm"}`}>
-										{dataBR(g.data)} · {g.itens.length} itens
-										{r.quitado && <span className="ml-2 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">quitado</span>}
+								<span className="min-w-0 flex-1">
+									<span className={`flex items-center gap-1.5 font-black text-slate-800 dark:text-slate-100 ${compacto ? "text-[11px]" : "text-sm"}`}>
+										<span>{dataBR(g.data)} · {g.itens.length} itens</span>
+										<ChevronDown
+											size={15}
+											className={`shrink-0 text-slate-400 transition-transform group-hover:text-slate-600 dark:group-hover:text-slate-200 ${aberto ? "rotate-180" : ""}`}
+										/>
+										{r.quitado && <span className="ml-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">quitado</span>}
 									</span>
 									{r.detalhe && <span className="block text-[11px] text-slate-500 dark:text-slate-400">{r.detalhe}</span>}
 								</span>
-								<ChevronDown
-									size={16}
-									className={`shrink-0 text-slate-400 transition-transform group-hover:text-slate-600 dark:group-hover:text-slate-200 ${aberto ? "rotate-180" : ""}`}
-								/>
 							</button>
-							<div className="flex flex-col sm:flex-row sm:items-center justify-between sm:justify-end gap-3 shrink-0">
+							<div className="flex flex-col sm:flex-row sm:items-center justify-between lg:justify-end gap-3 shrink-0">
 								{r.valorRender ? (
 									r.valorRender
 								) : (
@@ -99,7 +99,7 @@ export default function ListaPorData<T>({ itens, dataDe, resumo, renderItem, aca
 										{moeda(r.total)}
 									</span>
 								)}
-								<div className={`flex items-center justify-end gap-2 ${cabecalho ? "lg:w-[210px]" : ""}`}>
+								<div className={`flex items-center justify-end gap-2 shrink-0 ${cabecalho ? "lg:w-[196px]" : ""}`}>
 									{acao?.(g.itens)}
 								</div>
 							</div>

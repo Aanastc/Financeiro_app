@@ -1235,11 +1235,11 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 										dataDe={(d: any) => d.data}
 										ordem="asc"
 										cabecalho={
-											<div className="hidden lg:grid lg:grid-cols-[minmax(0,1fr)_104px_104px_148px_210px] items-center gap-3 px-2 pb-2 mb-1 border-b border-slate-100 dark:border-slate-800 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+											<div className="hidden lg:grid lg:grid-cols-[minmax(0,1fr)_96px_96px_132px_196px] items-center gap-3 pb-2.5 mb-1 border-b border-slate-100 dark:border-slate-800 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
 												<span>Despesa / Vencimento</span>
-												<span className="text-right">Total compra</span>
+												<span className="text-right">Compra</span>
 												<span className="text-right">Sua parte</span>
-												<span className="text-right">Você recebe / paga</span>
+												<span className="text-right">A receber / pagar</span>
 												<span className="text-right">Ações</span>
 											</div>
 										}
@@ -1262,21 +1262,24 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 												total: totalCompra,
 												quitado: quitadoTudo,
 												valorRender: (
-													<div className="grid grid-cols-3 lg:grid-cols-[104px_104px_148px] items-center gap-3 w-full sm:w-auto">
+													<div className="grid grid-cols-3 lg:grid-cols-[96px_96px_132px] items-center gap-3 w-full sm:w-auto">
 														<div className="text-left sm:text-right leading-tight">
-															<span className="block lg:hidden text-[9px] font-bold uppercase text-slate-400">Total compra</span>
-															<span className="font-bold text-xs tabular-nums text-slate-600 dark:text-slate-300">
+															<span className="block lg:hidden text-[9px] font-bold uppercase text-slate-400">Compra</span>
+															<span className="font-semibold text-xs tabular-nums text-slate-600 dark:text-slate-300">
 																{fmt(totalCompra)}
 															</span>
 														</div>
 														<div className="text-left sm:text-right leading-tight">
 															<span className="block lg:hidden text-[9px] font-bold uppercase text-slate-400">Sua parte</span>
-															<span className="font-bold text-xs tabular-nums text-slate-500 dark:text-slate-400">
+															<span className="font-semibold text-xs tabular-nums text-slate-500 dark:text-slate-400">
 																{fmt(minha)}
 															</span>
 														</div>
 														<div className="text-right leading-tight">
-															<span className={`block text-[9px] font-black uppercase tracking-wider ${
+															<span className="block lg:hidden text-[9px] font-bold uppercase text-slate-400">
+																{quitadoTudo || faltaLiquido <= 0.009 ? "Quitado" : todosPagosPorVoce ? "Você recebe" : "Você paga"}
+															</span>
+															<span className={`block font-black text-sm tabular-nums ${
 																quitadoTudo || faltaLiquido <= 0.009
 																	? "text-emerald-600 dark:text-emerald-400"
 																	: todosPagosPorVoce
@@ -1284,27 +1287,14 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 																		: "text-rose-600 dark:text-rose-400"
 															}`}>
 																{quitadoTudo || faltaLiquido <= 0.009
-																	? "Quitado"
-																	: todosPagosPorVoce
-																		? "Você recebe"
-																		: "Você paga"}
+																	? fmt(0)
+																	: `${todosPagosPorVoce ? "+" : "−"} ${fmt(faltaLiquido)}`}
 															</span>
-															<div className="flex items-baseline justify-end gap-1.5">
-																{abatido > 0.009 && (
-																	<span className="text-[11px] font-semibold text-slate-400 line-through tabular-nums">
-																		{fmt(devidoBruto)}
-																	</span>
-																)}
-																<span className={`font-black text-sm tabular-nums ${
-																	quitadoTudo || faltaLiquido <= 0.009
-																		? "text-emerald-600 dark:text-emerald-400"
-																		: todosPagosPorVoce
-																			? "text-emerald-600 dark:text-emerald-400"
-																			: "text-rose-600 dark:text-rose-400"
-																}`}>
-																	{fmt(faltaLiquido)}
+															{abatido > 0.009 && (
+																<span className="block text-[10px] font-medium text-slate-400 line-through tabular-nums">
+																	{fmt(devidoBruto)}
 																</span>
-															</div>
+															)}
 														</div>
 													</div>
 												),
@@ -1334,8 +1324,9 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 													<button
 														onClick={() => setLoteEdicao({ itens: lista, titulo: `vencimento ${new Date(lista[0].data + "T12:00:00").toLocaleDateString("pt-BR")}` })}
 														title="Editar todos os itens deste vencimento"
-														className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap">
-														<Pencil size={12} /> Editar
+														aria-label="Editar todos os itens deste vencimento"
+														className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:text-indigo-300 dark:hover:bg-indigo-950/40 cursor-pointer transition-colors">
+														<Pencil size={14} />
 													</button>
 												) : null;
 											if (abertos.length === 0) return editar;
@@ -1382,10 +1373,10 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 														? `${origens.length} itens compensados`
 														: "";
 											return (
-												<div className={`py-3 flex flex-col lg:grid ${dentroDoMes ? "lg:grid-cols-[minmax(0,1fr)_104px_104px_148px_auto]" : "lg:grid-cols-[minmax(0,1fr)_104px_104px_148px_210px]"} lg:items-center gap-3`}>
+												<div className={`py-3 flex flex-col lg:grid ${dentroDoMes ? "lg:grid-cols-[minmax(0,1fr)_96px_96px_132px_auto]" : "lg:grid-cols-[minmax(0,1fr)_96px_96px_132px_196px]"} lg:items-center gap-3`}>
 													<div className="flex items-start gap-3 min-w-0">
-														<div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 mt-0.5">
-															<Receipt size={15} />
+														<div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 mt-0.5">
+															<Receipt size={16} />
 														</div>
 														<div className="min-w-0">
 															<h4 className="font-bold text-[13px] text-slate-800 dark:text-slate-100 truncate">
@@ -1438,8 +1429,8 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 
 													{/* Coluna 1: Total da compra */}
 													<div className="flex lg:block items-center justify-between lg:text-right leading-tight">
-														<span className="lg:hidden text-[10px] font-bold uppercase text-slate-400">Total compra</span>
-														<span className="font-bold text-xs tabular-nums text-slate-600 dark:text-slate-300">
+														<span className="lg:hidden text-[10px] font-bold uppercase text-slate-400">Compra</span>
+														<span className="font-semibold text-xs tabular-nums text-slate-600 dark:text-slate-300">
 															{fmt(i.total)}
 														</span>
 													</div>
@@ -1447,38 +1438,30 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 													{/* Coluna 2: Sua parte */}
 													<div className="flex lg:block items-center justify-between lg:text-right leading-tight">
 														<span className="lg:hidden text-[10px] font-bold uppercase text-slate-400">Sua parte</span>
-														<span className="font-bold text-xs tabular-nums text-slate-500 dark:text-slate-400">
+														<span className="font-semibold text-xs tabular-nums text-slate-500 dark:text-slate-400">
 															{i.minhaParte !== null ? fmt(i.minhaParte) : "—"}
 														</span>
 													</div>
 
 													{/* Coluna 3: Valor líquido que entra ou sai do seu bolso */}
 													<div className="flex lg:block items-center justify-between lg:text-right leading-tight">
-														<span className={`text-[9px] font-black uppercase tracking-wider ${
+														<span className="lg:hidden text-[10px] font-bold uppercase text-slate-400">
+															{quitado ? "Quitado" : vocePagou ? "Você recebe" : "Você paga"}
+														</span>
+														<span className={`block font-black text-sm tabular-nums ${
 															quitado
 																? "text-emerald-600 dark:text-emerald-400"
 																: vocePagou
 																	? "text-emerald-600 dark:text-emerald-400"
 																	: "text-rose-600 dark:text-rose-400"
 														}`}>
-															{quitado ? "Quitado" : vocePagou ? "Você recebe" : "Você paga"}
+															{quitado ? fmt(0) : `${vocePagou ? "+" : "−"} ${fmt(valorRestante)}`}
 														</span>
-														<div className="flex items-baseline justify-end gap-1.5">
-															{temAbatimento && (
-																<span className="text-[11px] font-semibold text-slate-400 line-through tabular-nums">
-																	{fmt(abertoBruto)}
-																</span>
-															)}
-															<span className={`font-black text-sm tabular-nums ${
-																quitado
-																	? "text-emerald-600 dark:text-emerald-400"
-																	: vocePagou
-																		? "text-emerald-600 dark:text-emerald-400"
-																		: "text-rose-600 dark:text-rose-400"
-															}`}>
-																{fmt(valorRestante)}
+														{temAbatimento && (
+															<span className="block text-[10px] font-medium text-slate-400 line-through tabular-nums">
+																{fmt(abertoBruto)}
 															</span>
-														</div>
+														)}
 													</div>
 
 													{/* Coluna 4: Ações alinhadas */}
