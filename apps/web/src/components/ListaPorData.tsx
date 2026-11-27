@@ -8,6 +8,8 @@ export interface ResumoGrupoData {
 	total: number;
 	detalhe?: ReactNode;
 	quitado?: boolean;
+	/** Valor customizado à direita (ex.: valor líquido restante com valor anterior riscado) */
+	valorRender?: ReactNode;
 }
 
 interface Props<T> {
@@ -86,9 +88,13 @@ export default function ListaPorData<T>({ itens, dataDe, resumo, renderItem, aca
 								/>
 							</button>
 							<div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-								<span className={`font-black tabular-nums text-slate-900 dark:text-slate-100 ${compacto ? "text-[11px]" : "text-sm"}`}>
-									{moeda(r.total)}
-								</span>
+								{r.valorRender ? (
+									r.valorRender
+								) : (
+									<span className={`font-black tabular-nums text-slate-900 dark:text-slate-100 ${compacto ? "text-[11px]" : "text-sm"}`}>
+										{moeda(r.total)}
+									</span>
+								)}
 								{acao?.(g.itens)}
 							</div>
 						</div>

@@ -1236,6 +1236,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 										ordem="asc"
 										resumo={(lista: any[]) => {
 											const infos = lista.map(info);
+											const totalCompra = infos.reduce((s, i) => s + i.total, 0);
 											const minha = infos.reduce((s, i) => s + (i.minhaParte || 0), 0);
 											// Opcionais: só os que ainda esperam resposta contam como "opcional"
 											const metas = lista.map((d) => info(d).meta);
@@ -1243,16 +1244,58 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 											const aceitos = metas.filter((m) => m.opcional && m.resposta_cobranca === "aceita").length;
 											const recusados = metas.filter((m) => m.opcional && m.resposta_cobranca === "recusada").length;
 											const pagadores = [...new Set(infos.map((i) => i.quemPagou))];
+											const devidoBruto = lista.reduce((s, d) => s + abertoDe(d), 0);
 											const abatido = lista.reduce((s, d) => s + Math.min(abertoDe(d), abatidoDe(d.id)), 0);
+											const faltaLiquido = Math.max(0, Math.round((devidoBruto - abatido) * 100) / 100);
+											const todosPagosPorVoce = infos.every((i) => i.quemPagou === "você");
+											const rotuloLiquido = todosPagosPorVoce ? "a receber" : "a pagar";
+											const quitadoTudo = lista.every((d) => d.terceiro_pago || quitadoPorAbatimento(d));
+
 											return {
-												total: infos.reduce((s, i) => s + i.total, 0),
-												quitado: lista.every((d) => d.terceiro_pago || quitadoPorAbatimento(d)),
-												detalhe:
-													`pago por ${pagadores.join(" e ")} · sua parte ${fmt(minha)}` +
-													(abatido > 0.009 ? ` · ${fmt(abatido)} abatido` : "") +
-													(aguardando ? ` · ${aguardando} opcional(is) aguardando resposta` : "") +
-													(aceitos ? ` · ${aceitos} aceito(s)` : "") +
-													(recusados ? ` · ${recusados} recusado(s)` : ""),
+												total: totalCompra,
+												quitado: quitadoTudo,
+												valorRender:
+													abatido > 0.009 ? (
+														<div className="text-right leading-tight">
+															<div className="flex items-baseline justify-end gap-1.5">
+																<span className="text-[11px] font-semibold text-slate-400 line-through tabular-nums">
+																	{fmt(devidoBruto)}
+																</span>
+																<span className="font-black text-sm tabular-nums text-emerald-600 dark:text-emerald-400">
+																	{fmt(faltaLiquido)}
+																</span>
+															</div>
+															<span className="block text-[10px] font-bold text-slate-400 tabular-nums">
+																{faltaLiquido <= 0.009 ? "quitado" : `${rotuloLiquido}`} · compra {fmt(totalCompra)}
+															</span>
+														</div>
+													) : (
+														<div className="text-right leading-tight">
+															<span className="block font-black text-sm tabular-nums text-slate-900 dark:text-slate-100">
+																{fmt(totalCompra)}
+															</span>
+															{!quitadoTudo && devidoBruto > 0.009 && Math.abs(devidoBruto - totalCompra) > 0.01 && (
+																<span className="block text-[10px] font-bold text-slate-400 tabular-nums">
+																	{rotuloLiquido} {fmt(devidoBruto)}
+																</span>
+															)}
+														</div>
+													),
+												detalhe: (
+													<span className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
+														<span>
+															pago por <strong className="text-slate-700 dark:text-slate-200">{pagadores.join(" e ")}</strong> · sua parte {fmt(minha)}
+														</span>
+														{abatido > 0.009 && (
+															<span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+																− {fmt(abatido)} abatido (era {fmt(devidoBruto)} → fica {fmt(faltaLiquido)})
+															</span>
+														)}
+														{aguardando > 0 && <span>· {aguardando} opcional(is) aguardando</span>}
+														{aceitos > 0 && <span>· {aceitos} aceito(s)</span>}
+														{recusados > 0 && <span>· {recusados} recusado(s)</span>}
+													</span>
+												),
 											};
 										}}
 										acao={(listaCompleta: any[]) => {
@@ -1297,10 +1340,23 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 										}}
 										renderItem={(d: any, dentroDoMes: boolean) => {
 											const i = info(d);
+											const abatInfo = abatimentos.get(d.id);
+											const abertoBruto = abertoDe(d);
+											const valorAbatido = abatInfo ? Math.min(abertoBruto, abatidoDe(d.id)) : 0;
+											const valorRestante = Math.max(0, Math.round((abertoBruto - valorAbatido) * 100) / 100);
+											const temAbatimento = valorAbatido > 0.009;
+											const origens = abatInfo?.origens || [];
+											const resumoOrigens =
+												origens.length === 1
+													? origens[0].descricao.slice(0, 48) + (origens[0].descricao.length > 48 ? "…" : "")
+													: origens.length > 1
+														? `${origens.length} itens compensados`
+														: "";
+											const rotuloParte = i.quemPagou === "você" ? "a receber" : "você devia";
 											return (
 												<div className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-													<div className="flex items-center gap-3 min-w-0">
-														<div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+													<div className="flex items-start gap-3 min-w-0">
+														<div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 mt-0.5">
 															<Receipt size={15} />
 														</div>
 														<div className="min-w-0">
@@ -1336,18 +1392,55 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 																		</span>
 																	))}
 															</p>
-															{abatimentos.get(d.id) && Math.min(abertoDe(d), abatidoDe(d.id)) > 0.009 && (
-																<p
-																	className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400"
-																	title={abatimentos.get(d.id)!.origens.map((o) => `${o.descricao}: ${fmt(o.valor)}`).join("\n")}>
-																	abatido {fmt(Math.min(abertoDe(d), abatidoDe(d.id)))} de {fmt(Number(d.valor))} · compensado{" "}
-																	{textoOrigens(abatimentos.get(d.id)!.origens)}
-																</p>
+															{temAbatimento && (
+																<div
+																	className="mt-1.5 inline-flex flex-wrap items-center gap-x-2 gap-y-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[11px]"
+																	title={origens.map((o) => `${o.descricao}: ${fmt(o.valor)}`).join("\n")}>
+																	<span className="text-slate-500 dark:text-slate-400">
+																		{rotuloParte} <strong className="text-slate-700 dark:text-slate-200 tabular-nums">{fmt(abertoBruto)}</strong>
+																	</span>
+																	<span className="font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
+																		− {fmt(valorAbatido)} abatido
+																	</span>
+																	<span className="font-black text-slate-900 dark:text-white tabular-nums">
+																		= resta {fmt(valorRestante)}
+																	</span>
+																	{resumoOrigens && (
+																		<span className="text-[10px] text-slate-500 dark:text-slate-400">
+																			({resumoOrigens})
+																		</span>
+																	)}
+																</div>
 															)}
 														</div>
 													</div>
 													<div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-														<span className="font-black text-[13px] tabular-nums text-slate-900 dark:text-slate-100">{fmt(i.total)}</span>
+														{temAbatimento ? (
+															<div className="text-right leading-tight">
+																<div className="flex items-baseline justify-end gap-1.5">
+																	<span className="text-[11px] font-semibold text-slate-400 line-through tabular-nums">
+																		{fmt(abertoBruto)}
+																	</span>
+																	<span className="font-black text-[13px] tabular-nums text-emerald-600 dark:text-emerald-400">
+																		{fmt(valorRestante)}
+																	</span>
+																</div>
+																<span className="block text-[10px] font-semibold text-slate-400 tabular-nums">
+																	compra {fmt(i.total)}
+																</span>
+															</div>
+														) : (
+															<div className="text-right leading-tight">
+																<span className="block font-black text-[13px] tabular-nums text-slate-900 dark:text-slate-100">
+																	{fmt(i.total)}
+																</span>
+																{!d.terceiro_pago && abertoBruto > 0.009 && Math.abs(abertoBruto - i.total) > 0.01 && (
+																	<span className="block text-[10px] font-semibold text-slate-400 tabular-nums">
+																		{i.quemPagou === "você" ? "a receber" : "sua parte"} {fmt(abertoBruto)}
+																	</span>
+																)}
+															</div>
+														)}
 														{i.deOutro ? (
 															quitadoPorAbatimento(d) ? seloAbatido : d.terceiro_pago && (
 																<span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
