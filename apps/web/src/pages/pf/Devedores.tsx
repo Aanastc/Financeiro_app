@@ -1476,11 +1476,13 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 															<Receipt size={16} />
 														</div>
 														<div className="min-w-0">
-															<h4 className="font-bold text-[13px] text-slate-800 dark:text-slate-100 truncate">
-																{i.titulo}
+															<h4 className="font-bold text-[13px] text-slate-800 dark:text-slate-100 flex items-center gap-1.5 min-w-0">
+																<span className="truncate" title={i.titulo}>
+																	{i.titulo}
+																</span>
 																{i.meta.total_parcelas > 1 && (
-																	<span className="ml-1 font-semibold text-slate-500 dark:text-slate-400">
-																		({i.meta.parcela}/{i.meta.total_parcelas})
+																	<span className="shrink-0 px-1.5 py-0.5 rounded bg-purple-100/80 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-black tabular-nums">
+																		{i.meta.parcela}/{i.meta.total_parcelas}
 																	</span>
 																)}
 															</h4>
