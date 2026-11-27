@@ -1540,7 +1540,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 														? `${origens.length} itens compensados`
 														: "";
 											return (
-												<div className={`py-3 flex flex-col lg:grid ${dentroDoMes ? "lg:grid-cols-[minmax(0,1fr)_96px_96px_132px_auto]" : "lg:grid-cols-[minmax(0,1fr)_96px_96px_132px_196px]"} lg:items-center gap-3`}>
+												<div className="py-3 flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_96px_96px_132px_196px] lg:items-center gap-3">
 													<div className="flex items-start gap-3 min-w-0">
 														<div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 mt-0.5">
 															<Receipt size={16} />
