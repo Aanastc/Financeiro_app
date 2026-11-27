@@ -2,7 +2,14 @@ import { useMemo, useState, type ReactNode } from "react";
 import { CalendarDays, ChevronDown } from "lucide-react";
 
 const moeda = (v: number) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const dataBR = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("pt-BR");
+const dataBR = (iso: string) => {
+	if (/^\d{4}-\d{2}$/.test(iso)) {
+		const [ano, mes] = iso.split("-").map(Number);
+		const nomeMes = new Date(ano, mes - 1, 1).toLocaleDateString("pt-BR", { month: "long" });
+		return `${nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1)} de ${ano}`;
+	}
+	return new Date(`${iso}T12:00:00`).toLocaleDateString("pt-BR");
+};
 
 export interface ResumoGrupoData {
 	total: number;

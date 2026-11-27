@@ -1268,7 +1268,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 							};
 						};
 						const compras = new Set(despesasDoGrupoSelecionado.map((d) => info(d).titulo)).size;
-						const datas = new Set(despesasDoGrupoSelecionado.map((d) => d.data)).size;
+						const meses = new Set(despesasDoGrupoSelecionado.map((d) => String(d.data || "").slice(0, 7))).size;
 
 						// Em aberto depois de pagamentos; e se o abatimento automático já cobriu tudo
 						const abertoDe = (d: any) => Math.max(0, Number(d.valor) - (Number(getPaymentInfo(d.observacao)?.valor_pago) || 0));
@@ -1308,7 +1308,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 									<h3 className="font-black text-base text-slate-800 dark:text-slate-100">Despesas do grupo</h3>
 									{despesasDoGrupoSelecionado.length > 0 && (
 										<p className="text-xs text-slate-500 dark:text-slate-400">
-											{compras} {compras === 1 ? "compra" : "compras"} · {datas} {datas === 1 ? "vencimento" : "vencimentos"}
+											{compras} {compras === 1 ? "compra" : "compras"} · {meses} {meses === 1 ? "mês" : "meses"}
 										</p>
 									)}
 								</div>
@@ -1320,7 +1320,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 								) : (
 									<ListaPorData
 										itens={despesasDoGrupoSelecionado}
-										dataDe={(d: any) => d.data}
+										dataDe={(d: any) => String(d.data || "").slice(0, 7)}
 										ordem="asc"
 										ordenarItens={(a: any, b: any) => {
 											const ia = info(a);
@@ -1333,7 +1333,7 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 										}}
 										cabecalho={
 											<div className="hidden lg:grid lg:grid-cols-[minmax(0,1fr)_96px_96px_132px_196px] items-center gap-3 pb-2.5 mb-1 border-b border-slate-100 dark:border-slate-800 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-												<span>Despesa / Vencimento</span>
+												<span>Despesa / Mês</span>
 												<span className="text-right">Compra</span>
 												<span className="text-right">Sua parte</span>
 												<span className="text-right">A receber / pagar</span>
@@ -1349,10 +1349,33 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 											const aceitos = metas.filter((m) => m.opcional && m.resposta_cobranca === "aceita").length;
 											const recusados = metas.filter((m) => m.opcional && m.resposta_cobranca === "recusada").length;
 											const pagadores = [...new Set(infos.map((i) => i.quemPagou))];
-											const devidoBruto = lista.reduce((s, d) => s + abertoDe(d), 0);
-											const abatido = lista.reduce((s, d) => s + Math.min(abertoDe(d), abatidoDe(d.id)), 0);
-											const faltaLiquido = Math.max(0, Math.round((devidoBruto - abatido) * 100) / 100);
-											const todosPagosPorVoce = infos.every((i) => i.quemPagou === "você");
+
+											// Cálculo com sinal para meses que misturam compras suas (+ receber) e de outro membro (− pagar)
+											let brutoReceber = 0;
+											let abatReceber = 0;
+											let liqReceber = 0;
+											let brutoPagar = 0;
+											let abatPagar = 0;
+											let liqPagar = 0;
+											lista.forEach((d, idx) => {
+												const ab = abertoDe(d);
+												const abt = Math.min(ab, abatidoDe(d.id));
+												const rest = Math.max(0, ab - abt);
+												if (infos[idx].quemPagou === "você") {
+													brutoReceber += ab;
+													abatReceber += abt;
+													liqReceber += rest;
+												} else {
+													brutoPagar += ab;
+													abatPagar += abt;
+													liqPagar += rest;
+												}
+											});
+											const saldoLiquidoMes = Math.round((liqReceber - liqPagar) * 100) / 100;
+											const saldoAntesAbat = Math.round((brutoReceber - brutoPagar) * 100) / 100;
+											const abatidoExibido = Math.max(abatReceber, abatPagar);
+											const faltaLiquido = Math.abs(saldoLiquidoMes);
+											const receberNoMes = saldoLiquidoMes >= 0;
 											const quitadoTudo = lista.every((d) => d.terceiro_pago || quitadoPorAbatimento(d));
 
 											return {
@@ -1374,22 +1397,22 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 														</div>
 														<div className="text-right leading-tight">
 															<span className="block lg:hidden text-[9px] font-bold uppercase text-slate-400">
-																{quitadoTudo || faltaLiquido <= 0.009 ? "Quitado" : todosPagosPorVoce ? "Você recebe" : "Você paga"}
+																{quitadoTudo || faltaLiquido <= 0.009 ? "Quitado" : receberNoMes ? "Você recebe" : "Você paga"}
 															</span>
 															<span className={`block font-black text-sm tabular-nums ${
 																quitadoTudo || faltaLiquido <= 0.009
 																	? "text-emerald-600 dark:text-emerald-400"
-																	: todosPagosPorVoce
+																	: receberNoMes
 																		? "text-emerald-600 dark:text-emerald-400"
 																		: "text-rose-600 dark:text-rose-400"
 															}`}>
 																{quitadoTudo || faltaLiquido <= 0.009
 																	? fmt(0)
-																	: `${todosPagosPorVoce ? "+" : "−"} ${fmt(faltaLiquido)}`}
+																	: `${receberNoMes ? "+" : "−"} ${fmt(faltaLiquido)}`}
 															</span>
-															{abatido > 0.009 && (
+															{abatidoExibido > 0.009 && Math.abs(Math.abs(saldoAntesAbat) - faltaLiquido) > 0.01 && (
 																<span className="block text-[10px] font-medium text-slate-400 line-through tabular-nums">
-																	{fmt(devidoBruto)}
+																	{fmt(Math.abs(saldoAntesAbat))}
 																</span>
 															)}
 														</div>
@@ -1400,9 +1423,9 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 														<span>
 															Pago por <strong className="text-slate-700 dark:text-slate-200">{pagadores.join(" e ")}</strong>
 														</span>
-														{abatido > 0.009 && (
+														{abatidoExibido > 0.009 && (
 															<span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
-																Abatido − {fmt(abatido)}
+																Abatido − {fmt(abatidoExibido)}
 															</span>
 														)}
 														{aguardando > 0 && <span>· {aguardando} opcional(is) aguardando</span>}
