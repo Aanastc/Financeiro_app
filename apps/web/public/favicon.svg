@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="6" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#047857"/>
+      <stop offset="55%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#0d9488"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="36" y1="12" x2="54" y2="30" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fde68a"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#bg)"/>
+  <!-- Curva de crescimento financeiro -->
+  <path d="M14 43L25 32L33 38L48 21" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M39 21H48V30" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Barras sutis de patrimônio -->
+  <rect x="14" y="48" width="7" height="5" rx="2" fill="rgba(255,255,255,0.45)"/>
+  <rect x="25" y="45" width="7" height="8" rx="2" fill="rgba(255,255,255,0.65)"/>
+  <rect x="36" y="41" width="7" height="12" rx="2" fill="rgba(255,255,255,0.85)"/>
+  <!-- Moeda dourada de destaque -->
+  <circle cx="48" cy="46" r="6" fill="url(#gold)"/>
+  <path d="M48 43V49M46.3 44.8C46.3 44.1 47.1 43.7 48 43.7C48.9 43.7 49.6 44.1 49.6 44.8C49.6 45.6 48.8 45.8 48 46C47.2 46.2 46.3 46.4 46.3 47.2C46.3 47.9 47.1 48.3 48 48.3C48.9 48.3 49.6 47.9 49.6 47.2" stroke="#78350f" stroke-width="1.4" stroke-linecap="round"/>
+</svg>

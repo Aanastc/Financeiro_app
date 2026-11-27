@@ -7,18 +7,25 @@ body {
   margin: 0;
   font-family: 'Inter', sans-serif;
   -webkit-font-smoothing: antialiased;
-  @apply bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100;
+  background-color: #f3f7f5;
+  background-image: radial-gradient(circle at top right, rgba(16, 185, 129, 0.08), transparent 42%), radial-gradient(circle at bottom left, rgba(245, 158, 11, 0.05), transparent 38%);
+  @apply text-slate-900 dark:text-slate-100;
   transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.dark body {
+  background-color: #080d0b;
+  background-image: radial-gradient(circle at top right, rgba(16, 185, 129, 0.1), transparent 44%), radial-gradient(circle at bottom left, rgba(245, 158, 11, 0.05), transparent 38%);
 }
 
 /* Barra de rolagem do projeto todo: fina, arredondada, sem setas, segue o tema */
 :root {
-  --scroll-thumb: #cbd5e1;        /* slate-300 */
-  --scroll-thumb-hover: #94a3b8;  /* slate-400 */
+  --scroll-thumb: #b7cec4;
+  --scroll-thumb-hover: #059669;
 }
 .dark {
-  --scroll-thumb: #334155;        /* slate-700 */
-  --scroll-thumb-hover: #4f46e5;  /* indigo-600 */
+  --scroll-thumb: #243830;
+  --scroll-thumb-hover: #10b981;
 }
 
 /* Chrome, Edge, Safari */

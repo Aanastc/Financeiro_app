@@ -260,13 +260,18 @@ export default function DashboardLayout() {
     <div className={`flex flex-col h-full ${isSidebarCollapsed ? "px-2" : "px-3 sm:px-4"} py-5 overflow-hidden`}>
       {/* Brand */}
       <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3 px-3'} ${mobile ? 'pr-12' : ''} mb-5 shrink-0 relative`}>
-        <div className="w-8 h-8 bg-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-indigo-200 dark:shadow-none shrink-0">
-          <span className="text-white text-lg font-black">T</span>
+        <div className="w-9 h-9 bg-gradient-to-br from-emerald-600 via-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-md shadow-emerald-200/70 dark:shadow-none shrink-0 ring-1 ring-emerald-400/30">
+          <Wallet className="w-5 h-5 text-white" />
         </div>
         {!isSidebarCollapsed && (
-            <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tighter whitespace-nowrap truncate">
-            TECH FINANCE.
+          <div className="min-w-0">
+            <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight leading-tight whitespace-nowrap truncate">
+              Vida Financeira
             </h2>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400 leading-tight">
+              Tech Finance
+            </p>
+          </div>
         )}
       </div>
 
