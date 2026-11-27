@@ -1,13 +1,16 @@
-# 💎 Finance App — Gestão Financeira Pessoal com IA de Ponta
+# 💎 Vida Financeira · Finance App — Gestão Financeira PF & PJ com IA Multimodal
 
-O **Finance App** é uma plataforma moderna e completa de gestão financeira pessoal construída com arquitetura em camadas, banco de dados relacional (PostgreSQL / Supabase) com isolamento multi-tenant via RLS, e inteligência artificial multimodal (Google Gemini 2.5) para interpretação e estruturação automática de documentos financeiros.
+O **Vida Financeira (Finance App)** é uma plataforma completa de gestão financeira **Pessoa Física (PF)** e **Empresarial (PJ/MEI)** construída com arquitetura em camadas, PostgreSQL/Supabase com isolamento multi-tenant via RLS e inteligência artificial multimodal (Google Gemini 2.5) para leitura e estruturação auditável de documentos financeiros.
 
 ### Principais módulos
-- **Finanças pessoais (PF)**: entradas, gastos (com edição de lançamentos e estornos), contas, cartões e faturas, dívidas e renegociações, metas, investimentos e caixinhas.
-- **Importador com IA**: extratos, faturas, contratos e comprovantes (PDF, imagem, CSV, OFX, XLSX) viram lançamentos auditáveis.
-- **Divisão de contas**: despesas com pessoas e grupos, cobranças opcionais (aceitar/recusar — o aceite vale para as parcelas seguintes), convite para a outra pessoa entrar no app e ver o que foi dividido com ela, **"Paguei" por item/parcela com confirmação de quem recebe**, relatórios em Excel e avisos no app (sino em tempo real) e por e-mail.
-- **Empresa (CNPJ/MEI)**: módulo opcional, ativado no cadastro ou no perfil — faturamento, impostos, pró-labore e contas da empresa separadas das pessoais.
-- **Consultor financeiro (educador com IA)**: diagnóstico com base nos números reais do usuário (médias mensais, reserva em meses, peso das dívidas, gastos recorrentes, metas), jornada em 4 etapas, plano de ação passo a passo, lição prática e chat com memória da conversa. Se a IA estiver indisponível, o app gera o plano com as mesmas regras.
+- **Identidade Visual Web PF vs PJ:** a versão web alterna automaticamente toda a ambientação entre **PF — Vida Pessoal (Esmeralda & Dourado)** e **PJ — Gestão Empresarial (Azul Executivo & Âmbar)**, com favicon temático e título dinâmico na aba.
+- **Finanças pessoais (PF):** entradas, gastos (com edição e estornos), contas, cartões e faturas, dívidas e renegociações, metas/caixinhas e investimentos.
+- **Importador com IA:** extratos, faturas, contratos e comprovantes (PDF, imagem, CSV, OFX, XLSX) viram lançamentos auditáveis com hash SHA-256 anti-duplicidade.
+- **Divisão de contas & Grupos (com Chat IA de Acordos):**
+  - Despesas com pessoas e grupos com **página dedicada por pessoa e por grupo** (sem gaveta lateral), **agrupamento mensal** (`Novembro de 2026`, `Dezembro de 2026`, …), ordenação por **data de compra** e colunas alinhadas (`Compra` | `Sua parte` | `A receber / pagar` | `Ações`).
+  - Controle de **parcelamento com opção “Fatura já fechou · próximo mês (+1 mês)”**, abatimentos cruzados transparentes, cobranças opcionais (aceitar/recusar), convites, **"Paguei" com confirmação**, relatórios em Excel e notificações em tempo real (sino + e-mail).
+- **Empresa (CNPJ/MEI):** módulo opcional ativado no cadastro ou perfil — faturamento, impostos, pró-labore e contas empresariais isoladas das finanças pessoais.
+- **Consultor financeiro (educador com IA):** diagnóstico baseado nos números reais do usuário (médias mensais, reserva em meses, peso das dívidas, gastos recorrentes, metas), jornada em 4 etapas, plano de ação e chat com memória.
 
 ---
 
