@@ -1037,14 +1037,33 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 								</div>
 
 								<div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-									{kpis.map((k) => (
-										<div
-											key={k.rotulo}
-											className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
-											<p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{k.rotulo}</p>
-											<p className={`text-lg sm:text-2xl font-black tabular-nums mt-1 ${k.cor}`}>{k.valor}</p>
-										</div>
-									))}
+									{kpis.map((k, idx) => {
+										const isSaldo = idx === kpis.length - 1;
+										const sub =
+											idx === 0
+												? "Soma de todas as compras"
+												: idx === 1
+													? "Total pago do seu bolso"
+													: idx === 2
+														? "Sua fatia justa no grupo"
+														: "Saldo líquido a acertar";
+										const destaqueSaldo = isSaldo
+											? k.cor.includes("emerald")
+												? "bg-emerald-50/70 dark:bg-emerald-950/25 border-emerald-200/80 dark:border-emerald-900/50"
+												: k.cor.includes("rose")
+													? "bg-rose-50/70 dark:bg-rose-950/25 border-rose-200/80 dark:border-rose-900/50"
+													: "bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800"
+											: "bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800";
+										return (
+											<div
+												key={k.rotulo}
+												className={`p-4 sm:p-5 rounded-3xl border shadow-sm transition-colors ${destaqueSaldo}`}>
+												<p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{k.rotulo}</p>
+												<p className={`text-lg sm:text-2xl font-black tabular-nums mt-1 ${k.cor}`}>{k.valor}</p>
+												<p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">{sub}</p>
+											</div>
+										);
+									})}
 								</div>
 							</>
 						);
@@ -1055,33 +1074,47 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 						const membros = grupoSelecionado.membros || [];
 						const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 						const nomeExibido = (nome: string, id?: string) =>
-							membros.find((m) => m.id === id)?.is_user ? `${nome.split(" ")[0]} (você)` : nome;
+							membros.find((m) => m.id === id)?.is_user ? `${nome.split(" ")[0]} (você)` : nome.split(" ")[0];
+						const totalGrupoPago = analiseDoGrupo.balancos.reduce((acc, b) => acc + Math.max(0, b.totalPago), 0) || 1;
 						return (
-							<div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+							<div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5">
 								{/* QUEM PAGA QUEM (menor número de transferências) */}
-								<div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
+								<div className="lg:col-span-4 bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-between gap-4">
 									<div>
-										<h3 className="font-black text-base text-slate-800 dark:text-slate-100">Quem paga quem</h3>
-										<p className="text-xs text-slate-500 dark:text-slate-400">Com o menor número de transferências</p>
+										<h3 className="font-black text-base text-slate-800 dark:text-slate-100">Acerto final</h3>
+										<p className="text-xs text-slate-500 dark:text-slate-400">Transferência sugerida para zerar o grupo</p>
 									</div>
 
 									{analiseDoGrupo.simplificacao.length === 0 ? (
-										<div className="p-6 text-center text-slate-500 dark:text-slate-400 text-xs font-semibold bg-slate-50 dark:bg-slate-800/40 rounded-2xl">
-											<CheckCircle2 size={28} className="mx-auto text-emerald-500 mb-2" />
+										<div className="p-5 text-center text-slate-500 dark:text-slate-400 text-xs font-semibold bg-slate-50 dark:bg-slate-800/40 rounded-2xl">
+											<CheckCircle2 size={26} className="mx-auto text-emerald-500 mb-1.5" />
 											Tudo acertado neste grupo.
 										</div>
 									) : (
-										<div className="space-y-2">
+										<div className="space-y-2.5 flex-1 flex flex-col justify-center">
 											{analiseDoGrupo.simplificacao.map((s, idx) => (
 												<div
 													key={idx}
-													className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-100 dark:border-slate-800 text-xs space-y-1">
-													<div className="flex items-center gap-1.5 min-w-0 font-bold text-slate-800 dark:text-slate-100">
-														<span className="truncate">{nomeExibido(s.devedorNome, s.devedorId)}</span>
-														<ArrowRight size={13} className="shrink-0 text-slate-400" />
-														<span className="truncate text-purple-700 dark:text-purple-300">{nomeExibido(s.credorNome, s.credorId)}</span>
+													className="p-4 bg-slate-50/90 dark:bg-slate-800/50 rounded-2xl border border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between gap-3">
+													<div className="min-w-0">
+														<div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-100">
+															<span className="w-6 h-6 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 text-[10px] font-black flex items-center justify-center shrink-0">
+																{s.devedorNome.charAt(0).toUpperCase()}
+															</span>
+															<span className="truncate">{nomeExibido(s.devedorNome, s.devedorId)}</span>
+															<ArrowRight size={13} className="shrink-0 text-slate-400" />
+															<span className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-black flex items-center justify-center shrink-0">
+																{s.credorNome.charAt(0).toUpperCase()}
+															</span>
+															<span className="truncate text-emerald-700 dark:text-emerald-300">{nomeExibido(s.credorNome, s.credorId)}</span>
+														</div>
+														<p className="text-[10.5px] text-slate-400 dark:text-slate-500 mt-1">
+															{s.devedorNome.split(" ")[0]} transfere para {s.credorNome.split(" ")[0]}
+														</p>
 													</div>
-													<p className="font-black text-base tabular-nums text-slate-900 dark:text-slate-100">{fmt(s.valor)}</p>
+													<span className="font-black text-base tabular-nums text-emerald-600 dark:text-emerald-400 shrink-0">
+														{fmt(s.valor)}
+													</span>
 												</div>
 											))}
 										</div>
@@ -1089,10 +1122,15 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 								</div>
 
 								{/* MEMBROS */}
-								<div className="lg:col-span-2 bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
-									<div>
-										<h3 className="font-black text-base text-slate-800 dark:text-slate-100">Membros</h3>
-										<p className="text-xs text-slate-500 dark:text-slate-400">Quanto cada um pagou e quanto era a parte de cada um</p>
+								<div className="lg:col-span-8 bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
+									<div className="flex items-center justify-between gap-2">
+										<div>
+											<h3 className="font-black text-base text-slate-800 dark:text-slate-100">Resumo por pessoa</h3>
+											<p className="text-xs text-slate-500 dark:text-slate-400">Comparativo entre o que cada um pagou e sua parte justa</p>
+										</div>
+										<span className="text-[11px] font-bold text-slate-400 dark:text-slate-500">
+											{analiseDoGrupo.balancos.length} participantes
+										</span>
 									</div>
 
 									<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1101,46 +1139,96 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 											const ehVoce = Boolean(membro?.is_user);
 											const contato = membro && !ehVoce ? contatoDoMembro(membro) : undefined;
 											const ativo = !ehVoce && contatoTemConta(contato);
+											const pctPago = Math.min(100, Math.round((Math.max(0, b.totalPago) / totalGrupoPago) * 100));
 											return (
 												<div
 													key={b.membroId}
-													className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 space-y-3">
-													<div className="flex items-start justify-between gap-2">
-														<div className="min-w-0">
-															<h4 className="font-black text-sm text-slate-800 dark:text-slate-100 truncate">
-																{b.nome}
-																{ehVoce && <span className="ml-1 text-xs font-bold text-slate-500 dark:text-slate-400">(você)</span>}
-															</h4>
-															<p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-																Pagou {fmt(b.totalPago)} · Parte {fmt(b.totalDevido)}
-															</p>
+													className="p-4 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex flex-col justify-between gap-3">
+													{/* Cabeçalho: Avatar + Nome + Status */}
+													<div className="flex items-center justify-between gap-2">
+														<div className="flex items-center gap-2.5 min-w-0">
+															<div
+																className={`w-8 h-8 rounded-full text-xs font-black flex items-center justify-center shrink-0 ${
+																	ehVoce
+																		? "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300"
+																		: "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"
+																}`}>
+																{b.nome.charAt(0).toUpperCase()}
+															</div>
+															<div className="min-w-0">
+																<h4 className="font-black text-sm text-slate-800 dark:text-slate-100 truncate flex items-center gap-1.5">
+																	<span className="truncate">{b.nome}</span>
+																	{ehVoce && <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 shrink-0">(você)</span>}
+																</h4>
+																{membro && !ehVoce && !grupoSelecionado.compartilhado && (
+																	<span className={`inline-flex items-center gap-1 text-[10px] font-bold ${ativo ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`}>
+																		<span className={`w-1.5 h-1.5 rounded-full ${ativo ? "bg-emerald-500" : "bg-slate-400"}`} />
+																		{conviteService.textoSituacao(contato, ativo)}
+																	</span>
+																)}
+															</div>
 														</div>
+
 														{b.saldoLiquido > 0.01 ? (
-															<span className="shrink-0 px-2.5 py-1 rounded-full text-xs font-black tabular-nums bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-																recebe {fmt(b.saldoLiquido)}
+															<span className="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-black tabular-nums bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+																+ {fmt(b.saldoLiquido)}
 															</span>
 														) : b.saldoLiquido < -0.01 ? (
-															<span className="shrink-0 px-2.5 py-1 rounded-full text-xs font-black tabular-nums bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
-																deve {fmt(Math.abs(b.saldoLiquido))}
+															<span className="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-black tabular-nums bg-rose-500/15 text-rose-700 dark:text-rose-300">
+																− {fmt(Math.abs(b.saldoLiquido))}
 															</span>
 														) : (
-															<span className="shrink-0 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+															<span className="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-200/70 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
 																em dia
 															</span>
 														)}
 													</div>
-													{membro && !ehVoce && !grupoSelecionado.compartilhado && (
-														<div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/70 dark:border-slate-700/60">
-															<span className={`text-[11px] font-bold ${ativo ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"}`}>
-																{conviteService.textoSituacao(contato, ativo)}
+
+													{/* Grade limpa Pagou x Parte justa */}
+													<div className="grid grid-cols-2 gap-2">
+														<div className="px-3 py-2 rounded-xl bg-white dark:bg-slate-900/70 border border-slate-100 dark:border-slate-800">
+															<span className="block text-[9.5px] font-bold uppercase tracking-wider text-slate-400">Pagou</span>
+															<span className="block font-black text-xs tabular-nums text-slate-800 dark:text-slate-100 mt-0.5">
+																{fmt(b.totalPago)}
 															</span>
-															{!ativo && (
-																<button
-																	onClick={() => handleConvidarMembro(membro)}
-																	className="px-2.5 py-1 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 dark:text-indigo-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors">
-																	<Send size={12} /> {conviteService.situacao(contato, ativo) === "pendente" ? "Reenviar" : "Convidar"}
-																</button>
-															)}
+														</div>
+														<div className="px-3 py-2 rounded-xl bg-white dark:bg-slate-900/70 border border-slate-100 dark:border-slate-800">
+															<span className="block text-[9.5px] font-bold uppercase tracking-wider text-slate-400">Parte justa</span>
+															<span className="block font-black text-xs tabular-nums text-slate-600 dark:text-slate-300 mt-0.5">
+																{fmt(b.totalDevido)}
+															</span>
+														</div>
+													</div>
+
+													{/* Barra visual de participação nos pagamentos */}
+													<div className="space-y-1">
+														<div className="flex items-center justify-between text-[10px] font-semibold text-slate-400">
+															<span>Pagou {pctPago}% das compras</span>
+															<span>
+																{b.saldoLiquido > 0.01 ? "a receber" : b.saldoLiquido < -0.01 ? "a pagar" : "quitado"}
+															</span>
+														</div>
+														<div className="h-1.5 rounded-full bg-slate-200/80 dark:bg-slate-700/70 overflow-hidden">
+															<div
+																className={`h-full rounded-full ${
+																	b.saldoLiquido > 0.01
+																		? "bg-emerald-500"
+																		: b.saldoLiquido < -0.01
+																			? "bg-rose-400"
+																			: "bg-slate-400"
+																}`}
+																style={{ width: `${pctPago}%` }}
+															/>
+														</div>
+													</div>
+
+													{membro && !ehVoce && !grupoSelecionado.compartilhado && !ativo && (
+														<div className="flex justify-end pt-1">
+															<button
+																onClick={() => handleConvidarMembro(membro)}
+																className="px-2.5 py-1 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 dark:text-indigo-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors">
+																<Send size={12} /> {conviteService.situacao(contato, ativo) === "pendente" ? "Reenviar convite" : "Convidar para o app"}
+															</button>
 														</div>
 													)}
 												</div>
