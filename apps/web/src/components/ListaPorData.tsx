@@ -25,6 +25,8 @@ interface Props<T> {
 	/** Quantos grupos mostrar antes do "ver mais" */
 	limite?: number;
 	compacto?: boolean;
+	/** Cabeçalho opcional de colunas exibido acima da lista (ex.: Total / Sua parte / Saldo) */
+	cabecalho?: ReactNode;
 }
 
 /**
@@ -32,7 +34,7 @@ interface Props<T> {
  * 6 linhas (uma por mês) em vez de 180. Cada linha abre os itens daquele mês.
  * Um grupo com um item só é mostrado direto, sem cabeçalho.
  */
-export default function ListaPorData<T>({ itens, dataDe, resumo, renderItem, acao, ordem = "asc", limite, compacto }: Props<T>) {
+export default function ListaPorData<T>({ itens, dataDe, resumo, renderItem, acao, ordem = "asc", limite, compacto, cabecalho }: Props<T>) {
 	const [abertos, setAbertos] = useState<Set<string>>(new Set());
 	const [verTudo, setVerTudo] = useState(false);
 
@@ -57,7 +59,9 @@ export default function ListaPorData<T>({ itens, dataDe, resumo, renderItem, aca
 		});
 
 	return (
-		<div className={compacto ? "space-y-1.5" : "divide-y divide-slate-100 dark:divide-slate-800"}>
+		<div>
+			{cabecalho}
+			<div className={compacto ? "space-y-1.5" : "divide-y divide-slate-100 dark:divide-slate-800"}>
 			{visiveis.map((g) => {
 				if (g.itens.length === 1) return <div key={g.data}>{renderItem(g.itens[0], false)}</div>;
 				const r = resumo(g.itens);
@@ -87,7 +91,7 @@ export default function ListaPorData<T>({ itens, dataDe, resumo, renderItem, aca
 									className={`shrink-0 text-slate-400 transition-transform group-hover:text-slate-600 dark:group-hover:text-slate-200 ${aberto ? "rotate-180" : ""}`}
 								/>
 							</button>
-							<div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+							<div className="flex flex-col sm:flex-row sm:items-center justify-between sm:justify-end gap-3 shrink-0">
 								{r.valorRender ? (
 									r.valorRender
 								) : (
@@ -95,7 +99,9 @@ export default function ListaPorData<T>({ itens, dataDe, resumo, renderItem, aca
 										{moeda(r.total)}
 									</span>
 								)}
-								{acao?.(g.itens)}
+								<div className={`flex items-center justify-end gap-2 ${cabecalho ? "lg:w-[210px]" : ""}`}>
+									{acao?.(g.itens)}
+								</div>
 							</div>
 						</div>
 						{aberto && (
@@ -116,6 +122,7 @@ export default function ListaPorData<T>({ itens, dataDe, resumo, renderItem, aca
 					{verTudo ? "Mostrar menos" : `Ver mais ${grupos.length - limite} data(s)`}
 				</button>
 			)}
+			</div>
 		</div>
 	);
 }

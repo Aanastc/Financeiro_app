@@ -1234,11 +1234,19 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 										itens={despesasDoGrupoSelecionado}
 										dataDe={(d: any) => d.data}
 										ordem="asc"
+										cabecalho={
+											<div className="hidden lg:grid lg:grid-cols-[minmax(0,1fr)_104px_104px_148px_210px] items-center gap-3 px-2 pb-2 mb-1 border-b border-slate-100 dark:border-slate-800 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+												<span>Despesa / Vencimento</span>
+												<span className="text-right">Total compra</span>
+												<span className="text-right">Sua parte</span>
+												<span className="text-right">Você recebe / paga</span>
+												<span className="text-right">Ações</span>
+											</div>
+										}
 										resumo={(lista: any[]) => {
 											const infos = lista.map(info);
 											const totalCompra = infos.reduce((s, i) => s + i.total, 0);
 											const minha = infos.reduce((s, i) => s + (i.minhaParte || 0), 0);
-											// Opcionais: só os que ainda esperam resposta contam como "opcional"
 											const metas = lista.map((d) => info(d).meta);
 											const aguardando = metas.filter((m) => m.opcional && !m.resposta_cobranca).length;
 											const aceitos = metas.filter((m) => m.opcional && m.resposta_cobranca === "aceita").length;
@@ -1248,47 +1256,66 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 											const abatido = lista.reduce((s, d) => s + Math.min(abertoDe(d), abatidoDe(d.id)), 0);
 											const faltaLiquido = Math.max(0, Math.round((devidoBruto - abatido) * 100) / 100);
 											const todosPagosPorVoce = infos.every((i) => i.quemPagou === "você");
-											const rotuloLiquido = todosPagosPorVoce ? "a receber" : "a pagar";
 											const quitadoTudo = lista.every((d) => d.terceiro_pago || quitadoPorAbatimento(d));
 
 											return {
 												total: totalCompra,
 												quitado: quitadoTudo,
-												valorRender:
-													abatido > 0.009 ? (
+												valorRender: (
+													<div className="grid grid-cols-3 lg:grid-cols-[104px_104px_148px] items-center gap-3 w-full sm:w-auto">
+														<div className="text-left sm:text-right leading-tight">
+															<span className="block lg:hidden text-[9px] font-bold uppercase text-slate-400">Total compra</span>
+															<span className="font-bold text-xs tabular-nums text-slate-600 dark:text-slate-300">
+																{fmt(totalCompra)}
+															</span>
+														</div>
+														<div className="text-left sm:text-right leading-tight">
+															<span className="block lg:hidden text-[9px] font-bold uppercase text-slate-400">Sua parte</span>
+															<span className="font-bold text-xs tabular-nums text-slate-500 dark:text-slate-400">
+																{fmt(minha)}
+															</span>
+														</div>
 														<div className="text-right leading-tight">
+															<span className={`block text-[9px] font-black uppercase tracking-wider ${
+																quitadoTudo || faltaLiquido <= 0.009
+																	? "text-emerald-600 dark:text-emerald-400"
+																	: todosPagosPorVoce
+																		? "text-emerald-600 dark:text-emerald-400"
+																		: "text-rose-600 dark:text-rose-400"
+															}`}>
+																{quitadoTudo || faltaLiquido <= 0.009
+																	? "Quitado"
+																	: todosPagosPorVoce
+																		? "Você recebe"
+																		: "Você paga"}
+															</span>
 															<div className="flex items-baseline justify-end gap-1.5">
-																<span className="text-[11px] font-semibold text-slate-400 line-through tabular-nums">
-																	{fmt(devidoBruto)}
-																</span>
-																<span className="font-black text-sm tabular-nums text-emerald-600 dark:text-emerald-400">
+																{abatido > 0.009 && (
+																	<span className="text-[11px] font-semibold text-slate-400 line-through tabular-nums">
+																		{fmt(devidoBruto)}
+																	</span>
+																)}
+																<span className={`font-black text-sm tabular-nums ${
+																	quitadoTudo || faltaLiquido <= 0.009
+																		? "text-emerald-600 dark:text-emerald-400"
+																		: todosPagosPorVoce
+																			? "text-emerald-600 dark:text-emerald-400"
+																			: "text-rose-600 dark:text-rose-400"
+																}`}>
 																	{fmt(faltaLiquido)}
 																</span>
 															</div>
-															<span className="block text-[10px] font-bold text-slate-400 tabular-nums">
-																{faltaLiquido <= 0.009 ? "quitado" : `${rotuloLiquido}`} · compra {fmt(totalCompra)}
-															</span>
 														</div>
-													) : (
-														<div className="text-right leading-tight">
-															<span className="block font-black text-sm tabular-nums text-slate-900 dark:text-slate-100">
-																{fmt(totalCompra)}
-															</span>
-															{!quitadoTudo && devidoBruto > 0.009 && Math.abs(devidoBruto - totalCompra) > 0.01 && (
-																<span className="block text-[10px] font-bold text-slate-400 tabular-nums">
-																	{rotuloLiquido} {fmt(devidoBruto)}
-																</span>
-															)}
-														</div>
-													),
+													</div>
+												),
 												detalhe: (
 													<span className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
 														<span>
-															pago por <strong className="text-slate-700 dark:text-slate-200">{pagadores.join(" e ")}</strong> · sua parte {fmt(minha)}
+															Pago por <strong className="text-slate-700 dark:text-slate-200">{pagadores.join(" e ")}</strong>
 														</span>
 														{abatido > 0.009 && (
 															<span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
-																− {fmt(abatido)} abatido (era {fmt(devidoBruto)} → fica {fmt(faltaLiquido)})
+																Abatido − {fmt(abatido)}
 															</span>
 														)}
 														{aguardando > 0 && <span>· {aguardando} opcional(is) aguardando</span>}
@@ -1345,16 +1372,17 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 											const valorAbatido = abatInfo ? Math.min(abertoBruto, abatidoDe(d.id)) : 0;
 											const valorRestante = Math.max(0, Math.round((abertoBruto - valorAbatido) * 100) / 100);
 											const temAbatimento = valorAbatido > 0.009;
+											const quitado = Boolean(d.terceiro_pago || quitadoPorAbatimento(d) || valorRestante <= 0.009);
+											const vocePagou = i.quemPagou === "você";
 											const origens = abatInfo?.origens || [];
 											const resumoOrigens =
 												origens.length === 1
-													? origens[0].descricao.slice(0, 48) + (origens[0].descricao.length > 48 ? "…" : "")
+													? origens[0].descricao.slice(0, 42) + (origens[0].descricao.length > 42 ? "…" : "")
 													: origens.length > 1
 														? `${origens.length} itens compensados`
 														: "";
-											const rotuloParte = i.quemPagou === "você" ? "a receber" : "você devia";
 											return (
-												<div className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+												<div className={`py-3 flex flex-col lg:grid ${dentroDoMes ? "lg:grid-cols-[minmax(0,1fr)_104px_104px_148px_auto]" : "lg:grid-cols-[minmax(0,1fr)_104px_104px_148px_210px]"} lg:items-center gap-3`}>
 													<div className="flex items-start gap-3 min-w-0">
 														<div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 mt-0.5">
 															<Receipt size={15} />
@@ -1375,7 +1403,6 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 																)}
 																{" "}· pago por{" "}
 																<strong className="text-slate-700 dark:text-slate-200">{i.quemPagou}</strong>
-																{i.minhaParte !== null && ` · sua parte ${fmt(i.minhaParte)}`}
 																{i.deOutro && ` · lançado por ${i.autor}`}
 																{i.meta.opcional &&
 																	(i.meta.resposta_cobranca === "aceita" ? (
@@ -1394,53 +1421,68 @@ Valores, datas e pagamentos continuam iguais.`)) return;
 															</p>
 															{temAbatimento && (
 																<div
-																	className="mt-1.5 inline-flex flex-wrap items-center gap-x-2 gap-y-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[11px]"
+																	className="mt-1 inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10.5px]"
 																	title={origens.map((o) => `${o.descricao}: ${fmt(o.valor)}`).join("\n")}>
-																	<span className="text-slate-500 dark:text-slate-400">
-																		{rotuloParte} <strong className="text-slate-700 dark:text-slate-200 tabular-nums">{fmt(abertoBruto)}</strong>
-																	</span>
 																	<span className="font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
-																		− {fmt(valorAbatido)} abatido
-																	</span>
-																	<span className="font-black text-slate-900 dark:text-white tabular-nums">
-																		= resta {fmt(valorRestante)}
+																		Abatido − {fmt(valorAbatido)}
 																	</span>
 																	{resumoOrigens && (
-																		<span className="text-[10px] text-slate-500 dark:text-slate-400">
-																			({resumoOrigens})
+																		<span className="text-slate-500 dark:text-slate-400">
+																			· {resumoOrigens}
 																		</span>
 																	)}
 																</div>
 															)}
 														</div>
 													</div>
-													<div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-														{temAbatimento ? (
-															<div className="text-right leading-tight">
-																<div className="flex items-baseline justify-end gap-1.5">
-																	<span className="text-[11px] font-semibold text-slate-400 line-through tabular-nums">
-																		{fmt(abertoBruto)}
-																	</span>
-																	<span className="font-black text-[13px] tabular-nums text-emerald-600 dark:text-emerald-400">
-																		{fmt(valorRestante)}
-																	</span>
-																</div>
-																<span className="block text-[10px] font-semibold text-slate-400 tabular-nums">
-																	compra {fmt(i.total)}
+
+													{/* Coluna 1: Total da compra */}
+													<div className="flex lg:block items-center justify-between lg:text-right leading-tight">
+														<span className="lg:hidden text-[10px] font-bold uppercase text-slate-400">Total compra</span>
+														<span className="font-bold text-xs tabular-nums text-slate-600 dark:text-slate-300">
+															{fmt(i.total)}
+														</span>
+													</div>
+
+													{/* Coluna 2: Sua parte */}
+													<div className="flex lg:block items-center justify-between lg:text-right leading-tight">
+														<span className="lg:hidden text-[10px] font-bold uppercase text-slate-400">Sua parte</span>
+														<span className="font-bold text-xs tabular-nums text-slate-500 dark:text-slate-400">
+															{i.minhaParte !== null ? fmt(i.minhaParte) : "—"}
+														</span>
+													</div>
+
+													{/* Coluna 3: Valor líquido que entra ou sai do seu bolso */}
+													<div className="flex lg:block items-center justify-between lg:text-right leading-tight">
+														<span className={`text-[9px] font-black uppercase tracking-wider ${
+															quitado
+																? "text-emerald-600 dark:text-emerald-400"
+																: vocePagou
+																	? "text-emerald-600 dark:text-emerald-400"
+																	: "text-rose-600 dark:text-rose-400"
+														}`}>
+															{quitado ? "Quitado" : vocePagou ? "Você recebe" : "Você paga"}
+														</span>
+														<div className="flex items-baseline justify-end gap-1.5">
+															{temAbatimento && (
+																<span className="text-[11px] font-semibold text-slate-400 line-through tabular-nums">
+																	{fmt(abertoBruto)}
 																</span>
-															</div>
-														) : (
-															<div className="text-right leading-tight">
-																<span className="block font-black text-[13px] tabular-nums text-slate-900 dark:text-slate-100">
-																	{fmt(i.total)}
-																</span>
-																{!d.terceiro_pago && abertoBruto > 0.009 && Math.abs(abertoBruto - i.total) > 0.01 && (
-																	<span className="block text-[10px] font-semibold text-slate-400 tabular-nums">
-																		{i.quemPagou === "você" ? "a receber" : "sua parte"} {fmt(abertoBruto)}
-																	</span>
-																)}
-															</div>
-														)}
+															)}
+															<span className={`font-black text-sm tabular-nums ${
+																quitado
+																	? "text-emerald-600 dark:text-emerald-400"
+																	: vocePagou
+																		? "text-emerald-600 dark:text-emerald-400"
+																		: "text-rose-600 dark:text-rose-400"
+															}`}>
+																{fmt(valorRestante)}
+															</span>
+														</div>
+													</div>
+
+													{/* Coluna 4: Ações alinhadas */}
+													<div className="flex items-center justify-end gap-2 shrink-0">
 														{i.deOutro ? (
 															quitadoPorAbatimento(d) ? seloAbatido : d.terceiro_pago && (
 																<span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
